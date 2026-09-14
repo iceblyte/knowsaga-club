@@ -21,3 +21,7 @@ venv/
 node_modules/
 dist/
 build/
+
+# 其他
+.agents
+skills-lock.json
