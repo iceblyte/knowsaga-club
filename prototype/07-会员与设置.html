@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会员与设置 · 知拾冒险社原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
+
+/* ================= 字体 =================
+   拉丁与数字用 Baloo 2：圆润、暖、带一点喜剧感，呼应《为美好的世界献上祝福！》
+   的调性；数字在游戏化产品里到处都是（XP / 等级 / 分数 / 进度），值得一个有个性
+   的face。中文因小程序主包 2MB 上限不引入网络字体，个性改由字重、字距、行高承担。 */
+:root{
+  --f-disp:"Baloo 2","Segoe UI Variable Display",ui-rounded,-apple-system,"PingFang SC",sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E");
+
+  /* 纸与墨：明亮的黄调纸色。避开 AI 默认的 #F4F1EA —— 那个色饱和度只有 4%
+     且近乎中性，读作「奶油」；这里的纸色饱和度 14%、黄调明确，再叠加纸浆颗粒，
+     读作「纸」。差异化不靠压暗底色，靠材质与字体。 */
+  --board:#F1E8D0;   /* 公告板 / 桌底：明亮，但黄调明确 */
+  --paper:#FEFCF6;   /* 纸面：接近白，保证阅读明亮度 */
+  --paper2:#F5EDD8;  /* 次级纸面 / 压痕 */
+  --paper3:#EADFC4;  /* 深压痕 / 纸边 */
+  --line:#C9B48D;    /* 纸上的线 */
+  --ink:#2A2018;     /* 墨 */
+  --ink2:#6B5A45;    /* 淡墨 */
+  --ink3:#9A8870;    /* 更淡墨 */
+
+  --seal:#A63A2E;    /* 朱砂：印章专用 */
+  --magic:#2F6BD8;   /* 魔法蓝：降一档饱和，让它落在纸上像墨而不像 UI 蓝 */
+  --magic-d:#1F4694;
+  --gold:#C8912A;    /* 黄铜：比 emoji 金更沉 */
+  --gold-d:#9C6E15;
+  --ok:#2F7D4F;
+  --bad:#A63A2E;
+  --rare:#6D4BC4;
+}
+
+body{margin:0;color:var(--ink);font-family:var(--f-body);
+  background-color:var(--board);
+  background-image:
+    radial-gradient(130% 90% at 10% -10%,rgba(255,255,255,.55),transparent 58%),
+    radial-gradient(110% 80% at 92% 108%,rgba(120,88,38,.10),transparent 62%),
+    var(--grain);
+  background-attachment:fixed;}
+a{color:var(--magic);text-decoration:none;}
+
+.wrap{max-width:1300px;margin:0 auto;padding:46px 28px 96px;}
+
+/* ================= 页头：一份归档卷宗的抬头 =================
+   编号是真实的阅读顺序（00→07），所以编号有意义，不是装饰性 01/02/03。 */
+.phead{margin-bottom:28px;}
+.idx{display:flex;align-items:baseline;gap:8px;margin-bottom:9px;}
+.idx b{font-family:var(--f-disp);font-size:21px;font-weight:800;color:var(--seal);
+  letter-spacing:-.01em;line-height:1;}
+.idx span{font-size:11.5px;color:var(--ink3);}
+.phead h1{font-family:var(--f-disp);font-size:31px;font-weight:700;margin:0;
+  letter-spacing:-.015em;line-height:1.18;color:var(--ink);}
+.dbl{height:3px;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);
+  margin:13px 0 15px;opacity:.5;}
+.phead p{font-size:13.5px;line-height:1.85;color:var(--ink2);margin:0;max-width:68ch;}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:17px;}
+/* 方形归档标签，不是圆胶囊 —— 纸上的东西有角 */
+.tag{font-size:11.5px;padding:3px 9px;background:var(--paper2);color:var(--ink2);
+  border-radius:2px;border:1px solid rgba(150,120,72,.32);}
+
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:38px 26px;}
+@media(max-width:1120px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:740px){.grid{grid-template-columns:minmax(0,1fr);}}
+
+.slot{display:flex;flex-direction:column;align-items:center;gap:11px;}
+.cap{font-size:12.5px;color:var(--ink2);text-align:center;line-height:1.65;max-width:330px;}
+.cap b{color:var(--ink);font-weight:600;display:block;margin-bottom:3px;font-size:13px;}
+.cap .anno{display:block;margin-top:5px;font-size:11.5px;color:var(--ink3);line-height:1.6;}
+
+/* ================= 手机：一块被钉在板上的纸 =================
+   方向性硬投影 + 暖色描边，替代原先「同一个 .10 黑色柔投影」的通用卡影。 */
+.phone{width:100%;max-width:332px;height:700px;background:var(--paper);
+  background-image:var(--grain);
+  border-radius:15px;overflow:hidden;display:flex;flex-direction:column;position:relative;
+  box-shadow:0 0 0 1px rgba(120,92,48,.36),
+             3px 5px 0 -1px rgba(120,92,48,.15),
+             0 20px 28px -22px rgba(42,32,24,.60);}
+
+.sbar{height:26px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;font-size:11px;color:var(--ink3);flex:none;
+  font-family:var(--f-disp);font-weight:600;letter-spacing:.02em;}
+.sbi{width:13px;height:7px;border:1px solid var(--line);border-radius:2px;margin-left:3px;display:inline-block;}
+
+.nav{height:48px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;flex:none;}
+.nav .t{font-size:15px;font-weight:600;flex:1;text-align:center;}
+.nvb{width:38px;font-size:21px;color:var(--ink2);line-height:1;}
+.nvr{width:38px;text-align:right;font-size:12px;color:var(--ink3);}
+
+.screen{flex:1;padding:6px 14px 14px;display:flex;flex-direction:column;gap:10px;
+  overflow-y:auto;overflow-x:hidden;}
+.screen::-webkit-scrollbar{width:4px;}
+.screen::-webkit-scrollbar-thumb{background:var(--paper3);border-radius:999px;}
+.screen::-webkit-scrollbar-track{background:transparent;}
+.screen.center{justify-content:center;align-items:center;text-align:center;}
+.screen.scroll{overflow-y:auto;}
+.spacer{flex:1;}
+
+.tabbar{flex:none;height:56px;border-top:1px dashed rgba(150,120,72,.45);display:flex;
+  background:var(--paper2);padding-bottom:7px;}
+.tabbar>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  font-size:10.5px;color:var(--ink3);}
+.tabbar>div.on{color:var(--magic);font-weight:600;}
+.dot{width:17px;height:17px;border-radius:4px;background:var(--paper3);}
+.tabbar>div.on .dot{background:var(--magic);}
+
+/* ================= 材质层级 =================
+   L0 裸内容      —— 什么都不装，直接落在纸上
+   L1 .card 纸面  —— 阅读面。明亮纸色 + 可见细边，无外投影。读作「纸上的一个区域」
+   L2 .slip 纸片  —— 真正的离散物件，硬投影 + 细描边。读作「一张单独的纸」
+   L3 .stamp 印章 —— 朱砂、微旋转、压在纸边。全站唯一的响亮元素
+   规则：纸面(paper)承载阅读，压痕面(paper2)承载控件与标签 —— 两者必须能分辨。 */
+.card{background:var(--paper);border-radius:6px;padding:12px 13px;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(150,120,72,.34),inset 0 1px 0 rgba(255,255,255,.7);}
+.card.plain{background:#FFFDF6;}
+.card.parch{background:var(--paper2);}
+.card.blue{background:#E7EFFB;box-shadow:inset 0 0 0 1px rgba(47,107,216,.32);}
+.card.ok{background:#E6F2E9;box-shadow:inset 0 0 0 1px rgba(47,125,79,.34);}
+.card.bad{background:#F8E9E6;box-shadow:inset 0 0 0 1px rgba(166,58,46,.34);}
+.card.gold{background:#F8EFD6;box-shadow:inset 0 0 0 1px rgba(200,145,42,.36);}
+.card.rare{background:#EDE8FA;box-shadow:inset 0 0 0 1px rgba(109,75,196,.32);}
+.card.grow{flex:1;min-height:0;overflow:hidden;}
+
+.slip{background:var(--paper);background-image:var(--grain);border-radius:3px;padding:13px;flex:none;
+  position:relative;box-shadow:2px 3px 0 rgba(120,92,48,.20),0 0 0 1px rgba(120,92,48,.36);}
+
+.stamp{display:inline-block;position:relative;font-family:var(--f-disp);font-weight:800;
+  font-size:11.5px;letter-spacing:.09em;color:var(--seal);border:2px solid var(--seal);
+  border-radius:2px;padding:2px 8px 3px;transform:rotate(-2.2deg);opacity:.9;line-height:1.35;}
+.stamp::after{content:"";position:absolute;inset:2px;border:1px solid var(--seal);
+  opacity:.45;border-radius:1px;}
+.stamp.ok{color:var(--ok);border-color:var(--ok);}
+.stamp.gold{color:var(--gold-d);border-color:var(--gold);}
+
+.rule{height:0;border-top:1px dashed rgba(150,120,72,.45);margin:11px 0;}
+
+.h{font-size:15px;font-weight:600;line-height:1.45;}
+.h.sm{font-size:13.5px;}
+.sub{font-size:11.5px;color:var(--ink3);line-height:1.55;}
+.body{font-size:12.5px;line-height:1.8;color:var(--ink2);}
+.body.sm{font-size:11.5px;}
+.tiny{font-size:11px;color:var(--ink3);line-height:1.55;}
+.strong{font-weight:600;color:var(--ink);}
+.c-blue{color:var(--magic);}.c-gold{color:var(--gold-d);}.c-ok{color:var(--ok);}
+.c-bad{color:var(--bad);}.c-mute{color:var(--ink3);}.c-rare{color:var(--rare);}
+/* 数字统一交给 Baloo 2 —— 游戏化产品里数字承担了大量情绪 */
+.num{font-family:var(--f-disp);font-weight:700;letter-spacing:-.01em;}
+
+.btn{display:block;width:100%;border:0;border-radius:7px;background:var(--magic);color:#FFF9EA;
+  font-family:var(--f-disp);font-size:15px;font-weight:700;letter-spacing:.01em;padding:11px 0;
+  text-align:center;border-bottom:3px solid var(--magic-d);cursor:pointer;}
+.btn.gold{background:var(--gold);border-bottom-color:var(--gold-d);color:#3D2A05;}
+.btn.ok{background:var(--ok);border-bottom-color:#1F5A38;}
+.btn.ghost{background:var(--paper);color:var(--ink2);border:1px solid rgba(150,120,72,.38);
+  border-bottom:3px solid rgba(150,120,72,.30);}
+.btn.sm{padding:8px 0;font-size:13px;border-bottom-width:2px;}
+.btn.dis{background:var(--paper3);border-bottom-color:#D3C29F;color:var(--ink3);}
+
+.row{display:flex;align-items:center;gap:8px;}
+.between{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.stack{display:flex;flex-direction:column;gap:8px;}
+.stack.tight{gap:6px;}
+
+.chip{font-size:11px;padding:4px 10px;border-radius:3px;background:var(--paper2);
+  color:var(--ink2);border:1px solid rgba(150,120,72,.32);white-space:nowrap;}
+/* 并列项的标记：方块，不是数字编号。编号只用于真正的序列（流程 / 时间线 / 优先级），
+   并列的陈述或权益用编号是纯装饰，读起来像模板。 */
+.dotmark{width:6px;height:6px;border-radius:1px;background:var(--magic);flex:none;}
+.dotmark.gold{background:var(--gold);}
+.dotmark.ok{background:var(--ok);}
+.pill{font-size:10.5px;padding:2px 7px;border-radius:3px;background:var(--paper2);
+  color:var(--ink2);font-weight:600;font-family:var(--f-disp);letter-spacing:.02em;}
+.pill.blue{background:#E7EFFB;color:var(--magic-d);}
+.pill.gold{background:#F8EFD6;color:var(--gold-d);}
+.pill.ok{background:#E6F2E9;color:var(--ok);}
+.pill.bad{background:#F8E9E6;color:var(--bad);}
+.pill.rare{background:#EDE8FA;color:var(--rare);}
+
+.bar{height:8px;border-radius:2px;background:var(--paper3);overflow:hidden;}
+.bar>i{display:block;height:100%;border-radius:2px;background:var(--gold);}
+.bar.blue>i{background:var(--magic);}
+.bar.ok>i{background:var(--ok);}
+.bar.rare>i{background:var(--rare);}
+
+/* 选项：压痕面（控件）而不是纸面 —— 才能在纸底上读出「这是可以填的」
+   题号用方块而不是圆形，读作「卷宗里的一条」，而不是通用 UI 徽标 */
+.opt{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:5px;
+  background:var(--paper2);box-shadow:inset 0 0 0 1px rgba(150,120,72,.30);}
+.opt .k{width:22px;height:22px;border-radius:4px;background:var(--paper);
+  box-shadow:inset 0 0 0 1px rgba(150,120,72,.34);color:var(--ink2);
+  font-size:11.5px;display:flex;align-items:center;justify-content:center;flex:none;
+  font-family:var(--f-disp);font-weight:700;}
+.opt .x{font-size:12.5px;line-height:1.5;flex:1;}
+.opt.sel{background:#DCE9FB;box-shadow:inset 0 0 0 1.5px var(--magic);}
+.opt.sel .k{background:var(--magic);color:#FFF9EA;box-shadow:none;}
+.opt.ok{background:#DFF0E4;box-shadow:inset 0 0 0 1.5px var(--ok);}
+.opt.ok .k{background:var(--ok);color:#FFF9EA;box-shadow:none;}
+.opt.bad{background:#F7E3DF;box-shadow:inset 0 0 0 1.5px var(--bad);}
+.opt.bad .k{background:var(--bad);color:#FFF9EA;box-shadow:none;}
+
+.avatar{width:36px;height:36px;border-radius:50%;background:#E7EFFB;
+  box-shadow:inset 0 0 0 1px rgba(47,107,216,.34);flex:none;}
+.avatar.gold{background:#F8EFD6;box-shadow:inset 0 0 0 1px rgba(200,145,42,.42);}
+.avatar.rare{background:#EDE8FA;box-shadow:inset 0 0 0 1px rgba(109,75,196,.36);}
+.avatar.sm{width:26px;height:26px;}
+
+.field{background:var(--paper2);border:1px dashed rgba(150,120,72,.52);border-radius:5px;
+  padding:12px;flex:none;}
+.field.solid{border-style:solid;border-color:rgba(150,120,72,.38);}
+.ph{font-size:12.5px;color:var(--ink3);line-height:1.75;}
+
+.stat{font-family:var(--f-disp);font-size:25px;font-weight:800;line-height:1.15;letter-spacing:-.02em;}
+.stat.sm{font-size:18px;}
+.statlab{font-size:11px;color:var(--ink3);margin-top:3px;}
+
+/* 列表：账本横格行，而不是一摞一模一样的圆角卡 */
+.li{display:flex;align-items:center;gap:10px;padding:9px 2px;background:transparent;
+  border-bottom:1px dashed rgba(150,120,72,.34);}
+.li:last-child{border-bottom:0;}
+.li .ico{width:28px;height:28px;border-radius:4px;background:var(--paper2);flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;color:var(--ink2);
+  font-family:var(--f-disp);font-weight:700;}
+.li .tx{flex:1;min-width:0;}
+.li .tx .n{font-size:12.5px;font-weight:600;}
+.li .tx .d{font-size:11px;color:var(--ink3);margin-top:2px;}
+
+.mask{position:absolute;inset:0;background:rgba(42,32,24,.44);display:flex;
+  align-items:center;justify-content:center;padding:26px;}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);border-radius:8px 8px 0 0;
+  padding:18px 16px 22px;display:flex;flex-direction:column;gap:12px;
+  box-shadow:0 -3px 0 rgba(120,92,48,.18);}
+.grab{width:38px;height:4px;border-radius:999px;background:var(--paper3);margin:0 auto;}
+
+.mcircle{width:104px;height:104px;border-radius:50%;border:2px dashed var(--magic);
+  display:flex;align-items:center;justify-content:center;position:relative;flex:none;opacity:.75;}
+.mcircle::before{content:"";position:absolute;inset:12px;border-radius:50%;
+  border:1.5px solid rgba(47,107,216,.42);}
+.mcircle .core{width:34px;height:34px;border-radius:50%;background:#E7EFFB;
+  border:1.5px solid var(--magic);}
+
+.spark{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--gold);}
+.badge{width:62px;height:62px;border-radius:50%;background:#F8EFD6;
+  box-shadow:inset 0 0 0 1.5px rgba(200,145,42,.5);display:flex;align-items:center;
+  justify-content:center;font-family:var(--f-disp);font-size:20px;font-weight:800;
+  color:var(--gold-d);flex:none;}
+.badge.off{background:var(--paper2);box-shadow:inset 0 0 0 1.5px rgba(150,120,72,.34);color:var(--ink3);}
+.badge.rare{background:#EDE8FA;box-shadow:inset 0 0 0 1.5px rgba(109,75,196,.44);color:var(--rare);}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+
+/* ---- 设计规范页专用 ---- */
+.ds-sec{margin-bottom:40px;}
+.ds-sec>h2{font-size:17px;font-weight:700;margin:0 0 6px;font-family:var(--f-disp);
+  letter-spacing:-.01em;}
+.ds-sec>p{font-size:13px;color:var(--ink2);margin:0 0 18px;line-height:1.8;max-width:70ch;}
+.ds-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;}
+.sw{width:118px;}
+.sw .box{height:58px;border-radius:3px;border:1px solid rgba(120,92,48,.28);}
+/* 色值是字面数据，等宽是语义正确的，不是装饰 */
+.sw .hx{font-size:11.5px;font-weight:600;margin-top:7px;font-family:ui-monospace,Menlo,monospace;}
+.sw .nm{font-size:11px;color:var(--ink3);margin-top:2px;}
+.spec{background:var(--paper);border-radius:6px;padding:18px;flex:1;min-width:260px;
+  box-shadow:inset 0 0 0 1px rgba(150,120,72,.22);}
+.spec h3{font-size:13px;margin:0 0 12px;color:var(--ink2);font-weight:600;}
+.spec ul{margin:0;padding-left:18px;font-size:12.5px;line-height:1.95;color:var(--ink2);}
+
+/* ================= 动效 =================
+   只在两处使用：生成中（stage，功能性——它在说「正在发生什么」）
+   与答题反馈（shake，响应人的动作）。静态场景一律不动。 */
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes twinkle{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes spin-r{from{transform:rotate(0)}to{transform:rotate(-360deg)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+.floaty{animation:floaty 3.6s ease-in-out infinite;}
+.floaty.slow{animation-duration:5.4s;}
+.floaty.fast{animation-duration:2.4s;}
+.twinkle{animation:twinkle 2.4s ease-in-out infinite;}
+.twinkle.d1{animation-delay:.5s;}
+.twinkle.d2{animation-delay:1.1s;}
+.spin{animation:spin 16s linear infinite;}
+.spin-r{animation:spin-r 24s linear infinite;}
+.shake{animation:shake .45s ease-in-out 2;}
+@media(prefers-reduced-motion:reduce){.floaty,.twinkle,.spin,.spin-r,.shake{animation:none}}
+
+/* ---------- 拾拾舞台 ---------- */
+.stage{position:relative;display:flex;align-items:center;justify-content:center;flex:none;}
+.stage>.spin,.stage>.spin-r{position:absolute;inset:0;}
+.stage-c{position:relative;z-index:2;}
+.sprite{display:block;overflow:visible;}
+/* 角色行：多个角色并排时统一对齐 */
+.cast{display:flex;align-items:flex-end;gap:10px;flex:none;}
+.cast>div{display:flex;flex-direction:column;align-items:center;gap:5px;}
+/* 鸢鸢飘行：只在「等待对方回应」这一处使用，幅度极小 */
+@keyframes drift{0%,100%{transform:translate(0,0) rotate(0)}50%{transform:translate(3px,-5px) rotate(-2.5deg)}}
+.drift{animation:drift 3.2s ease-in-out infinite;}
+@media(prefers-reduced-motion:reduce){.drift{animation:none}}
+/* 头像：圆形裁切后的角色，无外投影，靠描边定界 */
+.advatar{display:block;flex:none;overflow:visible;}
+/* 身份位：头像 + 姓名 + 副信息的横排 */
+.who{display:flex;align-items:center;gap:9px;min-width:0;flex:1;}
+.who .tx{min-width:0;}
+.who .tx .n{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.who .tx .d{font-size:11px;color:var(--ink3);margin-top:2px;}
+
+/* ---------- 卷轴输入框 ---------- */
+.scrollbox{position:relative;background:var(--paper2);border-radius:4px;
+  padding:16px 14px;margin:8px 0;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(150,120,72,.34);}
+.scrollbox::before,.scrollbox::after{content:"";position:absolute;top:-7px;bottom:-7px;width:14px;
+  border-radius:999px;background:#E8D2A0;box-shadow:inset 0 0 0 1px #C4A874;}
+.scrollbox::before{left:-7px;}
+.scrollbox::after{right:-7px;}
+.scrollbox .inner{background:var(--paper);border:1px dashed rgba(150,120,72,.44);border-radius:3px;
+  padding:12px;min-height:100%;display:flex;flex-direction:column;justify-content:space-between;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="phead">
+<div class="idx"><b>07</b><span>卷宗</span></div>
+<h1>会员与设置</h1>
+<div class="dbl"></div>
+<p>商业化闭环与系统设置，共 8 屏。这一组对应需求文档的 P3 阶段，同时补齐了产品必须有的兜底页面。商业化设计的原则是：权益写得具体、价格讲得清楚、退路留得明白——AI 产品的付费转化，建立在用户已经认可出题质量之后，而不是靠话术。</p>
+<div class="tags"><span class="tag">会员权益与套餐</span><span class="tag">支付与结果页</span><span class="tag">设置与提醒</span><span class="tag">空态合集</span><span class="tag">帮助与反馈</span><span class="tag">P3 扩展 · 8 屏</span></div>
+</header>
+<div class="grid">
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">冒险者通行证</span><span class="nvr"></span></div><div class="screen" style="background:#FEFCF6"><div class="card gold"><div class="row" style="gap:12px"><svg class="sprite" width="66" height="66" viewBox="0 0 100 100" role="img" aria-label="宝箱怪铜宝"><g class="twinkle"><polygon points="15.00,24.00 16.78,28.22 21.00,30.00 16.78,31.78 15.00,36.00 13.22,31.78 9.00,30.00 13.22,28.22" fill="#C8912A"/></g><g class="twinkle d1"><polygon points="88.00,21.00 89.48,24.52 93.00,26.00 89.48,27.48 88.00,31.00 86.52,27.48 83.00,26.00 86.52,24.52" fill="#C8912A"/></g><g class="twinkle d2"><polygon points="84.00,71.60 85.31,74.69 88.40,76.00 85.31,77.31 84.00,80.40 82.69,77.31 79.60,76.00 82.69,74.69" fill="#C8912A"/></g><rect x="18" y="38" width="64" height="18" rx="3" fill="#4A3416"/><ellipse cx="40" cy="48" rx="6.6" ry="7" fill="#2A2018"/><ellipse cx="60" cy="48" rx="6.6" ry="7" fill="#2A2018"/><circle cx="37.6" cy="45.2" r="2.3" fill="#FFF"/><circle cx="57.6" cy="45.2" r="2.3" fill="#FFF"/><path d="M12 52h76v30a6 6 0 0 1-6 6H18a6 6 0 0 1-6-6z" fill="#AE7A1C" stroke="#8F6210" stroke-width="2.2" stroke-linejoin="round"/><rect x="22" y="52" width="5" height="36" fill="#8F6210" opacity=".38"/><rect x="73" y="52" width="5" height="36" fill="#8F6210" opacity=".38"/><rect x="42" y="60" width="16" height="15" rx="2.5" fill="#C8912A" stroke="#8F6210" stroke-width="1.8"/><circle cx="50" cy="66" r="2.1" fill="#8F6210"/><path d="M50 67.8v3.6" stroke="#8F6210" stroke-width="1.7" stroke-linecap="round"/><g transform="rotate(-30 12 52)"><path d="M12 52c0-13 17-22 38-22s38 9 38 22z" fill="#C68B22" stroke="#8F6210" stroke-width="2.2" stroke-linejoin="round"/><rect x="23" y="34" width="5" height="18" fill="#8F6210" opacity=".45"/><rect x="72" y="34" width="5" height="18" fill="#8F6210" opacity=".45"/><rect x="41" y="44" width="18" height="9" rx="2" fill="#C8912A" stroke="#8F6210" stroke-width="1.8"/></g></svg><div><div style="font-size:15px;font-weight:700">冒险者通行证</div><div class="tiny" style="margin-top:4px">解锁完整 AI 能力，学习不再受限</div></div></div></div><div class="card"><div class="row"><span class="dotmark gold"></span><div style="flex:1"><div style="font-size:12.5px;font-weight:600">无限次召唤副本</div><div class="tiny" style="margin-top:3px">免费版每天 3 次，会员不限次数</div></div></div></div><div class="card"><div class="row"><span class="dotmark gold"></span><div style="flex:1"><div style="font-size:12.5px;font-weight:600">私有知识库扩容至 1 GB</div><div class="tiny" style="margin-top:3px">免费版 50 MB，适合企业考核与真题模拟</div></div></div></div><div class="card"><div class="row"><span class="dotmark gold"></span><div style="flex:1"><div style="font-size:12.5px;font-weight:600">深度复盘报告</div><div class="tiny" style="margin-top:3px">包含知识点归因与个性化复习计划</div></div></div></div><div class="card"><div class="row"><span class="dotmark gold"></span><div style="flex:1"><div style="font-size:12.5px;font-weight:600">题目配图与语音讲解</div><div class="tiny" style="margin-top:3px">多模态能力，学得更直观</div></div></div></div><div class="spacer"></div><button class="btn gold">查看套餐</button></div>
+</div>
+<figcaption class="cap"><b>会员权益</b>商业化入口。权益描述必须具体，避免空泛的「尊享」话术。<span class="anno">权益按使用频次排序，把用户最可能用到的放在最前面。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">选择套餐</span><span class="nvr"></span></div><div class="screen"><div class="grid3" style="gap:8px"><div class="card plain"><div style="text-align:center"><div class="tiny">月付</div><div class="stat sm" style="margin-top:6px">18</div><div class="tiny">元 / 月</div></div></div><div class="card gold"><div style="text-align:center"><div class="tiny c-gold">年付 · 推荐</div><div class="stat sm c-gold" style="margin-top:6px">128</div><div class="tiny">元 / 年</div></div></div><div class="card plain"><div style="text-align:center"><div class="tiny">永久</div><div class="stat sm" style="margin-top:6px">398</div><div class="tiny">元 一次性</div></div></div></div><div class="card"><div class="between"><span class="tiny">年付相当于</span><span class="pill gold">每月 10.7 元 · 省 41%</span></div></div><div class="card plain"><div class="tiny" style="margin-bottom:8px">套餐包含</div><div class="stack tight"><div class="row"><span class="pill ok">✓</span><span class="body sm">无限次召唤副本</span></div><div class="row"><span class="pill ok">✓</span><span class="body sm">私有知识库 1 GB</span></div><div class="row"><span class="pill ok">✓</span><span class="body sm">深度复盘报告</span></div><div class="row"><span class="pill ok">✓</span><span class="body sm">多模态配图与语音</span></div></div></div><div class="spacer"></div><button class="btn gold">立即开通 · 128 元</button><div class="tiny" style="text-align:center">开通后 7 天内可申请退款</div></div>
+</div>
+<figcaption class="cap"><b>套餐对比</b>三档套餐并排，推荐档位用描边强调而不是放大。<span class="anno">默认选中性价比最高的一档，同时保留月付入口降低决策门槛。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">确认订单</span><span class="nvr"></span></div><div class="screen"><div class="card plain"><div class="between"><span class="tiny">商品</span><span style="font-size:12.5px;font-weight:600">冒险者通行证 · 年付</span></div><div style="height:12px"></div><div class="between"><span class="tiny">有效期</span><span style="font-size:12.5px">2026-09-14 至 2027-09-14</span></div><div style="height:12px"></div><div class="between"><span class="tiny">支付方式</span><span style="font-size:12.5px">微信支付</span></div></div><div class="card gold"><div class="between"><span class="tiny">应付金额</span><span class="stat sm c-gold">128.00 元</span></div></div><div class="spacer"></div><button class="btn gold">微信支付 128.00 元</button><div class="tiny" style="text-align:center">点击即表示同意《会员服务协议》与《自动续费规则》</div></div>
+</div>
+<figcaption class="cap"><b>支付确认</b>支付前把商品、金额、有效期一次说清。<span class="anno">金额用等宽字体加粗，与微信支付收银台的视觉习惯保持一致。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">支付结果</span><span class="nvr"></span></div><div class="screen" style="background:#FEFCF6"><div class="spacer"></div><div style="display:flex;flex-direction:column;align-items:center;gap:14px"><svg class="sprite" width="118" height="118" viewBox="0 0 100 100" role="img" aria-label="宝箱怪铜宝"><g class="twinkle"><polygon points="15.00,24.00 16.78,28.22 21.00,30.00 16.78,31.78 15.00,36.00 13.22,31.78 9.00,30.00 13.22,28.22" fill="#C8912A"/></g><g class="twinkle d1"><polygon points="88.00,21.00 89.48,24.52 93.00,26.00 89.48,27.48 88.00,31.00 86.52,27.48 83.00,26.00 86.52,24.52" fill="#C8912A"/></g><g class="twinkle d2"><polygon points="84.00,71.60 85.31,74.69 88.40,76.00 85.31,77.31 84.00,80.40 82.69,77.31 79.60,76.00 82.69,74.69" fill="#C8912A"/></g><rect x="18" y="38" width="64" height="18" rx="3" fill="#4A3416"/><ellipse cx="40" cy="48" rx="6.6" ry="7" fill="#2A2018"/><ellipse cx="60" cy="48" rx="6.6" ry="7" fill="#2A2018"/><circle cx="37.6" cy="45.2" r="2.3" fill="#FFF"/><circle cx="57.6" cy="45.2" r="2.3" fill="#FFF"/><path d="M12 52h76v30a6 6 0 0 1-6 6H18a6 6 0 0 1-6-6z" fill="#AE7A1C" stroke="#8F6210" stroke-width="2.2" stroke-linejoin="round"/><rect x="22" y="52" width="5" height="36" fill="#8F6210" opacity=".38"/><rect x="73" y="52" width="5" height="36" fill="#8F6210" opacity=".38"/><rect x="42" y="60" width="16" height="15" rx="2.5" fill="#C8912A" stroke="#8F6210" stroke-width="1.8"/><circle cx="50" cy="66" r="2.1" fill="#8F6210"/><path d="M50 67.8v3.6" stroke="#8F6210" stroke-width="1.7" stroke-linecap="round"/><g transform="rotate(-30 12 52)"><path d="M12 52c0-13 17-22 38-22s38 9 38 22z" fill="#C68B22" stroke="#8F6210" stroke-width="2.2" stroke-linejoin="round"/><rect x="23" y="34" width="5" height="18" fill="#8F6210" opacity=".45"/><rect x="72" y="34" width="5" height="18" fill="#8F6210" opacity=".45"/><rect x="41" y="44" width="18" height="9" rx="2" fill="#C8912A" stroke="#8F6210" stroke-width="1.8"/></g></svg><div style="text-align:center"><div class="h">开通成功</div><div class="body sm" style="margin-top:8px">冒险者通行证已生效，有效期至 2027-09-14。</div></div><div class="card plain"><div class="between"><span class="tiny">订单号</span><span class="tiny">202609142038110002</span></div></div></div><div class="spacer"></div><button class="btn">立即召唤一个副本</button><button class="btn ghost">返回个人中心</button></div>
+</div>
+<figcaption class="cap"><b>支付成功</b>支付成功后的即时反馈与下一步引导。<span class="anno">成功页不设自动跳转，停留 3 秒后由用户决定去留，避免打断阅读。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">设置</span><span class="nvr"></span></div><div class="screen"><div class="li"><span class="ico">铃</span><span class="tx"><span class="n">学习提醒</span><span class="d">每天 20:00 提醒我复习</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">音</span><span class="tx"><span class="n">音效与振动</span><span class="d">答对答错的即时反馈</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">存</span><span class="tx"><span class="n">流量下自动加载配图</span><span class="d">关闭可节省流量</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">护</span><span class="tx"><span class="n">护眼模式</span><span class="d">降低羊皮纸底亮度</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">清</span><span class="tx"><span class="n">清理缓存</span><span class="d">当前占用 12.6 MB</span></span><span class="pill">清理</span></div><div class="li"><span class="ico">账</span><span class="tx"><span class="n">账号与安全</span><span class="d">微信已绑定</span></span></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">帮助与反馈</span><span class="d">常见问题与意见反馈</span></span></div><div class="li"><span class="ico">版</span><span class="tx"><span class="n">关于知拾冒险社</span><span class="d">版本 1.0.0</span></span></div></div><div class="tabbar"><div><span class="dot"></span>社团大厅</div><div><span class="dot"></span>卷轴工坊</div><div><span class="dot"></span>探险日志</div><div class="on"><span class="dot"></span>我的</div></div>
+</div>
+<figcaption class="cap"><b>设置</b>设置项按使用频率排序，把账号相关放在最下方。<span class="anno">所有开关状态用颜色加位置双重表达，不只依赖颜色。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">学习提醒</span><span class="nvr"></span></div><div class="screen"><div class="card parch"><div class="between"><span style="font-size:12.5px;font-weight:600">每日学习提醒</span><span class="pill ok">已开启</span></div><div class="row" style="gap:10px;align-items:flex-start;margin-top:8px"><svg class="sprite" width="58" height="58" viewBox="0 0 100 100" role="img" aria-label="折纸信使鸢鸢"><path d="M92 20 40 62 52 88Z" fill="#E9DCBB" stroke="#C2AC85" stroke-width="2.2" stroke-linejoin="round"/><path d="M92 20 8 52 40 62Z" fill="#FDF9EE" stroke="#C2AC85" stroke-width="2.2" stroke-linejoin="round"/><path d="M92 20 40 62" stroke="#C2AC85" stroke-width="1.4" opacity=".55" fill="none"/><path d="M8 52 56 44" stroke="#C2AC85" stroke-width="1.1" opacity=".38" fill="none"/><circle cx="33" cy="52" r="5" fill="#A63A2E"/><circle cx="33" cy="52" r="2.4" fill="none" stroke="#FAF3E0" stroke-width="1.3"/><circle cx="66" cy="38" r="3.4" fill="#2A2018"/><circle cx="76" cy="30" r="3.4" fill="#2A2018"/><circle cx="64.8" cy="36.8" r="1.2" fill="#FFF"/><circle cx="74.8" cy="28.8" r="1.2" fill="#FFF"/><path d="M68 44q4 3.6 8-1.4" fill="none" stroke="#2A2018" stroke-width="1.8" stroke-linecap="round"/></svg><div class="body sm">每天在你设定的时间提醒你来社团大厅，避免连续记录中断。</div></div></div><div class="card plain"><div class="tiny" style="margin-bottom:10px">提醒时间</div><div class="row" style="gap:6px;flex-wrap:wrap"><span class="chip">08:00</span><span class="chip">12:30</span><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">20:00</span><span class="chip">22:00</span></div></div><div class="card plain"><div class="tiny" style="margin-bottom:10px">提醒日</div><div class="row" style="gap:6px"><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">一</span><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">二</span><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">三</span><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">四</span><span class="chip" style="background:#DCE9FB;color:#1F4694;border-color:#7FA9D8">五</span><span class="chip">六</span><span class="chip">日</span></div></div><div class="card plain"><div class="tiny" style="margin-bottom:10px">额外提醒</div><div class="between"><span class="body sm">连续记录即将中断时提醒</span><span class="pill ok">开</span></div><div style="height:10px"></div><div class="between"><span class="body sm">旧识重温到期时提醒</span><span class="pill ok">开</span></div></div><div class="spacer"></div><button class="btn">保存设置</button></div>
+</div>
+<figcaption class="cap"><b>学习提醒设置</b>留存的关键设置项，默认开启但必须可关闭。<span class="anno">提醒时间默认 20:00，覆盖下班后的学习高峰；支持按星期自定义。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">空态与异常</span><span class="nvr"></span></div><div class="screen"><div class="card plain"><div style="text-align:center;padding:8px 0"><div style="display:flex;justify-content:center"><svg class="sprite" width="74" height="74" viewBox="0 0 100 100" role="img" aria-label="小精灵拾拾"><path d="M21 57C9 48 0 57 4 68c3 8 12 9 17 3 3-3 2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><path d="M79 57c12-9 21 0 17 11-3 8-12 9-17 3-3-3-2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><ellipse cx="40" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><ellipse cx="60" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><path d="M50 27C50 18 53 13 58 9" fill="none" stroke="#2F6BD8" stroke-width="2.2" stroke-linecap="round"/><circle cx="59" cy="7.5" r="4.6" fill="#C8912A" stroke="#9C6E15" stroke-width="1.4"/><path d="M50 25c19 0 33 16 33 34s-14 32-33 32-33-14-33-32 14-34 33-34z" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.6" stroke-linejoin="round"/><ellipse cx="50" cy="68" rx="18" ry="15" fill="#FFFFFF" opacity=".85"/><ellipse cx="27" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><ellipse cx="73" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><path d="M33 58c2.5-4.8 8.5-4.8 11 0" fill="none" stroke="#2A2018" stroke-width="2.8" stroke-linecap="round"/><path d="M56 58c2.5-4.8 8.5-4.8 11 0" fill="none" stroke="#2A2018" stroke-width="2.8" stroke-linecap="round"/><path d="M44 70q6 9 12 0z" fill="#2A2018"/></svg></div><div class="h sm" style="margin-top:8px">还没有冒险卷轴</div><div class="tiny" style="margin-top:6px">去社团大厅领取你的第一张卷轴吧</div><div style="height:12px"></div><button class="btn sm">去社团大厅</button></div></div><div class="card plain"><div style="text-align:center;padding:8px 0"><div style="display:flex;justify-content:center"><svg class="sprite" width="74" height="74" viewBox="0 0 100 100" role="img" aria-label="小精灵拾拾"><path d="M21 57C9 48 0 57 4 68c3 8 12 9 17 3 3-3 2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><path d="M79 57c12-9 21 0 17 11-3 8-12 9-17 3-3-3-2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><ellipse cx="40" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><ellipse cx="60" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><path d="M50 27C50 18 53 13 58 9" fill="none" stroke="#2F6BD8" stroke-width="2.2" stroke-linecap="round"/><circle cx="59" cy="7.5" r="4.6" fill="#C8912A" stroke="#9C6E15" stroke-width="1.4"/><path d="M50 25c19 0 33 16 33 34s-14 32-33 32-33-14-33-32 14-34 33-34z" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.6" stroke-linejoin="round"/><ellipse cx="50" cy="68" rx="18" ry="15" fill="#FFFFFF" opacity=".85"/><ellipse cx="27" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><ellipse cx="73" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><ellipse cx="39" cy="56" rx="5.6" ry="6.8" fill="#2A2018"/><circle cx="37.2" cy="53.2" r="2.2" fill="#FFF"/><path d="M56 58.5c2.5-4.2 8.5-4.2 11 0" fill="none" stroke="#2A2018" stroke-width="2.6" stroke-linecap="round"/><path d="M45 72h10" fill="none" stroke="#2A2018" stroke-width="2.4" stroke-linecap="round"/></svg></div><div class="h sm" style="margin-top:8px">还没有上传文档</div><div class="tiny" style="margin-top:6px">上传一份资料，AI 会把它变成题库</div><div style="height:12px"></div><button class="btn sm ghost">上传文档</button></div></div><div class="card plain"><div style="text-align:center;padding:8px 0"><div style="display:flex;justify-content:center"><svg class="sprite" width="74" height="74" viewBox="0 0 100 100" role="img" aria-label="小精灵拾拾"><path d="M21 57C9 48 0 57 4 68c3 8 12 9 17 3 3-3 2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><path d="M79 57c12-9 21 0 17 11-3 8-12 9-17 3-3-3-2-10 0-14z" fill="#C2DFF7" stroke="#7FA9D8" stroke-width="2" stroke-linejoin="round"/><ellipse cx="40" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><ellipse cx="60" cy="89" rx="8" ry="5" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.2"/><path d="M50 27C50 18 53 13 58 9" fill="none" stroke="#2F6BD8" stroke-width="2.2" stroke-linecap="round"/><circle cx="59" cy="7.5" r="4.6" fill="#C8912A" stroke="#9C6E15" stroke-width="1.4"/><path d="M50 25c19 0 33 16 33 34s-14 32-33 32-33-14-33-32 14-34 33-34z" fill="#E4F0FB" stroke="#2F6BD8" stroke-width="2.6" stroke-linejoin="round"/><ellipse cx="50" cy="68" rx="18" ry="15" fill="#FFFFFF" opacity=".85"/><ellipse cx="27" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><ellipse cx="73" cy="66" rx="6" ry="3.6" fill="#E8A0AE" opacity=".8"/><ellipse cx="39" cy="58.5" rx="5.2" ry="6" fill="#2A2018"/><ellipse cx="61" cy="58.5" rx="5.2" ry="6" fill="#2A2018"/><circle cx="37.4" cy="56" r="2" fill="#FFF"/><circle cx="59.4" cy="56" r="2" fill="#FFF"/><path d="M39.5 50.5l-7 2M60.5 50.5l7 2" stroke="#2A2018" stroke-width="1.8" stroke-linecap="round"/><path d="M45 74q5-5 10 0" fill="none" stroke="#2A2018" stroke-width="2.4" stroke-linecap="round"/></svg></div><div class="h sm" style="margin-top:8px">网络好像断开了</div><div class="tiny" style="margin-top:6px">已下载的日志仍可查看</div><div style="height:12px"></div><button class="btn sm ghost">重新连接</button></div></div></div>
+</div>
+<figcaption class="cap"><b>空态合集</b>同一屏并列展示三种空态，用于设计评审对照。<span class="anno">三种空态都遵循同一结构：状态图标 + 一句解释 + 一个明确动作。</span></figcaption>
+</figure>
+<figure class="slot">
+<div class="phone">
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">帮助与反馈</span><span class="nvr"></span></div><div class="screen"><div class="card"><div class="h sm">常见问题</div></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">为什么生成的题目不太准？</span><span class="d">补充背景资料可以显著提升质量</span></span><span class="pill">查看</span></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">免费版每天能生成几次？</span><span class="d">每天 3 次，会员不限次数</span></span><span class="pill">查看</span></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">上传的文档安全吗？</span><span class="d">按用户隔离，不会用于训练</span></span><span class="pill">查看</span></div><div class="card bad"><div class="row"><span class="badge" style="width:32px;height:32px;font-size:13px">!</span><div style="flex:1"><div style="font-size:12.5px;font-weight:600">举报题目问题</div><div class="tiny" style="margin-top:3px">题干有误、答案错误或内容不适</div></div><span class="tiny">›</span></div></div><div class="li"><span class="ico">邮</span><span class="tx"><span class="n">联系开发者</span><span class="d">工作日 24 小时内回复</span></span><span class="pill">发信</span></div><div class="spacer"></div><div class="tiny" style="text-align:center">知拾冒险社 v1.0.0 · 拾万千知识，闯无尽关卡</div></div>
+</div>
+<figcaption class="cap"><b>帮助与反馈</b>兜底页面。AI 产品必须让用户能找到人。<span class="anno">把「题目有问题」单独列一条，这是 AI 出题类产品最高频的反馈类型。</span></figcaption>
+</figure>
+</div>
+</div>
+</body>
+</html>

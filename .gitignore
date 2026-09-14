@@ -25,3 +25,9 @@ build/
 # 其他
 .agents
 skills-lock.json
+.workbuddy-ai
+.workbuddy
+
+# 原型：截图与临时渲染产物（可由 _gen/*.py 重新生成）
+prototype/_shots/
+prototype/_gen/_*.html
