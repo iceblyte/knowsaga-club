@@ -147,9 +147,9 @@ a("""               foot='<div class="mask"><div class="card plain" style="width
                     '<div class="h" style="margin-top:10px">要离开这个副本吗？</div>'""")
 
 a("""                    + magic(110) +
-                    '<div style="text-align:center"><div class="h">正在撰写冒险探险日志</div>'""",
+                    '<div style="text-align:center"><div class="h">正在撰写冒险日志</div>'""",
   """                    + stage(160, "excited") +
-                    '<div style="text-align:center"><div class="h">正在撰写冒险探险日志</div>'""")
+                    '<div style="text-align:center"><div class="h">正在撰写冒险日志</div>'""")
 
 # ---------------- 03 冒险日志 ----------------
 a("""                    + card('<div class="between"><span style="font-size:12.5px;font-weight:600">'
@@ -168,9 +168,9 @@ a("""               body=card('<div class="tiny" style="margin-bottom:10px">三�
                          + shishi("happy", 46, "floaty fast") + "</div>"
                          '<div class="stack" style="margin-top:6px">'""")
 
-a("""                         '<div class="tiny">知拾冒险社 · 冒险探险日志</div>'
+a("""                         '<div class="tiny">知拾冒险社 · 冒险日志</div>'
                          '<div style="font-size:19px;font-weight:700;line-height:1.55;margin-top:16px">'""",
-  """                         '<div class="tiny">知拾冒险社 · 冒险探险日志</div>'
+  """                         '<div class="tiny">知拾冒险社 · 冒险日志</div>'
                          '<div style="display:flex;justify-content:center;margin-top:6px">'
                          + shishi("win", 86, "floaty") + "</div>"
                          '<div style="font-size:19px;font-weight:700;line-height:1.55;margin-top:8px">'""")

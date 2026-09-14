@@ -39,12 +39,10 @@ elif which == "av":
                        for k in K.AV_ORDER[3:]]))
 elif which == "small":
     blocks.append("<div style='font-size:12px;color:#6B5A45'>真实使用尺寸 · 上排 56px，下排 30px</div>")
-    blocks.append(row([cell(n, f(S2), pad=10) for n, f, S2 in [
-        ("拾拾", K.shishi, 56), ("墨墨", K.momo, 56), ("纸鸢", K.crane, 56),
-        ("铜宝", K.tongbao, 56)]]))
-    blocks.append(row([cell(n, f(30), pad=8) for n, f, S2 in [
-        ("拾拾", K.shishi, 56), ("墨墨", K.momo, 56), ("纸鸢", K.crane, 56),
-        ("铜宝", K.tongbao, 56)]]))
+    blocks.append(row([cell(n, f(56), pad=10) for n, f in [
+        ("拾拾", K.shishi), ("墨墨", K.momo), ("鸢鸢", K.yuanyuan), ("铜宝", K.tongbao)]]))
+    blocks.append(row([cell(n, f(30), pad=8) for n, f in [
+        ("拾拾", K.shishi), ("墨墨", K.momo), ("鸢鸢", K.yuanyuan), ("铜宝", K.tongbao)]]))
 elif which == "avsmall":
     blocks.append(row([cell(K.AV_NAME[k], K.adv_avatar(k, 44), "#FEFCF6", 8)
                        for k in K.AV_ORDER]))

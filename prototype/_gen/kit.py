@@ -119,13 +119,18 @@ a{color:var(--magic);text-decoration:none;}
 .screen.scroll{overflow-y:auto;}
 .spacer{flex:1;}
 
-.tabbar{flex:none;height:56px;border-top:1px dashed rgba(150,120,72,.45);display:flex;
+.tabbar{flex:none;height:58px;border-top:1px dashed rgba(150,120,72,.45);display:flex;
   background:var(--paper2);padding-bottom:7px;}
-.tabbar>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-  font-size:10.5px;color:var(--ink3);}
+.tabbar>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:10.5px;color:var(--ink3);position:relative;}
 .tabbar>div.on{color:var(--magic);font-weight:600;}
-.dot{width:17px;height:17px;border-radius:4px;background:var(--paper3);}
-.tabbar>div.on .dot{background:var(--magic);}
+.tabbar>div.on::after{content:"";position:absolute;top:0;width:26px;height:2px;border-radius:0 0 2px 2px;
+  background:var(--magic);}
+.tabbar svg{display:block;width:21px;height:21px;flex:none;}
+/* 通用线性图标语法：fi 描边、so 填充，颜色一律跟随 currentColor */
+.fi{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;
+  stroke-linejoin:round;}
+.so{fill:currentColor;stroke:none;}
 
 /* ================= 材质层级 =================
    L0 裸内容      —— 什么都不装，直接落在纸上
@@ -379,12 +384,36 @@ def nav(title, back=True, right=""):
             '<span class="nvr">' + right + "</span></div>")
 
 
+# 底部标签栏：5 个一级入口。
+# 每个入口配一个可区分的图形 —— 5 个标签只靠文字认路太慢，且原先所有标签
+# 共用同一个灰方块 `dot`，等于没有图标。active 索引即本列表下标。
+TAB_ITEMS = [
+    ("社团大厅",
+     '<path class="fi" d="M3 9.4 10 3.6l7 5.8"/><path class="fi" d="M5.3 8.6v7.8h9.4V8.6"/>'
+     '<path class="fi" d="M8.2 16.4v-4.1h3.6v4.1"/>'),
+    ("卷轴工坊",
+     '<path class="fi" d="M5.2 2.8h6.2l3.4 3.4v11H5.2z"/><path class="fi" d="M11.4 2.8v3.4h3.4"/>'
+     '<path class="fi" d="M10 10.4v4M8 12.4h4"/>'),
+    ("冒险日志",
+     '<path class="fi" d="M10 5.8C8.5 4.6 6.3 4.2 3.7 4.4v10.8c2.6-.2 4.8.2 6.3 1.4 1.5-1.2 3.7-1.6 '
+     '6.3-1.4V4.4C13.7 4.2 11.5 4.6 10 5.8z"/><path class="fi" d="M10 5.8v10.8"/>'),
+    ("公会社交",
+     '<circle class="fi" cx="7.6" cy="7.4" r="2.7"/>'
+     '<path class="fi" d="M3.3 16.4c0-2.7 1.9-4.6 4.3-4.6s4.3 1.9 4.3 4.6"/>'
+     '<circle class="fi" cx="14.1" cy="8.3" r="2.1"/>'
+     '<path class="fi" d="M12.7 12.5c1.9.3 3.3 1.9 3.3 3.9"/>'),
+    ("我的",
+     '<circle class="fi" cx="10" cy="7" r="3"/>'
+     '<path class="fi" d="M4.7 16.9c0-3.1 2.4-5.4 5.3-5.4s5.3 2.3 5.3 5.4"/>'),
+]
+
+
 def tabbar(active=0):
-    names = ["社团大厅", "卷轴工坊", "探险日志", "我的"]
     out = []
-    for i, n in enumerate(names):
-        cls = " class=\"on\"" if i == active else ""
-        out.append("<div" + cls + '><span class="dot"></span>' + n + "</div>")
+    for i, (n, ico) in enumerate(TAB_ITEMS):
+        cls = ' class="on"' if i == active else ""
+        out.append("<div" + cls + '><svg viewBox="0 0 20 20" aria-hidden="true">'
+                   + ico + "</svg>" + n + "</div>")
     return '<div class="tabbar">' + "".join(out) + "</div>"
 
 
@@ -442,17 +471,29 @@ def bar(pct, cls="", style=""):
     return '<div class="' + c + '"' + s + '><i style="width:' + str(pct) + '%"></i></div>'
 
 
-def ring(pct, color="#2F7D4F", size=84, stroke=9, label=None, track="#E6D6B4", lab_size=19):
+def ring(pct, color="#2F7D4F", size=84, stroke=9, label=None, track="#E6D6B4", lab_size=19,
+         sub=None, sub_size=8.5, tint=True):
+    """环形进度。环心默认是空的，但只要给了 label 就一定要给 sub ——
+    单独一个大数字读不出「这是什么」，配一行小字说明才成立。
+    tint 会在环内铺一层极淡的主色，避免环心显得空荡。"""
     r = (size - stroke) / 2.0
     c = 2 * 3.14159265 * r
     off = c * (1 - pct / 100.0)
     cx = cy = size / 2.0
     txt = ""
+    if tint:
+        txt += ('<circle cx="' + str(cx) + '" cy="' + str(cy) + '" r="'
+                + str(round(r - stroke / 2.0 - 1, 1)) + '" fill="' + color + '" opacity=".09"/>')
     if label is not None:
-        txt = ('<text x="' + str(cx) + '" y="' + str(cy) + '" text-anchor="middle" '
-               'dominant-baseline="central" font-size="' + str(lab_size) + '" '
-               'font-weight="800" fill="#2A2018" '
-               'font-family="Baloo 2, sans-serif">' + label + "</text>")
+        dy = -3.6 if sub else 0
+        txt += ('<text x="' + str(cx) + '" y="' + str(cy + dy) + '" text-anchor="middle" '
+                'dominant-baseline="central" font-size="' + str(lab_size) + '" '
+                'font-weight="800" fill="#2A2018" '
+                'font-family="Baloo 2, sans-serif">' + label + "</text>")
+    if sub:
+        txt += ('<text x="' + str(cx) + '" y="' + str(cy + lab_size * 0.62 + 2) + '" '
+                'text-anchor="middle" dominant-baseline="central" font-size="' + str(sub_size)
+                + '" font-weight="600" fill="#8A7A62">' + sub + "</text>")
     return ('<svg width="' + str(size) + '" height="' + str(size) + '" viewBox="0 0 '
             + str(size) + " " + str(size) + '" style="flex:none">'
             '<circle cx="' + str(cx) + '" cy="' + str(cy) + '" r="' + str(r) + '" fill="none" stroke="'
@@ -890,69 +931,123 @@ SKIN = "#FBEBD9"
 SKIN_L = "#C9A583"
 
 
+# 发型基底：外弧贴着颅顶，内缘收成一道刘海。所有款式共用，再叠各自的头饰。
+HAIR_D = ("M28.5 47A21.5 21.5 0 0 1 71.5 47C64.5 41.5 58.5 38.5 50 38.5"
+          "C41.5 38.5 35.5 41.5 28.5 47Z")
+
+
 def adv_avatar(kind="apprentice", size=38, cls=""):
     """冒险者头像。6 款职业，替换原先的纯色圆占位。
 
-    全部收在圆形内，同一张脸 + 不同头饰，保证小尺寸下靠剪影与色相即可区分。"""
+    绘制顺序：底圆 → 肩 → 头饰后层 → 耳 → 头 → 五官 → 头发 → 头饰前层。
+    两条硬约束，都是上一版踩过坑之后定下的：
+    ① 任何头饰的前缘不得越过眉线（y≈41），否则会盖住眼睛 —— 骑士旧版整张
+       脸被头盔罩住，就是这个原因；
+    ② 肩用中间调、发与头饰用深调，头饰才能在肩上有轮廓，不会糊成一团。
+
+    六款的剪影刻意拉开：学徒（圆发 + 翘毛）、游侠（尖顶兜帽）、法师（尖顶
+    宽檐帽）、骑士（盔顶 + 红缨）、学者（两侧垂发 + 圆框眼镜）、工匠（工帽 +
+    额上护目镜）。28px 下靠外轮廓即可区分。"""
     bg, ring, deep = AV.get(kind, AV["apprentice"])
     uid = _aid()
-    g = []
-    g.append('<circle cx="50" cy="50" r="47" fill="' + bg + '"/>')
-    g.append('<g clip-path="url(#' + uid + ')">')
-    g.append('<path d="M50 62c19 0 34 17 34 40H16c0-23 15-40 34-40z" fill="' + deep
-             + '" opacity=".92"/>')
+    g = ['<circle cx="50" cy="50" r="47" fill="' + bg + '"/>',
+         '<g clip-path="url(#' + uid + ')">']
+    # 肩
+    g.append('<path d="M50 64c19 0 34 17 34 40H16c0-23 15-40 34-40z" fill="' + ring + '"/>')
+
+    # 头饰 · 后层
     if kind == "ranger":
-        g.append('<path d="M50 14c17 0 28 13 28 30 0 9-2 16-5 22-6-12-13-18-23-18s-17 6-23 18'
-                 'c-3-6-5-13-5-22 0-17 11-30 28-30z" fill="' + deep + '" stroke="' + ring
-                 + '" stroke-width="2" stroke-linejoin="round"/>')
-    g.append('<circle cx="29" cy="48" r="4.6" fill="' + SKIN + '" stroke="' + SKIN_L
-             + '" stroke-width="2"/>')
-    g.append('<circle cx="71" cy="48" r="4.6" fill="' + SKIN + '" stroke="' + SKIN_L
-             + '" stroke-width="2"/>')
-    g.append('<ellipse cx="50" cy="46" rx="20" ry="21" fill="' + SKIN + '" stroke="' + SKIN_L
+        # 兜帽：顶部收窄成尖，下摆在中线开一道 V 口
+        g.append('<path d="M50 9C57 9 65 18 70 30c5 10 8 20 8 26 0 13-4 21-15 27l-13-5-13 5'
+                 'c-11-6-15-14-15-27 0-6 3-16 8-26C35 18 43 9 50 9z" fill="' + deep
+                 + '" stroke="' + ring + '" stroke-width="2" stroke-linejoin="round"/>')
+    elif kind == "scholar":
+        g.append('<path d="M28 42c-3 10-3 20 0 28l10-4c-3-8-3-16-2-24z" fill="' + deep + '"/>')
+        g.append('<path d="M72 42c3 10 3 20 0 28l-10-4c3-8 3-16 2-24z" fill="' + deep + '"/>')
+
+    # 耳（会被长发或盔片遮住的款式不画，免得耳朵浮在头饰上面）
+    if kind in ("apprentice", "mage", "artisan"):
+        g.append('<circle cx="29" cy="47" r="4.4" fill="' + SKIN + '" stroke="' + SKIN_L
+                 + '" stroke-width="2"/>')
+        g.append('<circle cx="71" cy="47" r="4.4" fill="' + SKIN + '" stroke="' + SKIN_L
+                 + '" stroke-width="2"/>')
+
+    # 头
+    g.append('<ellipse cx="50" cy="46" rx="21" ry="22" fill="' + SKIN + '" stroke="' + SKIN_L
              + '" stroke-width="2.2"/>')
-    g.append('<circle cx="43" cy="46" r="3.6" fill="' + INK + '"/>')
-    g.append('<circle cx="57" cy="46" r="3.6" fill="' + INK + '"/>')
-    g.append('<ellipse cx="37" cy="53" rx="4.4" ry="2.6" fill="' + BLUSH + '" opacity=".6"/>')
-    g.append('<ellipse cx="63" cy="53" rx="4.4" ry="2.6" fill="' + BLUSH + '" opacity=".6"/>')
-    g.append('<path d="M46 55q4 3.6 8 0" fill="none" stroke="' + INK
-             + '" stroke-width="1.8" stroke-linecap="round"/>')
-    if kind == "apprentice":
-        g.append('<path d="M29.5 37c3-12.5 11-19 20.5-19s17.5 6.5 20.5 19" fill="none" stroke="'
-                 + deep + '" stroke-width="9" stroke-linecap="round"/>')
-        g.append('<circle cx="30" cy="37" r="4.2" fill="' + deep + '" stroke="' + ring
-                 + '" stroke-width="1.6"/>')
-        g.append('<path d="M30 41l-7 7 5 3 5-7z" fill="' + deep + '" stroke="' + ring
-                 + '" stroke-width="1.4" stroke-linejoin="round"/>')
-    elif kind == "ranger":
-        g.append('<path d="M50 22c7 0 12 4 14 10-3-3-8-5-14-5s-11 2-14 5c2-6 7-10 14-10z" fill="'
-                 + ring + '" opacity=".75"/>')
-    elif kind == "mage":
-        g.append('<path d="M50 2 74 38 26 38Z" fill="' + deep + '" stroke="' + ring
-                 + '" stroke-width="2.2" stroke-linejoin="round"/>')
-        g.append('<ellipse cx="50" cy="37" rx="30" ry="6.6" fill="' + deep + '" stroke="' + ring
+
+    # 五官。眼睛加一枚高光，这是让整张脸「活」起来最省的一笔
+    if kind != "scholar":
+        g.append('<path d="M38 39q4.5-3.8 9 0M53 39q4.5-3.8 9 0" fill="none" stroke="' + SKIN_L
+                 + '" stroke-width="1.6" stroke-linecap="round"/>')
+    g.append('<circle cx="42.5" cy="47" r="3.5" fill="' + INK + '"/>'
+             '<circle cx="57.5" cy="47" r="3.5" fill="' + INK + '"/>'
+             '<circle cx="41.3" cy="45.7" r="1.25" fill="#FFF"/>'
+             '<circle cx="56.3" cy="45.7" r="1.25" fill="#FFF"/>')
+    g.append('<path d="M50 50.6v3.4" stroke="' + SKIN_L + '" stroke-width="1.6" '
+             'stroke-linecap="round"/>')
+    g.append('<path d="M45.6 57.4q4.4 3.8 8.8 0" fill="none" stroke="' + INK
+             + '" stroke-width="1.9" stroke-linecap="round"/>')
+    g.append('<ellipse cx="36" cy="54" rx="4.6" ry="2.8" fill="' + BLUSH + '" opacity=".55"/>')
+    g.append('<ellipse cx="64" cy="54" rx="4.6" ry="2.8" fill="' + BLUSH + '" opacity=".55"/>')
+
+    # 头发。兜帽款不画刘海 —— 兜帽与头发同色，画了只会让头变成一个色块，
+    # 脸反而看不出边缘；改用帽口的一道中间调描边来交代「脸从帽口露出来」。
+    if kind != "ranger":
+        g.append('<path d="' + HAIR_D + '" fill="' + deep + '"/>')
+
+    # 头饰 · 前层
+    if kind == "ranger":
+        # 帽口：一圈比脸大一点点的中间调描边，把脸和兜帽分开
+        g.append('<ellipse cx="50" cy="46" rx="22.8" ry="23.8" fill="none" stroke="' + ring
                  + '" stroke-width="2.2"/>')
-        g.append('<g transform="rotate(-14 64 20)">' + star_path(64, 20, 5.4, GOLD, GOLD_LINE)
+        g.append('<path d="M50 9c3.4 0 6.4 2.6 8.6 7.4" fill="none" stroke="' + ring
+                 + '" stroke-width="2" stroke-linecap="round" opacity=".85"/>')
+    elif kind == "apprentice":
+        # 头顶翘起的三撮毛 —— 最省笔墨的「还没出师」标记
+        g.append('<path d="M45 26c-1.4-6 .6-10 2.6-12.2M50 25c0-6.2 1-9.6 3-12.2'
+                 'M55 26c1.4-5.2 3.4-8.2 5.4-10.2" fill="none" stroke="' + deep
+                 + '" stroke-width="3" stroke-linecap="round"/>')
+    elif kind == "mage":
+        g.append('<path d="M50 2 74 37 26 37Z" fill="' + deep + '" stroke="' + ring
+                 + '" stroke-width="2.2" stroke-linejoin="round"/>')
+        g.append('<ellipse cx="50" cy="36" rx="30" ry="6.4" fill="' + deep + '" stroke="' + ring
+                 + '" stroke-width="2.2"/>')
+        g.append('<g transform="rotate(-14 64 19)">' + star_path(64, 19, 5.2, GOLD, GOLD_LINE)
                  + "</g>")
     elif kind == "knight":
-        g.append('<path d="M28 48c0-13 10-23 22-23s22 10 22 23z" fill="' + deep + '" stroke="'
+        # 开面盔：盔顶停在眉线之上，两颊护片只包住脸的外侧，中间完全露出
+        g.append('<path d="M29 41c0-12 9-21 21-21s21 9 21 21z" fill="' + deep + '" stroke="'
                  + ring + '" stroke-width="2.2" stroke-linejoin="round"/>')
-        g.append('<path d="M50 25v25" stroke="' + ring + '" stroke-width="2.6"/>')
-        g.append('<path d="M52 24c0-9 6-14 13-17-3 9-5 13-5 18z" fill="' + SEAL + '" stroke="#7A2820" '
-                 'stroke-width="1.6" stroke-linejoin="round"/>')
+        g.append('<path d="M28 41h44" stroke="' + ring + '" stroke-width="2.2"/>')
+        g.append('<path d="M29 41v15c0 6 3 10 7 11V41z" fill="' + deep + '" stroke="' + ring
+                 + '" stroke-width="2" stroke-linejoin="round"/>')
+        g.append('<path d="M71 41v15c0 6-3 10-7 11V41z" fill="' + deep + '" stroke="' + ring
+                 + '" stroke-width="2" stroke-linejoin="round"/>')
+        g.append('<path d="M52 20c0-8 6-13 13-16-3 9-5 12-5 17z" fill="' + SEAL
+                 + '" stroke="#7A2820" stroke-width="1.6" stroke-linejoin="round"/>')
     elif kind == "scholar":
-        g.append('<circle cx="43" cy="46" r="7" fill="none" stroke="' + deep + '" stroke-width="2.2"/>')
-        g.append('<circle cx="57" cy="46" r="7" fill="none" stroke="' + deep + '" stroke-width="2.2"/>')
-        g.append('<path d="M50 46h0.6" stroke="' + deep + '" stroke-width="2.2"/>')
-        g.append('<path d="M30 38c4-9 11-13 20-13s16 4 20 13" fill="none" stroke="' + deep
-                 + '" stroke-width="2.4" stroke-linecap="round" opacity=".5"/>')
+        # 圆框眼镜：镜片比眼睛大一圈，眼睛仍露在镜片里 —— 这才是它读得出来的原因
+        g.append('<circle cx="42.5" cy="47" r="6.4" fill="#FFFDF6" fill-opacity=".2" stroke="'
+                 + deep + '" stroke-width="2"/>')
+        g.append('<circle cx="57.5" cy="47" r="6.4" fill="#FFFDF6" fill-opacity=".2" stroke="'
+                 + deep + '" stroke-width="2"/>')
+        g.append('<path d="M48.9 47h2.2M36.1 47h-6M63.9 47h6" stroke="' + deep
+                 + '" stroke-width="2" stroke-linecap="round"/>')
     elif kind == "artisan":
-        g.append('<path d="M30 38c4-9 11-13 20-13s16 4 20 13" fill="none" stroke="' + deep
-                 + '" stroke-width="6" stroke-linecap="round"/>')
-        g.append('<circle cx="43" cy="46" r="6.4" fill="#FDF6E3" fill-opacity=".45" stroke="'
+        # 工帽 + 推到额上的护目镜。护目镜必须画出镜桥与两侧绑带，否则两个
+        # 亮圆片落在额头上会被读成「第二双眼睛」。
+        g.append('<path d="M30 37c0-8 9-14 20-14s20 6 20 14z" fill="' + deep + '"/>')
+        g.append('<path d="M27 37h46" stroke="' + deep + '" stroke-width="3.4" '
+                 'stroke-linecap="round"/>')
+        g.append('<path d="M37.6 29.5H32M62.4 29.5H68" stroke="' + deep + '" stroke-width="2.2" '
+                 'stroke-linecap="round"/>')
+        g.append('<circle cx="43" cy="29.5" r="5.4" fill="#FDF6E3" fill-opacity=".5" stroke="'
                  + deep + '" stroke-width="2.2"/>')
-        g.append('<circle cx="57" cy="46" r="6.4" fill="#FDF6E3" fill-opacity=".45" stroke="'
+        g.append('<circle cx="57" cy="29.5" r="5.4" fill="#FDF6E3" fill-opacity=".5" stroke="'
                  + deep + '" stroke-width="2.2"/>')
+        g.append('<path d="M48.4 29.5h3.2" stroke="' + deep + '" stroke-width="2.2" '
+                 'stroke-linecap="round"/>')
     g.append("</g>")
     g.append('<circle cx="50" cy="50" r="47" fill="none" stroke="' + ring + '" stroke-width="2"/>')
     g.append('<defs><clipPath id="' + uid + '"><circle cx="50" cy="50" r="46"/></clipPath></defs>')

@@ -4,7 +4,7 @@ import kit as K
 from kit import (card, slip, stamp, rule, btn, opt, bar, ring, li, phone, grid, doc,
                  nav, tabbar, magic, shishi, stage, coin, chest, medal, sparkle,
                  scroll_icon, scrollbox, momo, yuanyuan, tongbao, adv_avatar,
-                 AV_ORDER, AV_NAME)
+                 AV_ORDER, AV_NAME, TAB_ITEMS)
 
 OUT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -31,6 +31,39 @@ def spec(title, items):
 
 def sec(title, desc, inner):
     return ('<section class="ds-sec"><h2>' + title + "</h2><p>" + desc + "</p>" + inner + "</section>")
+
+
+# 标签 → 包含页面。这份映射是 IA 的唯一来源：页面底部的 tabbar(n) 必须与此一致。
+NAV_PAGES = [
+    ("社团大厅", "启动、社团大厅（空态 / 已输入）、召唤中、副本确认、通关结算"),
+    ("卷轴工坊", "卷轴工坊 05 全部 8 屏：输入方式 / 上传文档 / 解析中 / 链接 / 知识库 / 出题参数"),
+    ("冒险日志", "冒险日志 03 全部 8 屏：报告主视图 / 知识总结 / 复习建议 / 分享海报 / 历史日志"),
+    ("公会社交", "公会社交 06 全部 6 屏：PK 邀请 / 等待 / 对战答题 / 对战结算 / 排行榜 / 分享卡"),
+    ("我的", "冒险者档案 04 全部 9 屏 + 会员与设置 07 全部 8 屏"),
+]
+
+
+def navspec():
+    """导航与标签栏。把「哪个页面归哪个标签」写死在这里，避免再出现
+    「公会社交与冒险日志同时高亮在冒险日志下」这类归属冲突。"""
+    bar = ('<div style="max-width:390px;border:1px solid #D9C6A4;border-radius:14px;'
+           'overflow:hidden;background:#FFFDF6;margin-bottom:16px">' + tabbar(3) + "</div>")
+    cards = ('<div class="ds-row">' + "".join(
+        '<div style="flex:1;min-width:148px;background:#FEFCF6;border:1px solid #D9C6A4;'
+        'border-radius:12px;padding:14px 12px">'
+        '<svg viewBox="0 0 20 20" style="width:24px;height:24px;display:block;color:#2F6BD8">'
+        + ico + "</svg>"
+        '<div style="font-size:12.5px;font-weight:700;margin-top:9px;color:#2A2018">' + nm
+        + '</div><div class="tiny" style="margin-top:6px;line-height:1.6">' + pages + "</div></div>"
+        for (nm, ico), (_, pages) in zip(TAB_ITEMS, NAV_PAGES)) + "</div>")
+    return bar + cards + spec("导航规则", [
+        "一级入口固定 5 个，不再增加——底部导航超过 5 个就会挤掉文字标签",
+        "一个屏只能高亮一个标签，且必须与该屏的实际归属一致，不一致即视为 bug",
+        "高亮态 = 魔法蓝图标 + 文字 + 顶部 2px 指示条；未选中用次级墨色，仅靠颜色深浅区分",
+        "流程内页面（答题、结算、生成中）不挂标签栏，避免答题时误触导致中途退出",
+        "术语统一为「冒险日志」，不使用「探险日志」，与需求文档保持同一套词",
+        "层级不超过两级：标签 → 列表 → 详情；列表页保留标签栏，详情页只留返回",
+    ])
 
 
 def plaque(svg, name, role, where, w=126, bg="#FEFCF6"):
@@ -161,7 +194,8 @@ def build_ds():
             + "</div>"
             + '<div style="width:230px;display:flex;align-items:center;gap:18px;background:#FEFCF6;'
               'border:1px solid #D9C6A4;border-radius:16px;padding:16px;">'
-            + ring(80, label="80%") + ring(60, color="#C8912A", label="60%")
+            + ring(80, label="80%", sub="正确率")
+            + ring(60, color="#C8912A", label="60%", sub="完成度")
             + "</div>"
             + spec("进度与经验值", [
                 "答题进度条固定在顶部，答错也让进度前进，避免卡住的挫败感",
@@ -190,14 +224,14 @@ def build_ds():
                 'display:flex;gap:16px;align-items:center;">'
               + '<div class="badge">1</div><div class="badge rare">3</div>'
               + '<div class="badge off">7</div><div class="medal">' + medal(46) + '</div>'
-              + '<div class="row" style="gap:10px">'
-              + adv_avatar("scholar", 40) + adv_avatar("mage", 40)
-              + adv_avatar("knight", 40) + "</div>"
+              + '<div class="row" style="gap:9px">'
+              + "".join(adv_avatar(k, 40) for k in AV_ORDER) + "</div>"
               + "</div>"
               + spec("勋章与头像", [
                   "勋章用圆形金底 + 描边，未解锁降饱和并保留轮廓",
                   "等级 1 到 3 用金，稀有与连击成就用紫",
                   "头像统一 6 款职业形象，最小 28px，最大 84px（公会卡与海报）",
+                  "一排 6 个头像是上限；名单里超过 6 人就换行，不再压缩尺寸",
                   "勋章墙按 4 列排布，一行不超过 4 个",
               ])
               + "</div>")
@@ -282,20 +316,20 @@ def build_ds():
                + "</div>")
 
     avatars = ('<div class="ds-row" style="gap:12px">'
-               + "".join(plaque(adv_avatar(k, 74), AV_NAME[k], "冒险者头像",
-                                where, w=104)
-                         for k, where in [
-                             ("apprentice", "新注册用户<br>Lv.1–2"),
-                             ("ranger", "探索型学习者"),
-                             ("mage", "重度用户<br>Lv.4 以上"),
-                             ("knight", "PK 与对战场景"),
-                             ("scholar", "默认身份<br>「检索者」"),
-                             ("artisan", "知识库创建者")])
+               + "".join(plaque(adv_avatar(k, 74), AV_NAME[k], sig, where, w=104)
+                         for k, sig, where in [
+                             ("apprentice", "短发 + 翘毛", "新注册用户<br>Lv.1–2"),
+                             ("ranger", "尖顶兜帽", "探索型学习者"),
+                             ("mage", "尖顶宽檐帽", "重度用户<br>Lv.4 以上"),
+                             ("knight", "开面盔 + 红缨", "PK 与对战场景"),
+                             ("scholar", "垂发 + 圆框眼镜", "默认身份<br>「检索者」"),
+                             ("artisan", "工帽 + 护目镜", "知识库创建者")])
                + spec("头像为什么必须有形象", [
                    "旧方案用纯色圆占位，导致公会成员、排行榜、好友列表读起来是同一个人",
                    "头像承担社交识别：名单里必须一眼看出「这是谁」，而不是第几个色块",
                    "六款职业与「冒险者」世界观同源，同时映射用户的学习阶段",
-                   "同一张脸 + 不同头饰，小到 28px 仍可靠剪影与色相区分",
+                   "区分手段是头饰剪影，不是表情——小到 28px 仍可靠轮廓与色相认出是哪一款",
+                   "所有头饰前缘都停在眉线之上，六款没有一款会遮住眼睛",
                    "头像不出现在正文里，只出现在身份位；正文用印章与图标",
                ])
                + "</div>")
@@ -333,6 +367,10 @@ def build_ds():
                 "整套界面只有三种材质：纸面、纸片、印章。内容默认不装进盒子，"
                 "层级靠材质而不是阴影来区分，全站没有一处通用的柔和卡影。",
                 mat)
+            + sec("导航与标签栏",
+                  "五个一级入口，每个入口配一个可区分的图形——只靠文字认路太慢。"
+                  "下表同时是页面归属的唯一来源：任何一屏底部的标签高亮都必须与它一致。",
+                  navspec())
             + sec("角色谱系", "四个角色，各有分工，互不抢戏：拾拾负责流程与情绪，"
                              "墨墨负责知识，鸢鸢负责社交，铜宝负责收获。"
                              "它们共用同一套墨线与平涂，但剪影刻意互相区分——"
@@ -507,7 +545,7 @@ def build_01():
                            + '<div><div style="font-size:13px;font-weight:600">正确率 4 / 5</div>'
                            '<div class="tiny" style="margin-top:4px">超过社团里 72% 的冒险者</div></div></div>')
                     + '<div class="spacer"></div>'
-                    + btn("查看冒险探险日志")
+                    + btn("查看冒险日志")
                     + btn("再来一局", "ghost"))
 
     html = doc("01", "核心业务闭环",
@@ -638,7 +676,7 @@ def build_02():
                            '<div style="font-size:13px;font-weight:600;margin-top:6px">错误</div></div>', "plain")
                     + "</div>"
                     + '<div class="spacer"></div>'
-                    + '<div class="tiny" style="text-align:center">这是本局最后一题，作答后生成探险日志</div>')
+                    + '<div class="tiny" style="text-align:center">这是本局最后一题，作答后生成冒险日志</div>')
 
     s7 = phone("讲解折叠态",
                head=nav("挑战副本", right="2 / 5"),
@@ -687,7 +725,7 @@ def build_02():
                body='<div class="spacer"></div>'
                     '<div style="display:flex;flex-direction:column;align-items:center;gap:18px">'
                     + stage(160, "excited") +
-                    '<div style="text-align:center"><div class="h">正在撰写冒险探险日志</div>'
+                    '<div style="text-align:center"><div class="h">正在撰写冒险日志</div>'
                     '<div class="sub" style="margin-top:6px">统计答题情况并生成复盘报告</div></div>'
                     + bar(76, "blue", "width:180px") + "</div>"
                     '<div class="spacer"></div>'
@@ -713,11 +751,13 @@ def build_02():
 # 03 冒险日志
 # =====================================================================
 def build_03():
-    s1 = phone("探险日志 · 主视图",
-               head=nav("冒险探险日志", right="分享"),
+    s1 = phone("冒险日志 · 主视图",
+               head=nav("冒险日志", right="分享"),
                desc="报告首屏。正确率是唯一的大数字，其余信息逐层展开。",
-               title="正确率用环形图而非数字，环的缺口让「还没满」这件事被看见。",
-               body=card('<div class="row" style="gap:16px">' + ring(80, size=88)
+               title="环形图负责「还剩多少没满」，环心的数字负责「到底是多少」——"
+                     "两者合起来才不用让人自己换算刻度。",
+               body=card('<div class="row" style="gap:14px">'
+                         + ring(80, size=88, label="80%", sub="正确率", lab_size=21)
                          + '<div><div class="h">RAG 入门闯关</div>'
                          '<div class="tiny" style="margin-top:6px">2026-09-14 · 用时 3 分 12 秒</div>'
                          '<div class="row" style="margin-top:10px;gap:6px">'
@@ -789,7 +829,7 @@ def build_03():
                            '建议接着学「RAG 的落地实践」，把这次的概念用到真实场景里。</div>'
                            '<div style="height:10px"></div>' + btn("召唤新副本", "sm") + "</div></div>")
                     + '<div class="spacer"></div>'
-                    + btn("回到探险日志", "ghost"))
+                    + btn("回到冒险日志", "ghost"))
 
     s4 = phone("分享海报",
                head=nav("分享海报", right="保存"),
@@ -797,14 +837,14 @@ def build_03():
                desc="Canvas 生成的金句海报，不含排名，避免社交压力。",
                title="海报固定 750 × 1334，含学习金句、正确率与小程序码，可直接保存转发。",
                body=card('<div style="text-align:center;padding:10px 6px">'
-                         '<div class="tiny">知拾冒险社 · 冒险探险日志</div>'
+                         '<div class="tiny">知拾冒险社 · 冒险日志</div>'
                          '<div style="display:flex;justify-content:center;margin-top:6px">'
                          + yuanyuan(86) + "</div>"
                          '<div style="font-size:19px;font-weight:700;line-height:1.55;margin-top:8px">'
                          '把知识做成关卡，<br>记忆会更深。</div>'
                          '<div style="height:18px"></div>'
-                         + ring(80, size=76, label="80%") +
-                         '<div class="tiny" style="margin-top:10px">RAG 入门 · 5 题 · 正确率</div>'
+                         + ring(80, size=76, label="80%", sub="正确率") +
+                         '<div class="tiny" style="margin-top:10px">RAG 入门闯关 · 5 题 · 全对 4 题</div>'
                          '<div style="height:16px"></div>'
                          '<div class="row" style="justify-content:center;gap:6px">'
                          '<span class="pill gold">+180 XP</span><span class="pill blue">Lv.3</span></div>'
@@ -835,7 +875,7 @@ def build_03():
                     '<div class="spacer"></div>')
 
     s6 = phone("生成失败",
-               head=nav("探险日志"),
+               head=nav("冒险日志"),
                desc="报告或海报生成失败时，保留全部答题数据。",
                title="失败文案给出具体原因与重试动作，不用「操作失败」这类无信息量的提示。",
                body='<div class="spacer"></div>'
@@ -857,13 +897,13 @@ def build_03():
                     + shishi("sad", 96) +
                     '<div style="text-align:center"><div class="h">网络好像断开了</div>'
                     '<div class="body sm" style="margin-top:8px">'
-                    '已下载的探险日志仍可查看，召唤副本需要联网。</div></div></div>'
+                    '已下载的冒险日志仍可查看，召唤副本需要联网。</div></div></div>'
                     '<div class="spacer"></div>'
                     + btn("重新连接")
                     + btn("查看历史日志", "ghost"))
 
     s8 = phone("历史日志",
-               head=nav("历史探险日志"),
+               head=nav("历史冒险日志"),
                foot=tabbar(2),
                desc="所有闯关记录的入口，按时间倒序。",
                title="每条记录显示正确率与获得 XP，点击进入当时的报告，可完整回看。",
@@ -888,7 +928,7 @@ def build_03():
                     + shishi("sleep", 64)
                     + '<div class="tiny">已经到底了 · 共 12 份日志</div></div>')
 
-    html = doc("03", "冒险探险日志",
+    html = doc("03", "冒险日志",
                "通关之后的复盘与分享，共 8 屏。这一组承担产品的第二个核心价值——"
                "让一次闯关变成可留存、可回看、可传播的学习资产。"
                "报告只做三件事：告诉用户学得怎么样、哪里薄弱、接下来做什么。"

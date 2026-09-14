@@ -11,6 +11,10 @@ def check(path):
     for i, t in enumerate(toks):
         if t.type != tokenize.NAME or t.string != "phone":
             continue
+        # 跳过函数定义行（def phone(...)）—— 它本来就不以换行结尾，
+        # 之前会稳定误报一次，干扰判断。
+        if i > 0 and toks[i - 1].string == "def":
+            continue
         if i + 1 >= len(toks) or toks[i + 1].string != "(":
             continue
         depth = 0
@@ -35,7 +39,10 @@ def check(path):
         if nxt is None or nxt.type != tokenize.NEWLINE:
             problems.append((t.start[0], "闭合位置异常 -> 行 %d %r"
                              % (toks[j].start[0], nxt.string if nxt else "EOF")))
-    return len([t for t in toks if t.type == tokenize.NAME and t.string == "phone"]), problems
+    calls = [i for i, t in enumerate(toks)
+             if t.type == tokenize.NAME and t.string == "phone"
+             and not (i > 0 and toks[i - 1].string == "def")]
+    return len(calls), problems
 
 
 for f in sys.argv[1:]:

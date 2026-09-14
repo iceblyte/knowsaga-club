@@ -20,9 +20,16 @@ PEERS = [
 AV_OF = dict(zip([n for _, n, _ in PEERS] + [ME[1]], [k for k, _, _ in PEERS] + [ME[0]]))
 
 
+def av_of(name):
+    """按名字取头像款式。允许列表里给名字加「（我）」等后缀做标注，
+    查找时先剥掉后缀，避免同一个人在不同页面换了张脸。"""
+    key = name.split("（")[0].strip()
+    return AV_OF.get(key, "apprentice")
+
+
 def who(name, desc="", lv="", size=38):
     """身份位：头像 + 姓名 + 副信息。取代原先的纯色圆占位。"""
-    k = AV_OF.get(name, "apprentice")
+    k = av_of(name)
     d = desc or lv
     return ('<div class="who">' + adv_avatar(k, size) + '<div class="tx">'
             + '<div class="n">' + name + '</div>'
@@ -95,7 +102,7 @@ def dmark(ch, bg, line, fg):
 def build_04():
     s1 = phone("个人中心",
                head=nav("我的档案", back=False, right="设置"),
-               foot=tabbar(3),
+               foot=tabbar(4),
                desc="个人中心首屏，先给身份认同，再给数据。",
                title="冒险者卡片用金色描边强调「这是你的身份」，与普通卡片区分。",
                body=card('<div class="row" style="gap:12px">'
@@ -113,7 +120,7 @@ def build_04():
                     + card('<div class="stat sm c-ok">83%</div><div class="statlab">平均正确率</div>', "plain")
                     + "</div>"
                     + li("树", "知识树", "已点亮 5 个知识领域", "查看")
-                    + li("账", "历史卷轴", "共 12 份探险日志", "12")
+                    + li("账", "历史卷轴", "共 12 份冒险日志", "12")
                     + li("印", "勋章墙", "已解锁 6 / 18 枚", "6"))
 
     s2 = phone("冒险者卡片",
@@ -250,7 +257,7 @@ def build_04():
 
     s7 = phone("旧识重温 · 错题本",
                head=nav("旧识重温"),
-               foot=tabbar(2),
+               foot=tabbar(4),
                desc="答错的题按遗忘曲线排队，在合适的时间重新出现。",
                title="每道错题标注「第几次复习」与下次出现时间，让用户理解这个机制不是随机推送。",
                body=card('<div class="row" style="gap:10px;align-items:flex-start">'
@@ -523,7 +530,7 @@ def rank_row(rank, name, lv, acc, score, me=False):
 def build_06():
     s1 = phone("好友 PK 邀请",
                head=nav("公会社交", back=False, right="我的"),
-               foot=tabbar(2),
+               foot=tabbar(3),
                desc="P2 扩展能力。以同一份题库为基础，邀请好友同场作答。",
                title="PK 复用已有卷轴，不重新出题，保证双方题目完全一致才公平。",
                body=card('<div class="row" style="gap:10px;align-items:center">'
@@ -775,7 +782,7 @@ def build_07():
 
     s5 = phone("设置",
                head=nav("设置"),
-               foot=tabbar(3),
+               foot=tabbar(4),
                desc="设置项按使用频率排序，把账号相关放在最下方。",
                title="所有开关状态用颜色加位置双重表达，不只依赖颜色。",
                body=li("铃", "学习提醒", "每天 20:00 提醒我复习", "已开")

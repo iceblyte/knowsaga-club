@@ -107,13 +107,18 @@ a{color:var(--magic);text-decoration:none;}
 .screen.scroll{overflow-y:auto;}
 .spacer{flex:1;}
 
-.tabbar{flex:none;height:56px;border-top:1px dashed rgba(150,120,72,.45);display:flex;
+.tabbar{flex:none;height:58px;border-top:1px dashed rgba(150,120,72,.45);display:flex;
   background:var(--paper2);padding-bottom:7px;}
-.tabbar>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-  font-size:10.5px;color:var(--ink3);}
+.tabbar>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:10.5px;color:var(--ink3);position:relative;}
 .tabbar>div.on{color:var(--magic);font-weight:600;}
-.dot{width:17px;height:17px;border-radius:4px;background:var(--paper3);}
-.tabbar>div.on .dot{background:var(--magic);}
+.tabbar>div.on::after{content:"";position:absolute;top:0;width:26px;height:2px;border-radius:0 0 2px 2px;
+  background:var(--magic);}
+.tabbar svg{display:block;width:21px;height:21px;flex:none;}
+/* 通用线性图标语法：fi 描边、so 填充，颜色一律跟随 currentColor */
+.fi{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;
+  stroke-linejoin:round;}
+.so{fill:currentColor;stroke:none;}
 
 /* ================= 材质层级 =================
    L0 裸内容      —— 什么都不装，直接落在纸上
@@ -365,7 +370,7 @@ a{color:var(--magic);text-decoration:none;}
 </figure>
 <figure class="slot">
 <div class="phone">
-<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">设置</span><span class="nvr"></span></div><div class="screen"><div class="li"><span class="ico">铃</span><span class="tx"><span class="n">学习提醒</span><span class="d">每天 20:00 提醒我复习</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">音</span><span class="tx"><span class="n">音效与振动</span><span class="d">答对答错的即时反馈</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">存</span><span class="tx"><span class="n">流量下自动加载配图</span><span class="d">关闭可节省流量</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">护</span><span class="tx"><span class="n">护眼模式</span><span class="d">降低羊皮纸底亮度</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">清</span><span class="tx"><span class="n">清理缓存</span><span class="d">当前占用 12.6 MB</span></span><span class="pill">清理</span></div><div class="li"><span class="ico">账</span><span class="tx"><span class="n">账号与安全</span><span class="d">微信已绑定</span></span></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">帮助与反馈</span><span class="d">常见问题与意见反馈</span></span></div><div class="li"><span class="ico">版</span><span class="tx"><span class="n">关于知拾冒险社</span><span class="d">版本 1.0.0</span></span></div></div><div class="tabbar"><div><span class="dot"></span>社团大厅</div><div><span class="dot"></span>卷轴工坊</div><div><span class="dot"></span>探险日志</div><div class="on"><span class="dot"></span>我的</div></div>
+<div class="sbar"><span>9:41</span><span><span class="sbi"></span><span class="sbi"></span><span class="sbi"></span></span></div><div class="nav"><span class="nvb">&#8249;</span><span class="t">设置</span><span class="nvr"></span></div><div class="screen"><div class="li"><span class="ico">铃</span><span class="tx"><span class="n">学习提醒</span><span class="d">每天 20:00 提醒我复习</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">音</span><span class="tx"><span class="n">音效与振动</span><span class="d">答对答错的即时反馈</span></span><span class="pill">已开</span></div><div class="li"><span class="ico">存</span><span class="tx"><span class="n">流量下自动加载配图</span><span class="d">关闭可节省流量</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">护</span><span class="tx"><span class="n">护眼模式</span><span class="d">降低羊皮纸底亮度</span></span><span class="pill">已关</span></div><div class="li"><span class="ico">清</span><span class="tx"><span class="n">清理缓存</span><span class="d">当前占用 12.6 MB</span></span><span class="pill">清理</span></div><div class="li"><span class="ico">账</span><span class="tx"><span class="n">账号与安全</span><span class="d">微信已绑定</span></span></div><div class="li"><span class="ico">问</span><span class="tx"><span class="n">帮助与反馈</span><span class="d">常见问题与意见反馈</span></span></div><div class="li"><span class="ico">版</span><span class="tx"><span class="n">关于知拾冒险社</span><span class="d">版本 1.0.0</span></span></div></div><div class="tabbar"><div><svg viewBox="0 0 20 20" aria-hidden="true"><path class="fi" d="M3 9.4 10 3.6l7 5.8"/><path class="fi" d="M5.3 8.6v7.8h9.4V8.6"/><path class="fi" d="M8.2 16.4v-4.1h3.6v4.1"/></svg>社团大厅</div><div><svg viewBox="0 0 20 20" aria-hidden="true"><path class="fi" d="M5.2 2.8h6.2l3.4 3.4v11H5.2z"/><path class="fi" d="M11.4 2.8v3.4h3.4"/><path class="fi" d="M10 10.4v4M8 12.4h4"/></svg>卷轴工坊</div><div><svg viewBox="0 0 20 20" aria-hidden="true"><path class="fi" d="M10 5.8C8.5 4.6 6.3 4.2 3.7 4.4v10.8c2.6-.2 4.8.2 6.3 1.4 1.5-1.2 3.7-1.6 6.3-1.4V4.4C13.7 4.2 11.5 4.6 10 5.8z"/><path class="fi" d="M10 5.8v10.8"/></svg>冒险日志</div><div><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="fi" cx="7.6" cy="7.4" r="2.7"/><path class="fi" d="M3.3 16.4c0-2.7 1.9-4.6 4.3-4.6s4.3 1.9 4.3 4.6"/><circle class="fi" cx="14.1" cy="8.3" r="2.1"/><path class="fi" d="M12.7 12.5c1.9.3 3.3 1.9 3.3 3.9"/></svg>公会社交</div><div class="on"><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="fi" cx="10" cy="7" r="3"/><path class="fi" d="M4.7 16.9c0-3.1 2.4-5.4 5.3-5.4s5.3 2.3 5.3 5.4"/></svg>我的</div></div>
 </div>
 <figcaption class="cap"><b>设置</b>设置项按使用频率排序，把账号相关放在最下方。<span class="anno">所有开关状态用颜色加位置双重表达，不只依赖颜色。</span></figcaption>
 </figure>
