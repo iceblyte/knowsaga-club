@@ -1,0 +1,47 @@
+// 空态页样式。
+// 原型里没有这一屏（它是「未开发功能」的收口），因此这里不抄任何尺寸，
+// 只沿用设计系统的既有语言：法阵舞台 + 标题 + 说明整体居中，次级按钮贴底。
+//
+// 用 `.btn.ghost` 而不是主按钮：这一页没有主任务，主按钮的视觉权重会被浪费。
+
+@use "../../styles/tokens" as *;
+
+.coming-soon {
+  align-items: center;
+}
+
+// 主视觉与文案：吃掉全部剩余高度并内部居中，这样无论文案长短，
+// 按钮位置都是稳定的 —— 用户第二次进来不用重新找按钮在哪。
+.coming-soon__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $sp-9;
+}
+
+.coming-soon__text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $sp-4;
+  // 左右留出边距，窄屏下长文案不会贴住屏幕边缘
+  padding: 0 $sp-6;
+}
+
+.coming-soon__headline {
+  text-align: center;
+}
+
+.coming-soon__desc {
+  text-align: center;
+  line-height: $lh-body;
+}
+
+// 次级动作贴底，宽度与其它页的主按钮一致，保持版心统一
+.coming-soon__btn {
+  flex: none;
+  width: 100%;
+}

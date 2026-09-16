@@ -1,0 +1,35 @@
+// 法阵舞台样式。
+// 原型：.stage{position:relative;display:flex;align-items:center;justify-content:center;flex:none}
+//       .stage>.spin{position:absolute;inset:0}
+//       .stage-c{position:relative;z-index:2}
+//
+// 注意：法阵 svg 的原型尺寸是 150px，而 stage 容器是 176px。
+// 这里让法阵铺满容器（视觉上等价，且随容器尺寸自适应）。
+
+@use "../../styles/tokens" as *;
+
+.magic-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  &__circle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  &__core {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

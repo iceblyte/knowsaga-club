@@ -1,0 +1,83 @@
+// 社团大厅样式（原型 01-核心闭环.html 第 2 屏「空态」/ 第 3 屏「已输入」）。
+// -----------------------------------------------------------------------------
+// 原型结构对照：
+//   .card > .row > (拾拾 46) + (.h.sm + .sub[margin-top:3px])
+//   .scrollbox[flex:1;min-height:0] > .inner > 正文/.ph + .between
+//   .row[flex-wrap:wrap;gap:6px] > .chip × 3
+//   .btn
+//   .card > .between > (.row[gap:9px] > (学者 32) + (名称 + XP)) + .pill.gold
+//   <div style="height:8px"> + .bar.blue > i[width:64%]
+//
+// 页内类名统一用 `hall__` 前缀。之所以不用 `.screen > .xxx` 这类结构选择器，
+// 是因为 PhoneShell 的 `.screen` 是所有页面共用的，结构选择器会漏到别的页面去。
+//
+// 两屏共享同一套样式，差异只在数据与状态：
+//   · 空态 —— .inner 里是占位文案，chip 行是推荐词
+//   · 已输入 —— .inner 里是用户正文 + 联网提示 pill，chip 行换成追加资料动作
+
+@use "../../styles/tokens" as *;
+
+// 卷轴输入框占满剩余高度。
+// 原型在第 2、3 屏给 .scrollbox 挂了内联 `style="flex:1;min-height:0"`，
+// 而基座里 .scrollbox 是 `flex:none` —— 所以这条覆盖是原型本意，不是本地发挥。
+.hall__input {
+  flex: 1;
+  min-height: 0;
+}
+
+// 木质卷轴内的可输入区。
+// 原型这里是静态的 .ph 占位 div；真机换成 Textarea，因此需要自己承担「撑满 inner」的职责：
+// .inner 是 flex column + justify-content:space-between（基座），Textarea 用 flex:1 吃掉中段，
+// 字数统计那一行自然被推到卷轴底部 —— 与原型两屏的观感一致。
+.hall__textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  font-size: rpx(12.5); // 原型 12.5px
+  line-height: 1.75; // 原型 1.75
+  color: $ink;
+  background: transparent;
+}
+
+// Textarea 的 placeholder 需要挂到 placeholderClass 上，且**不会继承**宿主样式，
+// 所以字号/颜色/行高都要重写一遍，否则真机上会回落到 14px 的默认灰。
+.hall__placeholder {
+  font-size: rpx(12.5);
+  line-height: 1.75;
+  color: $ink3;
+}
+
+// 欢迎卡里的精灵位：原型是 <div style="flex:none">。
+// Sprite 组件本身已带 flex:none，这里保留一层是为了对齐原型结构、也让后续换图更自由。
+.hall__sprite-slot {
+  flex: none;
+}
+
+// 原型 `.sub` 带内联 margin-top:3px，让两行文案之间有呼吸但不松散
+.hall__welcome-sub {
+  margin-top: rpx(3);
+}
+
+// chip 行：原型内联 `flex-wrap:wrap;gap:6px`（基座 .row 的 gap 是 8px，这里要收窄）
+.hall__chips {
+  flex-wrap: wrap;
+  gap: rpx(6);
+}
+
+// 冒险者档案行：原型内联 gap:9px（比基座 .row 的 8px 稍宽，因为要托住 32px 的头像）
+.hall__adventurer {
+  gap: rpx(9);
+}
+
+// 档案主行名称：原型内联 `font-size:12px;font-weight:600`
+.hall__level {
+  font-size: rpx(12);
+  font-weight: 600;
+  color: $ink;
+}
+
+// 进度条上方的留白：原型 <div style="height:8px">
+.hall__gap {
+  height: rpx(8);
+  flex: none;
+}

@@ -1,0 +1,1022 @@
+// =============================================================================
+// 知拾冒险社 · 全局样式基座
+// -----------------------------------------------------------------------------
+// 本文件是 prototype/00-设计规范.html 的 CSS 移植版：
+//   · 类名与原型**保持完全一致**，使原型 markup 可以近乎 1:1 移植，最大化视觉还原度
+//   · 所有尺寸经 rpx() 换算（rpx = 原型px × 2.2590）
+//   · 只移植 App 用得到的部分，规范页自身的展示用样式（.phone/.wrap/.ds-* 等）不移植
+//
+// 导入方式（各页面 scss）：
+//   @use "../../styles/tokens" as *;
+// =============================================================================
+
+@use "./tokens" as *;
+
+// -----------------------------------------------------------------------------
+// 重置
+// -----------------------------------------------------------------------------
+page {
+  margin: 0;
+  color: $ink;
+  font-family: $f-body;
+  @include board-bg;
+}
+
+view,
+text,
+scroll-view {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+}
+
+// -----------------------------------------------------------------------------
+// 布局工具（原型 .row / .between / .stack / .grid2-4 / .spacer）
+// -----------------------------------------------------------------------------
+.row {
+  display: flex;
+  align-items: center;
+  gap: $sp-4;
+}
+
+.between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $sp-4;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: $sp-4;
+
+  &.tight {
+    gap: $sp-3;
+  }
+}
+
+.spacer {
+  flex: 1;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $sp-4;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $sp-4;
+}
+
+.grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $sp-4;
+}
+
+// -----------------------------------------------------------------------------
+// 材质层级
+//   L0 裸内容      —— 什么都不装，直接落在纸上
+//   L1 .card 纸面  —— 阅读面。明亮纸色 + 可见细边，无外投影
+//   L2 .slip 纸片  —— 真正的离散物件，硬投影 + 细描边
+//   L3 .stamp 印章 —— 朱砂、微旋转、压在纸边。全站唯一的响亮元素
+// -----------------------------------------------------------------------------
+.card {
+  background: $paper;
+  border-radius: $r-card;
+  padding: $sp-6 $sp-7;
+  flex: none;
+  box-shadow:
+    inset 0 0 0 1PX $stroke-knob-strong,
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  &.plain {
+    background: $paper-plain;
+  }
+  &.parch {
+    background: $paper2;
+  }
+  &.blue {
+    background: $paper-blue;
+    box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.32);
+  }
+  &.ok {
+    background: $paper-ok;
+    box-shadow: inset 0 0 0 1PX rgba(47, 125, 79, 0.34);
+  }
+  &.bad {
+    background: $paper-bad;
+    box-shadow: inset 0 0 0 1PX rgba(166, 58, 46, 0.34);
+  }
+  &.gold {
+    background: $paper-gold;
+    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.36);
+  }
+  &.rare {
+    background: $paper-rare;
+    box-shadow: inset 0 0 0 1PX rgba(109, 75, 196, 0.32);
+  }
+
+  &.grow {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+.slip {
+  background: $paper;
+  background-image: $grain;
+  border-radius: $r-slide;
+  padding: $sp-7;
+  flex: none;
+  position: relative;
+  box-shadow:
+    2px 3px 0 rgba(120, 92, 48, 0.2),
+    0 0 0 1PX $stroke-edge;
+}
+
+.stamp {
+  display: inline-block;
+  position: relative;
+  font-family: $f-disp;
+  font-weight: 800;
+  font-size: $fs-sub;
+  letter-spacing: $ls-stamp;
+  color: $seal;
+  border: 2PX solid $seal;
+  border-radius: $r-stamp;
+  padding: $sp-1 $sp-4 $sp-1 + 1px;
+  transform: rotate(-2.2deg);
+  opacity: 0.9;
+  line-height: 1.35;
+
+  // 双线框：内圈再压一道细线
+  &::after {
+    content: "";
+    position: absolute;
+    top: 2PX;
+    right: 2PX;
+    bottom: 2PX;
+    left: 2PX;
+    border: 1PX solid $seal;
+    opacity: 0.45;
+    border-radius: 1PX;
+  }
+
+  &.ok {
+    color: $ok;
+    border-color: $ok;
+    &::after {
+      border-color: $ok;
+    }
+  }
+
+  &.gold {
+    color: $gold-d;
+    border-color: $gold;
+    &::after {
+      border-color: $gold;
+    }
+  }
+}
+
+.rule {
+  height: 0;
+  border-top: 1PX dashed $stroke-line-dash;
+  margin: $sp-5 0;
+}
+
+// -----------------------------------------------------------------------------
+// 字体阶梯
+// -----------------------------------------------------------------------------
+.h {
+  font-size: $fs-h2; // 15
+  font-weight: 600;
+  line-height: $lh-tight;
+
+  &.sm {
+    font-size: $fs-h3; // 13.5
+  }
+}
+
+.sub {
+  font-size: $fs-sub; // 11.5
+  color: $ink3;
+  line-height: $lh-snug;
+}
+
+.body {
+  font-size: $fs-body; // 12.5
+  line-height: $lh-body;
+  color: $ink2;
+
+  &.sm {
+    font-size: $fs-sub; // 11.5
+  }
+}
+
+.tiny {
+  font-size: $fs-tiny; // 11
+  color: $ink3;
+  line-height: $lh-snug;
+}
+
+.strong {
+  font-weight: 600;
+  color: $ink;
+}
+
+// 数字统一交给 Baloo 2 —— 游戏化产品里数字承担了大量情绪
+.num {
+  font-family: $f-disp;
+  font-weight: 700;
+  letter-spacing: $ls-num;
+}
+
+.c-blue {
+  color: $magic;
+}
+.c-gold {
+  color: $gold-d;
+}
+.c-ok {
+  color: $ok;
+}
+.c-bad {
+  color: $bad;
+}
+.c-mute {
+  color: $ink3;
+}
+.c-rare {
+  color: $rare;
+}
+
+// -----------------------------------------------------------------------------
+// 按钮：底部实边模拟物理按键，按下时底边归零 + 整体下移
+// -----------------------------------------------------------------------------
+.btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: $r-btn;
+  background: $magic;
+  color: $on-magic;
+  font-family: $f-disp;
+  font-size: $fs-btn;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: $sp-6 0;
+  text-align: center;
+  border-bottom: 3PX solid $btn-magic-edge;
+
+  &.gold {
+    background: $gold;
+    border-bottom-color: $btn-gold-edge;
+    color: $on-gold;
+  }
+  &.ok {
+    background: $ok;
+    border-bottom-color: $btn-ok-edge;
+  }
+  &.ghost {
+    background: $paper;
+    color: $ink2;
+    border: 1PX solid $stroke-ghost;
+    border-bottom: 3PX solid rgba(150, 120, 72, 0.3);
+  }
+  &.sm {
+    padding: $sp-4 0;
+    font-size: $fs-h3;
+    border-bottom-width: 2PX;
+  }
+  &.dis {
+    background: $paper3;
+    border-bottom-color: $btn-dis-edge;
+    color: $ink3;
+  }
+
+  // 按下：底边归零 + 整体下移 3px，模拟物理按键
+  &:active {
+    transform: translateY(3PX);
+    border-bottom-width: 0;
+  }
+
+  &.dis:active,
+  &:disabled {
+    transform: none;
+    border-bottom-width: 3PX;
+  }
+  &.dis:active {
+    border-bottom-color: $btn-dis-edge;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 小物件：chip / pill / dotmark / bar
+// -----------------------------------------------------------------------------
+.chip {
+  font-size: $fs-chip; // 11
+  padding: $sp-2 $sp-5;
+  border-radius: $r-slide;
+  background: $paper2;
+  color: $ink2;
+  border: 1PX solid rgba(150, 120, 72, 0.32);
+  white-space: nowrap;
+}
+
+// 并列项的标记：方块而不是编号。编号只用于真正的序列
+.dotmark {
+  width: $sp-3;
+  height: $sp-3;
+  border-radius: 1PX;
+  background: $magic;
+  flex: none;
+
+  &.gold {
+    background: $gold;
+  }
+  &.ok {
+    background: $ok;
+  }
+}
+
+.pill {
+  font-size: $fs-pill; // 10.5
+  padding: $sp-1 $sp-3 + 1px;
+  border-radius: $r-slide;
+  background: $paper2;
+  color: $ink2;
+  font-weight: 600;
+  font-family: $f-disp;
+  letter-spacing: 0.02em;
+
+  &.blue {
+    background: $paper-blue;
+    color: $magic-d;
+  }
+  &.gold {
+    background: $paper-gold;
+    color: $gold-d;
+  }
+  &.ok {
+    background: $paper-ok;
+    color: $ok;
+  }
+  &.bad {
+    background: $paper-bad;
+    color: $bad;
+  }
+  &.rare {
+    background: $paper-rare;
+    color: $rare;
+  }
+}
+
+.bar {
+  height: $h-progress; // 8
+  border-radius: $r-stamp;
+  background: $paper3;
+  overflow: hidden;
+
+  // 原型此处用 `<i>` 作填充元素；小程序没有 <i>，Taro 的 <View> 编译为 <view>，
+  // 因此选择器同时匹配两者，保证「类名与原型一致」的前提下结构可用。
+  > i,
+  > view {
+    display: block;
+    height: 100%;
+    border-radius: $r-stamp;
+    background: $gold;
+  }
+
+  &.blue > i,
+  &.blue > view {
+    background: $magic;
+  }
+  &.ok > i,
+  &.ok > view {
+    background: $ok;
+  }
+  &.rare > i,
+  &.rare > view {
+    background: $rare;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 答题选项四态
+//   压痕面（控件）而不是纸面 —— 才能在纸底上读出「这是可以填的」
+//   题号用方块而不是圆形，读作「卷宗里的一条」
+// -----------------------------------------------------------------------------
+.opt {
+  display: flex;
+  align-items: center;
+  gap: $sp-5;
+  padding: $sp-6 $sp-6;
+  border-radius: $r-opt;
+  background: $opt-default;
+  box-shadow: inset 0 0 0 1PX $stroke-knob;
+
+  .k {
+    width: $size-knob;
+    height: $size-knob;
+    border-radius: $r-knob; // 方块，不是圆
+    background: $paper;
+    box-shadow: inset 0 0 0 1PX $stroke-knob-strong;
+    color: $ink2;
+    font-size: $fs-sub;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    font-family: $f-disp;
+    font-weight: 700;
+  }
+
+  .x {
+    font-size: $fs-body; // 12.5
+    line-height: 1.5;
+    flex: 1;
+  }
+
+  // 已选
+  &.sel {
+    background: $opt-selected;
+    box-shadow: inset 0 0 0 1.5PX $opt-sel-border;
+
+    .k {
+      background: $magic;
+      color: $on-magic;
+      box-shadow: none;
+    }
+  }
+
+  // 答对
+  &.ok {
+    background: $opt-correct;
+    box-shadow: inset 0 0 0 1.5PX $opt-ok-border;
+
+    .k {
+      background: $ok;
+      color: $on-magic;
+      box-shadow: none;
+    }
+  }
+
+  // 答错
+  &.bad {
+    background: $opt-wrong;
+    box-shadow: inset 0 0 0 1.5PX $opt-bad-border;
+
+    .k {
+      background: $bad;
+      color: $on-magic;
+      box-shadow: none;
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 头像 / 身份位
+// -----------------------------------------------------------------------------
+.avatar {
+  width: $size-avatar;
+  height: $size-avatar;
+  border-radius: 50%;
+  background: $paper-blue;
+  box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.34);
+  flex: none;
+
+  &.gold {
+    background: $paper-gold;
+    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.42);
+  }
+  &.rare {
+    background: $paper-rare;
+    box-shadow: inset 0 0 0 1PX rgba(109, 75, 196, 0.36);
+  }
+  &.sm {
+    width: $size-avatar-sm;
+    height: $size-avatar-sm;
+  }
+}
+
+// 圆形裁切后的角色，无外投影，靠描边定界
+.advatar {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: $sp-5;
+  min-width: 0;
+  flex: 1;
+
+  .tx {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .tx .n {
+    font-size: $fs-body;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tx .d {
+    font-size: $fs-tiny;
+    color: $ink3;
+    margin-top: $sp-1;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 输入区
+// -----------------------------------------------------------------------------
+.field {
+  background: $paper2;
+  border: 1PX dashed rgba(150, 120, 72, 0.52);
+  border-radius: $r-opt;
+  padding: $sp-6;
+  flex: none;
+
+  &.solid {
+    border-style: solid;
+    border-color: $stroke-ghost;
+  }
+}
+
+.ph {
+  font-size: $fs-body;
+  color: $ink3;
+  line-height: 1.75;
+}
+
+// 卷轴输入框：两侧木轴
+.scrollbox {
+  position: relative;
+  background: $paper2;
+  border-radius: $r-knob;
+  padding: $sp-8 $sp-7;
+  margin: $sp-4 0;
+  flex: none;
+  box-shadow: inset 0 0 0 1PX $stroke-knob-strong;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    top: -7PX;
+    bottom: -7PX;
+    width: $sp-7; // 14
+    border-radius: 999px;
+    background: #e8d2a0;
+    box-shadow: inset 0 0 0 1PX #c4a874;
+  }
+  &::before {
+    left: -7PX;
+  }
+  &::after {
+    right: -7PX;
+  }
+
+  .inner {
+    background: $paper;
+    border: 1PX dashed rgba(150, 120, 72, 0.44);
+    border-radius: $r-slide;
+    padding: $sp-6;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 数据展示
+// -----------------------------------------------------------------------------
+.stat {
+  font-family: $f-disp;
+  font-size: $fs-stat; // 25
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+
+  &.sm {
+    font-size: $fs-stat-sm; // 18
+  }
+}
+
+.statlab {
+  font-size: $fs-tiny;
+  color: $ink3;
+  margin-top: $sp-1;
+}
+
+// 列表：账本横格行，而不是一摞一模一样的圆角卡
+.li {
+  display: flex;
+  align-items: center;
+  gap: $sp-5;
+  padding: $sp-5 $sp-1;
+  background: transparent;
+  border-bottom: 1PX dashed rgba(150, 120, 72, 0.34);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  .ico {
+    width: $size-li-ico;
+    height: $size-li-ico;
+    border-radius: $r-knob;
+    background: $paper2;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: $fs-body;
+    color: $ink2;
+    font-family: $f-disp;
+    font-weight: 700;
+  }
+
+  .tx {
+    flex: 1;
+    min-width: 0;
+
+    .n {
+      font-size: $fs-body;
+      font-weight: 600;
+    }
+    .d {
+      font-size: $fs-tiny;
+      color: $ink3;
+      margin-top: $sp-1;
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 遮罩与底部弹层
+// -----------------------------------------------------------------------------
+.mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: $mask;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $sp-10;
+  z-index: 100;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: $paper;
+  border-radius: $r-sheet $r-sheet 0 0;
+  padding: $sp-9 $sp-8 $sp-10;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-6;
+  box-shadow: 0 -3PX 0 rgba(120, 92, 48, 0.18);
+  z-index: 101;
+}
+
+.grab {
+  width: 38px;
+  height: $sp-2;
+  border-radius: 999px;
+  background: $paper3;
+  margin: 0 auto;
+}
+
+// -----------------------------------------------------------------------------
+// 法阵 / 星光 / 勋章
+// -----------------------------------------------------------------------------
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  > .spin,
+  > .spin-r {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+}
+
+.stage-c {
+  position: relative;
+  z-index: 2;
+}
+
+.sprite {
+  display: block;
+  overflow: visible;
+}
+
+.mcircle {
+  width: $size-mcircle; // 104
+  height: $size-mcircle;
+  border-radius: 50%;
+  border: 2PX dashed $magic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex: none;
+  opacity: 0.75;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: $sp-6;
+    right: $sp-6;
+    bottom: $sp-6;
+    left: $sp-6;
+    border-radius: 50%;
+    border: 1.5PX solid rgba(47, 107, 216, 0.42);
+  }
+
+  .core {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: $paper-blue;
+    border: 1.5PX solid $magic;
+  }
+}
+
+.spark {
+  position: absolute;
+  width: $sp-3;
+  height: $sp-3;
+  border-radius: 50%;
+  background: $gold;
+}
+
+.badge {
+  width: $size-badge; // 62
+  height: $size-badge;
+  border-radius: 50%;
+  background: $paper-gold;
+  box-shadow: inset 0 0 0 1.5PX rgba(200, 145, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: $f-disp;
+  font-size: $fs-stat-sm;
+  font-weight: 800;
+  color: $gold-d;
+  flex: none;
+
+  &.off {
+    background: $paper2;
+    box-shadow: inset 0 0 0 1.5PX rgba(150, 120, 72, 0.34);
+    color: $ink3;
+  }
+  &.rare {
+    background: $paper-rare;
+    box-shadow: inset 0 0 0 1.5PX rgba(109, 75, 196, 0.44);
+    color: $rare;
+  }
+}
+
+// 角色行：多个角色并排时统一对齐
+.cast {
+  display: flex;
+  align-items: flex-end;
+  gap: $sp-5;
+  flex: none;
+
+  > view,
+  > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $sp-2;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 动效（全站仅 6 个 keyframe；静态场景一律不动）
+// -----------------------------------------------------------------------------
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-r {
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  50% {
+    transform: translate(3px, -5px) rotate(-2.5deg);
+  }
+}
+
+.floaty {
+  animation: floaty $dur-floaty ease-in-out infinite;
+
+  &.slow {
+    animation-duration: 5.4s;
+  }
+  &.fast {
+    animation-duration: 2.4s;
+  }
+}
+
+.twinkle {
+  animation: twinkle $dur-twinkle ease-in-out infinite;
+
+  &.d1 {
+    animation-delay: 0.5s;
+  }
+  &.d2 {
+    animation-delay: 1.1s;
+  }
+}
+
+.spin {
+  animation: spin $dur-spin linear infinite;
+}
+
+.spin-r {
+  animation: spin-r $dur-spin-r linear infinite;
+}
+
+.shake {
+  animation: shake $dur-shake ease-in-out 2;
+}
+
+.drift {
+  animation: drift $dur-drift ease-in-out infinite;
+}
+
+// 尊重系统的「减少动态效果」设置
+@media (prefers-reduced-motion: reduce) {
+  .floaty,
+  .twinkle,
+  .spin,
+  .spin-r,
+  .shake,
+  .drift {
+    animation: none;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 手机外框三件套（状态栏 / 导览栏 / 标签栏）
+// -----------------------------------------------------------------------------
+.sbar {
+  height: $h-sbar; // 26
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $sp-10;
+  font-size: $fs-tiny;
+  color: $ink3;
+  flex: none;
+  font-family: $f-disp;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+
+  .sbi {
+    width: 13px;
+    height: 7px;
+    border: 1PX solid $line;
+    border-radius: $r-stamp;
+    margin-left: $sp-1;
+    display: inline-block;
+  }
+}
+
+.nav {
+  height: $h-nav; // 48
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $sp-7;
+  flex: none;
+
+  .t {
+    font-size: $fs-h2; // 15
+    font-weight: 600;
+    flex: 1;
+    text-align: center;
+  }
+}
+
+.nvb {
+  width: 38px;
+  font-size: $fs-title; // 21
+  color: $ink2;
+  line-height: 1;
+}
+
+.nvr {
+  width: 38px;
+  text-align: right;
+  font-size: $fs-body;
+  color: $ink3;
+}
+
+.screen {
+  flex: 1;
+  padding: $sp-3 $sp-7 $sp-7;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-5;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &.center {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+}
+
+// 通用线性图标语法：fi 描边、so 填充，颜色一律跟随 currentColor
+.fi {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.so {
+  fill: currentColor;
+  stroke: none;
+}

@@ -1,0 +1,10 @@
+// 应用级样式入口。
+//
+// 这里只引入「全局基座」——材质类（.card/.slip/.stamp）、按钮、选项四态、
+// 字体阶梯、布局工具与动效 keyframes 都在 base.scss 里定义一次，
+// 由 app.scss 编译进 app.wxss，全站共享。
+//
+// 各页面 scss 只需 `@use "../../styles/tokens" as *;` 取变量与 rpx() 函数
+// —— SCSS 变量与函数不会产生 CSS 输出，因此不会重复打包。
+
+@use "./styles/base" as *;

@@ -1,0 +1,33 @@
+// 启动页样式。
+// 原型：.screen 背景 #FEFCF6；法阵与精灵垂直居中；
+//       标题 20px/700；进度条宽 150px；文案 tiny 居中。
+
+@use "../../styles/tokens" as *;
+
+.splash__screen {
+  // 原型给启动页的 screen 单独铺了纸面白底，与其它页的纸板底不同
+  background: $paper;
+  align-items: center;
+  gap: $sp-10; // 原型 gap:20px
+}
+
+.splash__title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.splash__title {
+  font-size: rpx(20); // 20
+  font-weight: 700;
+  color: $ink;
+  letter-spacing: $ls-tight;
+}
+
+.splash__slogan {
+  margin-top: $sp-4; // 原型 margin-top:8px
+}
+
+.splash__bar {
+  width: rpx(150); // 150
+}

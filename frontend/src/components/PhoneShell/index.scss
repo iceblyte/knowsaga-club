@@ -1,0 +1,52 @@
+// 页面骨架样式。
+// 原型对照（prototype/00-设计规范.html）：
+//   .phone{display:flex;flex-direction:column;height:700px}   ← 机身，真机不渲染
+//   .sbar{height:26px;…}                                       ← 状态栏，真机改为动态占位
+//   .nav{height:48px;padding:0 14px;flex:none}                 ← 导览栏
+//   .screen{flex:1;padding:6px 14px 14px;display:flex;flex-direction:column;
+//           gap:10px;overflow-y:auto}                          ← 内容区
+
+@use "../../styles/tokens" as *;
+
+.page {
+  // 真机上页面即屏幕：撑满视口，内部三段（状态栏 / 导览栏 / 内容区）
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  @include board-bg;
+}
+
+.page__statusbar {
+  flex: none;
+  // 高度由 TS 按 getSystemInfoSync().statusBarHeight 动态注入
+}
+
+// 导览栏 —— 固定不动，只有下方内容区滚动
+.nav {
+  flex: none;
+}
+
+// 内容区：flex:1 且 min-height:0，让 ScrollView 能正确算出可滚动高度
+.screen {
+  flex: 1;
+  min-height: 0;
+  height: 0; // 配合 flex:1，使 ScrollView 有确定高度从而可滚动
+  padding: $sp-3 $sp-7 $sp-7;
+  display: flex;
+  flex-direction: column;
+  gap: $sp-5;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  // 不滚动时不设高度约束，交给内容自然撑开
+  &--static {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  // 为底部固定标签栏留出空间（标签栏是 position:fixed，不占文档流）
+  &--reserve-tabbar {
+    padding-bottom: calc(#{rpx(58)} + #{rpx(7)} + env(safe-area-inset-bottom) + #{$sp-5});
+  }
+}

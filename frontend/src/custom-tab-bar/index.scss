@@ -1,0 +1,65 @@
+// 自定义标签栏 —— 视觉规格完全来自原型（见 prototype/00-设计规范.html）
+//
+//   .tabbar{height:58px; border-top:1px dashed rgba(150,120,72,.45);
+//           background:var(--paper2); padding-bottom:7px}   ← box-sizing:border-box
+//   .tabbar>div{display:flex;flex-direction:column;align-items:center;justify-content:center;
+//               gap:3px;font-size:10.5px;color:var(--ink3);position:relative}
+//   .tabbar>div.on{color:var(--magic);font-weight:600}
+//   .tabbar>div.on::after{top:0;width:26px;height:2px;border-radius:0 0 2px 2px;background:var(--magic)}
+//   .tabbar svg{width:21px;height:21px}
+
+@use "../styles/tokens" as *;
+
+// 安全区补偿量（无刘海设备为 0，因此基线尺寸与原型逐像素一致）
+$safe-bottom: env(safe-area-inset-bottom);
+
+.tabbar {
+  flex: none;
+  display: flex;
+  // 基线 58px（含 7px 底边距）；把安全区作为**额外高度**叠加，
+  // 而不是压缩内容区，这样内容区恒为 51px，与原型的视觉比例不变。
+  height: calc(#{rpx(58)} + #{$safe-bottom});
+  padding-bottom: calc(#{rpx(7)} + #{$safe-bottom});
+  box-sizing: border-box;
+  background: $paper2;
+  border-top: 1PX dashed $stroke-line-dash;
+}
+
+.tabbar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: rpx(3); // 3
+  font-size: rpx(10.5); // 10.5
+  color: $ink3;
+  position: relative;
+
+  // 选中态：换色 + 加粗 + 顶部指示条（原生 tabBar 做不到的那条）
+  &.on {
+    color: $magic;
+    font-weight: 600;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      width: rpx(26); // 26
+      height: rpx(2); // 2
+      border-radius: 0 0 rpx(2) rpx(2); // 只有下两角圆
+      background: $magic;
+    }
+  }
+}
+
+.tabbar__icon {
+  display: block;
+  width: rpx(21); // 21
+  height: rpx(21);
+  flex: none;
+}
+
+.tabbar__text {
+  line-height: 1.1;
+}
