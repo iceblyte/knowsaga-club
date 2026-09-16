@@ -26,11 +26,15 @@
   flex: none;
 }
 
-// 内容区：flex:1 且 min-height:0，让 ScrollView 能正确算出可滚动高度
+// 内容区。
+//
+// ⚠️ 高度**不在这里算**：滚动态的高度由 TS 按 `100vh - 状态栏 - 导览栏` 精确算出，
+// 以 inline style 交给 `scroll-view`（原因见 index.tsx 顶部说明）。
+// 因此这里必须是 `flex: none` —— 若写成 `flex: 1`，flex-basis:0 会盖掉那个显式高度，
+// 又退回「让布局引擎自己解」的老问题。
 .screen {
-  flex: 1;
+  flex: none;
   min-height: 0;
-  height: 0; // 配合 flex:1，使 ScrollView 有确定高度从而可滚动
   padding: $sp-3 $sp-7 $sp-7;
   display: flex;
   flex-direction: column;
@@ -38,8 +42,9 @@
   overflow-y: auto;
   overflow-x: hidden;
 
-  // 不滚动时不设高度约束，交给内容自然撑开
+  // 不滚动时交给 flex 分配剩余高度，内容由页面原生滚动承载
   &--static {
+    flex: 1;
     height: auto;
     min-height: 0;
     overflow: visible;

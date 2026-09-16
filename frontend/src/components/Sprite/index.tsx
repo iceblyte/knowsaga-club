@@ -11,6 +11,7 @@
 import { Image } from '@tarojs/components'
 
 import { SPRITE_LABELS, SPRITES, type SpriteName } from '../../assets/sprites'
+import { squareStyle } from '../../utils/style'
 
 import './index.scss'
 
@@ -52,7 +53,7 @@ export default function Sprite({
   return (
     <Image
       className={cls}
-      style={{ width: `${rpxSize}rpx`, height: `${rpxSize}rpx` }}
+      style={squareStyle(rpxSize)}
       src={SPRITES[name]}
       mode='aspectFit'
       aria-label={SPRITE_LABELS[name]}

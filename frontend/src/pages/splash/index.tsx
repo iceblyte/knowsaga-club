@@ -11,11 +11,12 @@
  */
 
 import { Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
+import { goTab } from '../../utils/navigation'
+import { styleOf } from '../../utils/style'
 
 import './index.scss'
 
@@ -52,10 +53,8 @@ export default function SplashPage() {
       if (elapsed >= TOTAL_MS && !navigated.current) {
         navigated.current = true
         clearInterval(timer)
-        // 大厅是标签页，必须用 switchTab（navigateTo 不能跳 tabBar 页）
-        Taro.switchTab({ url: '/pages/hall/index' }).catch(() => {
-          Taro.redirectTo({ url: '/pages/hall/index' })
-        })
+        // 大厅是标签页，必须走 switchTab；失败时由 goTab 兜底
+        goTab('/pages/hall/index')
       }
     }, TICK_MS)
 
@@ -74,7 +73,7 @@ export default function SplashPage() {
       </View>
 
       <View className='bar blue splash__bar'>
-        <View style={{ width: `${progress}%` }} />
+        <View style={styleOf({ width: `${progress}%` })} />
       </View>
 
       <Text className='tiny'>{stageText}</Text>

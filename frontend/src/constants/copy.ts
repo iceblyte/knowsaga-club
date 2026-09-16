@@ -32,8 +32,10 @@ export const SUMMON_STEPS = {
 export const SUMMON_COPY = {
   navTitle: '召唤中',
   title: '正在生成知识副本',
-  /** 只有取消是真的由前端发起的动作 */
-  cancel: '取消',
+  /** 生成完成、正在进入副本时的标题 */
+  readyTitle: '知识副本已生成',
+  /** 兜底入口：自动跳转没成功时才会被用户看到 */
+  enter: '进入副本',
   cancelConfirmTitle: '要放弃这次召唤吗？',
   cancelConfirmBody: '已经生成的部分会一并丢弃。',
   cancelConfirmPrimary: '继续等待',
@@ -48,10 +50,14 @@ export const SUMMON_COPY = {
 /** 副本确认页（原型 01 第 5 屏） */
 export const CONFIRM_COPY = {
   navTitle: '知识副本',
-  regenerate: '重生成',
+  regenerate: '重新生成',
   start: '开始挑战副本',
   noPenaltyHint: '答错也会给出完整讲解，不会扣分',
-  knowledgeLabel: '本次覆盖的知识点'
+  knowledgeLabel: '本次覆盖的知识点',
+  /** 题库丢失（小程序重启 / 内存被回收）时的说明与出口 */
+  emptyTitle: '这份副本已经不在了',
+  emptyHint: '副本只保留在当前运行期间，重新打开后需要再召唤一次',
+  backHome: '返回社团大厅'
 } as const
 
 /** 挑战副本（原型 02） */

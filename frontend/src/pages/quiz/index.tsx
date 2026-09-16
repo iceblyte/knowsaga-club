@@ -28,7 +28,6 @@
  */
 
 import { Button, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 
 import PhoneShell from '../../components/PhoneShell'
@@ -36,7 +35,9 @@ import Sprite from '../../components/Sprite'
 import { QUIZ_COPY } from '../../constants/copy'
 import { useQuizStore } from '../../store/useQuizStore'
 import type { QuizQuestion, QuizOption } from '../../types/api'
+import { goPage, goTab } from '../../utils/navigation'
 import { gradeQuestion, maxXpOf, QUESTION_TYPE_LABEL, type QuestionResult } from '../../utils/scoring'
+import { styleOf } from '../../utils/style'
 
 import './index.scss'
 
@@ -139,7 +140,7 @@ export default function QuizPage() {
         <View className='spacer' />
         <View className='sub quiz__empty-text'>这一局已经结束了，请重新召唤副本</View>
         <View className='spacer' />
-        <Button className='btn ghost' onClick={() => Taro.switchTab({ url: '/pages/hall/index' })}>
+        <Button className='btn ghost' onClick={() => goTab('/pages/hall/index')}>
           回到社团大厅
         </Button>
       </PhoneShell>
@@ -181,14 +182,14 @@ export default function QuizPage() {
       return
     }
     finish()
-    Taro.redirectTo({ url: '/pages/settle/index' })
+    goPage('/pages/settle/index', 'redirect')
   }
 
   const handleExit = () => {
     setAskExit(false)
     // 文案承诺了「离开后本局作答记录不会保留」，所以这里必须真的清空
     reset()
-    Taro.switchTab({ url: '/pages/hall/index' })
+    goTab('/pages/hall/index')
   }
 
   const tone = result ? explanationTone(result) : null
@@ -197,7 +198,6 @@ export default function QuizPage() {
   return (
     <PhoneShell
       navTitle={QUIZ_COPY.navTitle}
-      navRight={`${currentIndex + 1} / ${total}`}
       onBack={() => setAskExit(true)}
       screenClassName='quiz'
     >
@@ -210,7 +210,7 @@ export default function QuizPage() {
           <Text className='tiny c-gold'>+{result ? result.earnedXp : maxXp} XP</Text>
         </View>
         <View className='bar'>
-          <View style={{ width: `${((currentIndex + 1) / total) * 100}%` }} />
+          <View style={styleOf({ width: `${((currentIndex + 1) / total) * 100}%` })} />
         </View>
       </View>
 

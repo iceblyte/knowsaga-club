@@ -16,6 +16,7 @@
 import { Image, View } from '@tarojs/components'
 
 import { DECORATIONS } from '../../assets/decorations'
+import { squareStyle } from '../../utils/style'
 import Sprite, { type SpriteMotion } from '../Sprite'
 import type { SpriteName } from '../../assets/sprites'
 
@@ -53,7 +54,7 @@ export default function MagicStage({
   const spinCls = still ? '' : reverse ? 'spin-r' : 'spin'
 
   return (
-    <View className={`magic-stage ${className}`} style={{ width: `${rpx}rpx`, height: `${rpx}rpx` }}>
+    <View className={`magic-stage ${className}`} style={squareStyle(rpx)}>
       <Image className={`magic-stage__circle ${spinCls}`} src={DECORATIONS.magicCircle} mode='aspectFit' />
       <View className='magic-stage__core'>
         <Sprite name={sprite} size={spriteSize} motion={spriteMotion} />

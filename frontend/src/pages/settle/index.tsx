@@ -16,7 +16,6 @@
  */
 
 import { Button, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 
 import AccuracyRing from '../../components/AccuracyRing'
 import MagicStage from '../../components/MagicStage'
@@ -25,6 +24,7 @@ import Sprite from '../../components/Sprite'
 import { SETTLE_COPY } from '../../constants/copy'
 import { useCountUp } from '../../hooks/useCountUp'
 import { useQuizStore } from '../../store/useQuizStore'
+import { goPage, goTab } from '../../utils/navigation'
 import { summarizeQuiz } from '../../utils/scoring'
 
 import './index.scss'
@@ -49,7 +49,7 @@ export default function SettlePage() {
         <View className='spacer' />
         <View className='sub settle__empty-text'>还没有可以结算的副本</View>
         <View className='spacer' />
-        <Button className='btn ghost' onClick={() => Taro.switchTab({ url: '/pages/hall/index' })}>
+        <Button className='btn ghost' onClick={() => goTab('/pages/hall/index')}>
           回到社团大厅
         </Button>
       </PhoneShell>
@@ -58,13 +58,13 @@ export default function SettlePage() {
 
   const handleViewReport = () => {
     // 冒险日志是 Phase 3 的范围。这里保留原型的主 CTA，先切到日志标签页。
-    Taro.switchTab({ url: '/pages/report/index' })
+    goTab('/pages/report/index')
   }
 
   const handlePlayAgain = () => {
     // 清空这一局再回召唤页，否则上一局的判定结果会残留到新的一局
     reset()
-    Taro.redirectTo({ url: '/pages/summon/index' })
+    goPage('/pages/summon/index', 'redirect')
   }
 
   return (

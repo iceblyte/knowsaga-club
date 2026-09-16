@@ -20,16 +20,22 @@
  *
  * 原型固定画了「单选 / 多选 / 判断」三张。但题量本来就可能是 0（例如全是单选题），
  * 摆一张「0 多选题」的卡片除了占位没有任何信息量，所以这里按实际题量过滤。
+ *
+ * ## 没有题库时**不自动跳走**
+ *
+ * 题库只存在于内存里，页面被重新加载（例如小程序被重启）后就会丢。这时不能
+ * 悄悄把用户弹回大厅 —— 那会让用户看到「点进来又被打回去」，还以为是自己点错了。
+ * 正确做法是留在原地说明原因，并给一个明确的出口。
  */
 
 import { Button, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 import { useEffect } from 'react'
 
 import PhoneShell from '../../components/PhoneShell'
 import Sprite from '../../components/Sprite'
 import { CONFIRM_COPY } from '../../constants/copy'
 import { useQuizStore } from '../../store/useQuizStore'
+import { goPage, goTab } from '../../utils/navigation'
 import { estimateMinutes, QUESTION_TYPE_LABEL, questionStatEntries } from '../../utils/scoring'
 
 import './index.scss'
@@ -38,15 +44,11 @@ export default function ConfirmPage() {
   const pendingQuiz = useQuizStore((s) => s.pendingQuiz)
   const start = useQuizStore((s) => s.start)
 
-  // 没有题库就说明这一页是被错误地直接进入的（或小程序被重启过，
-  // 内存里的题库没了）。与其渲染一个空壳，不如把用户送回大厅重新开始。
+  // 本页只读 store，不需要副作用；保留 effect 是为了在题库意外消失时
+  // 至少让开发者能在控制台看到一次线索
   useEffect(() => {
     if (pendingQuiz) return
-    Taro.showToast({ title: '这份副本已经不在了，请重新召唤', icon: 'none' })
-    const timer = setTimeout(() => {
-      Taro.switchTab({ url: '/pages/hall/index' })
-    }, 900)
-    return () => clearTimeout(timer)
+    console.warn('[confirm] pendingQuiz 为空，无法进入副本')
   }, [pendingQuiz])
 
   if (!pendingQuiz) {
@@ -57,8 +59,12 @@ export default function ConfirmPage() {
         screenClassName='confirm confirm--empty'
       >
         <View className='spacer' />
-        <View className='sub confirm__empty-text'>正在返回社团大厅…</View>
+        <View className='h confirm__empty-text'>{CONFIRM_COPY.emptyTitle}</View>
+        <View className='sub confirm__empty-text'>{CONFIRM_COPY.emptyHint}</View>
         <View className='spacer' />
+        <Button className='btn' onClick={() => goTab('/pages/hall/index')}>
+          {CONFIRM_COPY.backHome}
+        </Button>
       </PhoneShell>
     )
   }
@@ -70,24 +76,19 @@ export default function ConfirmPage() {
 
   const handleStart = () => {
     start(pendingQuiz)
-    // redirectTo：确认页的使命到此为止。若用 navigateTo，
+    // 用 redirectTo 推进流程：确认页的使命到此为止。若用 navigateTo，
     // 用户从答题页返回会撞回确认页，再点一次「开始」就会重启一局。
-    Taro.redirectTo({ url: '/pages/quiz/index' })
+    goPage('/pages/quiz/index', 'redirect')
   }
 
   const handleRegenerate = () => {
-    // 同一条输入重出一份题。走 redirectTo 而不是 navigateTo：
-    // 召唤页跑完还会 redirectTo 回本页，用 navigateTo 会让页面栈越堆越深。
-    Taro.redirectTo({ url: '/pages/summon/index' })
+    // 同一条输入重出一份题。同样用 redirectTo 推进：
+    // 召唤页跑完还会回到本页，用 navigateTo 会让页面栈越堆越深。
+    goPage('/pages/summon/index', 'redirect')
   }
 
   return (
-    <PhoneShell
-      navTitle={CONFIRM_COPY.navTitle}
-      navRight={CONFIRM_COPY.regenerate}
-      onNavRightTap={handleRegenerate}
-      screenClassName='confirm'
-    >
+    <PhoneShell navTitle={CONFIRM_COPY.navTitle} screenClassName='confirm'>
       {/* 1 · 这是什么 */}
       <View className='card'>
         <View className='row confirm__head'>
@@ -129,9 +130,12 @@ export default function ConfirmPage() {
 
       <View className='spacer' />
 
-      {/* 4 · 开始 */}
+      {/* 4 · 开始（次要动作放在主按钮下方，而不是导览栏右上角） */}
       <Button className='btn confirm__start' onClick={handleStart}>
         {CONFIRM_COPY.start}
+      </Button>
+      <Button className='btn ghost confirm__regenerate' onClick={handleRegenerate}>
+        {CONFIRM_COPY.regenerate}
       </Button>
       <View className='tiny confirm__hint'>{CONFIRM_COPY.noPenaltyHint}</View>
     </PhoneShell>

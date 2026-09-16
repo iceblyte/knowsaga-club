@@ -30,6 +30,8 @@ import {
   MOCK_SUGGESTIONS
 } from '../../constants/mock'
 import { useAppStore } from '../../store/useAppStore'
+import { goPage } from '../../utils/navigation'
+import { styleOf } from '../../utils/style'
 
 import './index.scss'
 
@@ -77,18 +79,11 @@ export default function HallPage() {
       return
     }
     setUserInput(draft.trim())
-    Taro.navigateTo({ url: '/pages/summon/index' })
+    goPage('/pages/summon/index', 'navigate')
   }
 
   return (
-    <PhoneShell
-      navTitle='社团大厅'
-      showBack={false}
-      navRight='我的'
-      onNavRightTap={() => Taro.switchTab({ url: '/pages/mine/index' })}
-      scroll={false}
-      reserveTabBar
-    >
+    <PhoneShell navTitle='社团大厅' showBack={false} scroll={false} reserveTabBar>
       {/* 身份欢迎卡 */}
       <View className='card'>
         <View className='row'>
@@ -165,7 +160,7 @@ export default function HallPage() {
       <View className='hall__gap' />
 
       <View className='bar blue'>
-        <View style={{ width: `${MOCK_LEVEL_PERCENT}%` }} />
+        <View style={styleOf({ width: `${MOCK_LEVEL_PERCENT}%` })} />
       </View>
     </PhoneShell>
   )

@@ -39,6 +39,8 @@ import { cancelTask, createQuizTask, pollTask } from '../../services/quiz'
 import { useAppStore } from '../../store/useAppStore'
 import { useQuizStore } from '../../store/useQuizStore'
 import type { StepStatus, TaskRecord, TaskStep } from '../../types/api'
+import { goPage, goTab } from '../../utils/navigation'
+import { styleOf } from '../../utils/style'
 
 import './index.scss'
 
@@ -80,6 +82,8 @@ export default function SummonPage() {
 
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [failure, setFailure] = useState('')
+  /** 题库已拿到、正在（或已经尝试）跳转确认页 */
+  const [ready, setReady] = useState(false)
   const [estimatedSeconds, setEstimatedSeconds] = useState(0)
   const [showCancelEntry, setShowCancelEntry] = useState(false)
   const [askAbandon, setAskAbandon] = useState(false)
@@ -109,7 +113,7 @@ export default function SummonPage() {
       // 直接进入本页（比如从历史记录跳回来）而没有主题时，退回到大厅而不是白屏
       Taro.showToast({ title: COMMON_COPY.inputTooShort, icon: 'none' })
       setTimeout(() => {
-        Taro.switchTab({ url: '/pages/hall/index' })
+        goTab('/pages/hall/index')
       }, 800)
       return () => {
         aliveRef.current = false
@@ -118,6 +122,7 @@ export default function SummonPage() {
 
     setTask(null)
     setFailure('')
+    setReady(false)
 
     const run = async () => {
       try {
@@ -144,9 +149,13 @@ export default function SummonPage() {
 
         if (final.status === 'succeeded' && final.quiz) {
           setPendingQuiz(final.quiz)
-          // redirectTo：召唤页的使命已经结束，返回键不该把用户送回一个
-          // 已经跑完的等待页 —— 那样会立刻又发一次出题请求。
-          Taro.redirectTo({ url: '/pages/confirm/index' })
+          // 题库已经在 store 里了，先让页面进入「可进入」状态 ——
+          // 万一跳转没成功，用户还有一个能点的按钮，而不是停在一个
+          // 进度已经 100% 却什么都不发生的等待页。
+          setReady(true)
+          // 用 redirectTo 推进流程：召唤页的使命已经结束，返回键不该把用户
+          // 送回一个已经跑完的等待页 —— 那样会立刻又发一次出题请求。
+          goPage('/pages/confirm/index', 'redirect')
           return
         }
 
@@ -195,15 +204,16 @@ export default function SummonPage() {
     Taro.showToast({ title: SUMMON_COPY.cancelled, icon: 'none', duration: 1200 })
     setTimeout(() => {
       Taro.navigateBack({ delta: 1 }).catch(() => {
-        Taro.switchTab({ url: '/pages/hall/index' })
+        goTab('/pages/hall/index')
       })
     }, 400)
   }
 
   const handleBack = () => {
-    if (failure) {
+    // 已经有结果（成功或失败）时返回键直接走人；还在生成中才需要确认放弃
+    if (failure || ready) {
       Taro.navigateBack({ delta: 1 }).catch(() => {
-        Taro.switchTab({ url: '/pages/hall/index' })
+        goTab('/pages/hall/index')
       })
       return
     }
@@ -217,8 +227,6 @@ export default function SummonPage() {
   return (
     <PhoneShell
       navTitle={SUMMON_COPY.navTitle}
-      navRight={showCancelEntry && !failure ? SUMMON_COPY.cancel : ''}
-      onNavRightTap={() => setAskAbandon(true)}
       onBack={handleBack}
       scroll={false}
       screenClassName='summon'
@@ -235,17 +243,25 @@ export default function SummonPage() {
         />
 
         <View className='summon__caption'>
-          <View className='h'>{failure ? SUMMON_COPY.failedTitle : SUMMON_COPY.title}</View>
+          <View className='h'>
+            {failure
+              ? SUMMON_COPY.failedTitle
+              : ready
+                ? SUMMON_COPY.readyTitle
+                : SUMMON_COPY.title}
+          </View>
           <View className='sub summon__caption-sub'>
             {failure
               ? failure
-              : `${shortenTopic(topic)} · 预计 ${estimatedSeconds || 10} 秒`}
+              : ready
+                ? `${shortenTopic(topic)} · 副本已就绪`
+                : `${shortenTopic(topic)} · 预计 ${estimatedSeconds || 10} 秒`}
           </View>
         </View>
 
         {!failure && (
           <View className='bar blue summon__bar'>
-            <View style={{ width: `${progress}%` }} />
+            <View style={styleOf({ width: `${progress}%` })} />
           </View>
         )}
       </View>
@@ -272,6 +288,16 @@ export default function SummonPage() {
         })}
       </View>
 
+      {/* 生成完毕：正常情况下已经自动跳走了；这个按钮只在跳转没成功时被看到，
+          作用是保证用户永远不会停在一个「进度 100% 却无路可走」的等待页上 */}
+      {ready && !failure && (
+        <View className='summon__actions'>
+          <Button className='btn' onClick={() => goPage('/pages/confirm/index', 'redirect')}>
+            {SUMMON_COPY.enter}
+          </Button>
+        </View>
+      )}
+
       {failure && (
         <View className='summon__actions'>
           <Button className='btn' onClick={() => setAttempt((value) => value + 1)}>
@@ -280,7 +306,9 @@ export default function SummonPage() {
         </View>
       )}
 
-      {!failure && !showCancelEntry && <View className='tiny summon__hint'>{SUMMON_COPY.waitingHint}</View>}
+      {!failure && !ready && !showCancelEntry && (
+        <View className='tiny summon__hint'>{SUMMON_COPY.waitingHint}</View>
+      )}
 
       {/* 放弃确认 */}
       {askAbandon && (

@@ -25,6 +25,8 @@ import { Canvas, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useEffect, useRef } from 'react'
 
+import { squareStyle } from '../../utils/style'
+
 import './index.scss'
 
 /** 原型机身 332px → 真机 750rpx */
@@ -204,7 +206,7 @@ export default function AccuracyRing({ percent, size = BASE, label }: AccuracyRi
   const rpxSize = Math.round(size * RATIO)
 
   return (
-    <View className='ring' style={{ width: `${rpxSize}rpx`, height: `${rpxSize}rpx` }}>
+    <View className='ring' style={squareStyle(rpxSize)}>
       {/* 轨道环：Canvas 没画出来时的兜底，读起来仍是一个完整的环 */}
       <View className='ring__track' />
       <Canvas
@@ -212,7 +214,7 @@ export default function AccuracyRing({ percent, size = BASE, label }: AccuracyRi
         id={canvasId}
         canvasId={canvasId}
         type='2d'
-        style={{ width: `${rpxSize}rpx`, height: `${rpxSize}rpx` }}
+        style={squareStyle(rpxSize)}
       />
       {/* 圆心数字用普通元素而不是 Canvas 文字：字重与字体回退更可控，
           而且 Canvas 初始化失败时它仍然在 */}

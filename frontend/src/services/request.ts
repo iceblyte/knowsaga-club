@@ -45,6 +45,15 @@ export class ApiError extends Error {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
+/**
+ * `Taro.request` 的原始返回。
+ *
+ * 不直接写 `SuccessCallbackResult<unknown>`：那个泛型被约束为
+ * `string | ArrayBuffer | IAnyObject`，`unknown` 不满足，会报 TS2344。
+ * 这里用「函数返回类型」反推，既绕开约束，又保证跟 Taro 自身的定义同步。
+ */
+type RawRequestResult = Awaited<ReturnType<typeof Taro.request>>
+
 export interface RequestOptions {
   /** 相对 `API_PREFIX` 的路径，如 `/quiz/generate` */
   path: string
@@ -72,7 +81,7 @@ export async function request<T>({
   data,
   timeoutMs = API_TIMEOUT_MS
 }: RequestOptions): Promise<T> {
-  let res: Taro.request.SuccessCallbackResult<unknown>
+  let res: RawRequestResult
 
   try {
     res = await Taro.request({
