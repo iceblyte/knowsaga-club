@@ -31,3 +31,29 @@ skills-lock.json
 # 原型：截图与临时渲染产物（可由 _gen/*.py 重新生成）
 prototype/_shots/
 prototype/_gen/_*.html
+
+# ===== 环境变量：绝不允许提交，密钥只存在本地 =====
+.env
+.env.local
+.env.*.local
+*.env
+
+# 保留模板文件，它是唯一可以入库的 env 文件
+!.env.example
+
+# ===== 前端 Taro 构建产物 =====
+frontend/dist/
+frontend/.temp/
+frontend/.rn_temp/
+frontend/.swc/
+project.private.config.json
+
+# ===== 后端本地缓存 =====
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
