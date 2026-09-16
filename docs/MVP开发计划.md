@@ -23,6 +23,8 @@
 | 9 | 大模型 | **统一 `deepseek-flash`**（`deepseek-chat` 已退役） |
 | 10 | 底部标签栏 | **保留完整 5 个 tab**；未开发的 3 个进入统一「即将开放」空态页 |
 | 11 | 尺寸换算 | **rpx = 原型 px × 2.259**（原型机身 332px → 真机 750rpx） |
+| 12 | 多选部分正确给分 | **固定给 50%**（即 60 × 50% = **30 XP**），与原型 02 显示的 `+30 XP` 完全一致 |
+| 13 | `deepseek-flash` 思考模式 | **显式关闭** `thinking: {"type":"disabled"}`（默认开启会导致 `content` 为空、且 `tool_choice` 报 400） |
 
 ---
 
@@ -42,13 +44,16 @@
 
 ### 2.2 `with_structured_output()` 不能使用 `json_schema` 模式
 
-`langchain-openai` 的 `with_structured_output()` 提供三种 method：`function_calling`(默认) / `json_mode` / `json_schema`。
+`langchain-openai` 的 `with_structured_output()` 提供三种 method：`function_calling` / `json_mode` / `json_schema`。
+注意 1.6.2 的**默认值是 `json_schema`**（不是 `function_calling`）——
+不显式传 `method` 就必然失败，所以调用处一律经 `build_structured_llm()` 补齐。
 其中 `json_schema` 依赖 OpenAI 的 strict structured outputs（`response_format: {type:"json_schema", strict:true}`），
 而 DeepSeek 的 `response_format` **仅支持 `{"type":"json_object"}`**，不支持 `json_schema`。
 
 **处理**：
-- 主链使用 `method="function_calling"` —— DeepSeek 原生支持工具调用（最多 128 个 function、支持并行调用）
-- 失败时自动降级 `method="json_mode"` 重试
+- 主链使用 `method="json_mode"`（`response_format={"type":"json_object"}`）—— 它的实测一次通过率最高，见 §2.4.2
+- 失败时自动降级 `method="function_calling"`（DeepSeek 原生支持工具调用，最多 128 个 function、支持并行调用）
+- 两通道**交替**尝试而非顺序撞（理由见 `quiz_chain._attempt_plan`）
 - 若后续要开 strict 模式，需 `DEEPSEEK_USE_BETA=true` 把 base_url 切到 `https://api.deepseek.com/beta`（官方标注为不稳定特性）
 
 ### 2.3 React 版本
@@ -61,6 +66,55 @@
 - DeepSeek JSON Output 官方明确说明「**偶发返回空内容**」→ 方案设计 §7.4 的「一级校验：空响应检查」升级为**必需项**，且必须配重试。
 - 官方要求使用 JSON Output 时，**prompt 中必须出现 "json" 字样并提供 JSON 示例** → 方案设计 §8.3 的 Prompt 已满足，编码时不得删减。
 - 标准端点 `max_tokens` 上限 4096，需保守设置防止结构体被截断。
+
+### 2.4.1 思考模式必须显式关闭（实测发现，**阻断级**）
+
+用真实 Key 对 `deepseek-flash` 实测得到 4 组结果：
+
+| 测试 | 请求配置 | 实测结果 |
+|---|---|---|
+| A | 不传 `thinking` + `max_tokens=16` | ❌ `content=''`，16 个 token **全部消耗在 `reasoning_tokens`** |
+| B | 不传 `thinking` + `tools` + 强制 `tool_choice` | ❌ **HTTP 400**：`Thinking mode does not support this tool_choice` |
+| C | `thinking:{"type":"disabled"}` + 强制 `tool_choice` | ✅ 完美返回结构化题目，1.0s |
+| D | `thinking:{"type":"disabled"}` + `response_format:json_object` | ✅ 正常返回 JSON，0.95s |
+| E | 不传 `thinking` + `response_format:{"type":"json_schema","strict":true}` | ❌ **HTTP 400**：`This response_format type is unavailable now`（印证 §2.2） |
+
+**结论**：`deepseek-flash` **默认开启思考模式**，必须显式传 `thinking: {"type":"disabled"}`。否则：
+1. 出题链走 `with_structured_output(method="function_calling")` 时会因为强制 `tool_choice` 直接 400 失败（该通道现在是降级通道，但降级路径同样必须能跑通）；
+2. 即便不失败，`content` 也可能为空、推理 token 挤占 `max_tokens` 造成结构截断。
+
+**处理**：`.env` 中 `DEEPSEEK_THINKING=false`；`langchain_factory.py` 需通过 `extra_body={"thinking":{"type":"disabled"}}` 或 `model_kwargs` 透传给 `ChatOpenAI`，并写入单测断言。
+
+### 2.4.2 结构化输出主通道：实测后从 `function_calling` 调换为 `json_mode`
+
+**发现过程**：Phase 1.14 的真实 API 抽验（连续 10 次出题）最终 10/10 可渲染，
+但其中 **4 次首轮 `function_calling` 就失败**，报错完全一致：
+
+```
+questions.N.knowledge_point  Field required
+questions.N.difficulty       Field required
+```
+
+即模型在工具调用通道下**系统性地省略每道题的 `knowledge_point`/`difficulty`**
+（它会把知识点放在顶层的 `knowledge_points` 里，但不在每道题里重复）。
+
+**量化**：写了 `backend/scripts/compare_output_methods.py`（测量工具，不进 pytest）对比两通道：
+
+| 通道 | 一次通过率（count=6） | 失败形态 |
+|---|---|---|
+| `function_calling` | **4/6 = 67%** | 空响应 ×2 |
+| `json_mode` | **6/6 = 100%** | — |
+
+**处理**：把 `STRUCTURED_OUTPUT_PRIMARY` 调换为 `json_mode`，
+`STRUCTURED_OUTPUT_FALLBACK` 设为 `function_calling`。三个理由：
+
+1. 首轮通过率直接决定用户的等待时长与 API 成本 —— 67% 意味着三分之一的请求要多跑一轮；
+2. 两者的失效原因**不同**，所以降级通道要保留而不是删掉：若上游某天不再支持
+   `response_format=json_object`，只有换通道能救；
+3. `json_mode` 的代价（prompt 必须含 "json" 字样与 JSON 示例）已经满足 —— 见 §2.4 第二条。
+
+同时 `tests/test_llm_fallback.py` 增加了 `test_default_channel_is_json_mode` 作为**回归护栏**：
+默认值不设断言的话，日后「顺手改回 `function_calling`」不会让任何测试变红。
 
 ### 2.5 依赖版本锁定（均为实测最新稳定版）
 
@@ -220,7 +274,7 @@ knowsaga-club/
 | 1.7 | `llm/langchain_factory.py`：`ChatOpenAI(model=deepseek-flash, base_url, api_key, temperature, top_p, timeout, max_retries)`，从 `.env` 读取 | 单测用 mock，不发真实请求 |
 | 1.8 | `llm/search/base.py` 定义 `SearchProvider` 协议 + `NoopSearchProvider`（返回空结果并标记 `degraded=true`） | 单测通过 |
 | 1.9 | `prompts/quiz_prompt.py`：`quiz_prompt_v1`（严格按方案设计 §8.3，仅补足 "json" 关键词与 JSON 示例） | 契约测试通过 |
-| 1.10 | `llm/quiz_chain.py`：`with_structured_output(QuizStructured, method="function_calling")`，失败切 `json_mode` | 单测覆盖两条分支 |
+| 1.10 | `llm/quiz_chain.py`：`with_structured_output(QuizStructured, method=主通道)`，失败切降级通道（默认 `json_mode` ⇄ `function_calling`） | 单测覆盖两条分支 |
 | 1.11 | `test_llm_fallback.py`：模拟空响应 / Schema 映射失败 / 字段缺失 / 连续失败，验证五级兜底 | 先红后绿 |
 | 1.12 | `services/quiz_service.py` + `services/task_service.py`（内存任务表 + TTL 清理 + 取消） | `test_task_service.py` 通过 |
 | 1.13 | `test_quiz_api.py`：`POST /quiz/generate` 返回 task_id；`GET /tasks/{id}` 轮询到 succeeded 返回完整 Quiz；非法输入返回 4001；生成失败返回 5001 | 先红后绿 |
@@ -484,10 +538,21 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 | 题型 | 满分 XP | 规则 |
 |---|---|---|
 | 单选 single | 40 | 选对得 40，选错 0 |
-| 多选 multiple | 60 | `floor(60 × 选对项数 ÷ 正确项数)`；**有任何错选则记 0**；至少选对 1 项才计分 |
+| 多选 multiple | 60 | 完全选对得 60；**部分正确固定给 50% = 30 XP**；**有任何错选则 0**；全不选 0 |
 | 判断 judge | 20 | 选对得 20，选错 0 |
 
-**答错一律 +0，绝不扣分**（已确认）。原型 02「部分正确」屏显示的 `+30 XP` 与本题文案「选对 3 项中的 2 项，拿到一半经验值」在该规则下推得 `floor(60×2÷3)=40`，与原型显示的 30 有 10 点出入。**此处以「按正确项比例」为准**，如需与原型完全一致，可改为「部分正确固定给 50%」，请确认。
+**多选判定顺序**（必须按此顺序，否则会出现「错选也给分」的漏洞）：
+
+```
+1. 若 selected 中存在不属于 answer 的选项  → 0 XP（错选一票否决）
+2. 否则若 selected == answer              → 60 XP（完全正确）
+3. 否则若 selected ⊂ answer 且非空        → 30 XP（部分正确，固定 50%）
+4. 否则（selected 为空）                   → 0 XP
+```
+
+**答错一律 +0，绝不扣分**（已确认）。部分正确固定 50% 的口径（已确认）与原型 02「部分正确」屏显示的 `+30 XP` 完全一致。
+
+> 已锁定的口径：**固定 50%**（不按正确项比例）。示例：3 项正确答案中选对 2 项 → `+30 XP`，与原型一致。
 
 ### 9.2 单局总经验值
 
@@ -538,27 +603,93 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
 
 策略：**LLM 调用一律 mock**（不发真实请求），保证测试确定性与速度；真实 API 抽验放在 Phase 1.14 作为独立脚本，不进 pytest。
 
+### 10.1 Phase 1 完成情况（实测）
+
+| 测试文件 | 用例数 | 状态 |
+|---|---|---|
+| `test_health_api.py` | 5 | ✅ |
+| `test_text_cleaner.py` | 21 | ✅ |
+| `test_content_filter.py` | 14 | ✅ |
+| `test_quiz_schema.py` | 42 | ✅ |
+| `test_prompt_contract.py` | 24 | ✅ |
+| `test_task_service.py` | 22 | ✅ |
+| `test_llm_fallback.py` | 19 | ✅ |
+| `test_quiz_api.py` | 23 | ✅ |
+| **合计** | **170** | **全绿** |
+
+覆盖率（`--cov=app`）：**总计 90%**；服务层 `task_service` 98% / `quiz_service` 95%，**高于 §5 Phase 4.4 要求的 85%**。
+
+> `langchain_factory.py` 覆盖率 28% 是**刻意**的：它的正确性只能靠真实 API 验证（参数名、`extra_body`、`tool_choice` 兼容性都是实测结论），断言「参数被传对」只是把实现抄一遍。它由 Phase 1.14 的真实抽验负责。
+> `test_llm_fallback.py` 从 17 增至 19，是 §2.4.2 调换主通道时补的回归护栏（默认值断言 + 阶梯首项断言）。
+> `report` 相关模块尚未实现，Phase 3 补齐。
+
+### 10.2 Phase 1.14 真实 API 抽验（实测）
+
+`.venv/Scripts/python.exe scripts/verify_quiz_chain.py`，连续 10 次真实出题：
+
+| 指标 | 结果 |
+|---|---|
+| 界面可渲染率 | **10/10 = 100%**（判据：题量 3–5、每题 4 选项、答案 ⊆ 选项、有解析） |
+| 题型构成 | 3 单选 · 1 多选 · 1 判断，10/10 全中 |
+| 平均耗时 | 7.5s / 次（含首轮失败后的降级重试） |
+| 首轮通过率 | 6/10 —— 这是 §2.4.2 调换主通道的直接动因 |
+
 ---
 
 ## 11. 风险与对策
 
 | 风险 | 影响 | 对策 |
 |---|---|---|
-| DeepSeek JSON Output 偶发空响应（官方已知问题） | 出题失败 | 五级兜底 + `function_calling → json_mode` 自动降级 + 最多 2 次重试 |
+| DeepSeek JSON Output 偶发空响应（官方已知问题） | 出题失败 | 两通道交替兜底（`json_mode` ⇄ `function_calling`，共 2 + `QUIZ_MAX_RETRIES` 次）+ 总时间预算 50s，见 §12.1 |
+| `function_calling` 通道**系统性省略嵌套字段**（实测 67% 首轮通过） | 1/3 的请求要多跑一轮，耗时与成本翻倍 | 主通道调换为 `json_mode`（实测 100%），并加默认值回归护栏，见 §2.4.2 |
 | DeepSeek 出题耗时超过小程序 60s 上限 | 请求失败 | 异步任务 + 轮询（已确定） |
+| 兜底阶梯本身耗时堆积（timeout × 次数） | 用户长时间空等 | `QUIZ_GENERATION_BUDGET_SECONDS`（默认 50s）越过即停，不再发起剩余尝试 |
 | `max_tokens` 上限 4096 导致 JSON 截断 | 结构不完整 | 保守设置 + 截断检测 + 命中时降题量重试 |
 | AI 返回结构非法 | 前端崩溃 | 服务层强制 Pydantic 校验，脏数据绝不外传，失败即 5001 |
 | Taro 跨端样式差异（无 `box-shadow: inset` 部分支持） | 视觉偏差 | 关键描边改用 `border` 方案做等价替代，逐屏比对截图 |
 | 小程序主包 2MB 上限（Baloo 2 字体） | 包体超限 | 字体子集化，仅保留数字与拉丁字形 |
+| 微信 `<image>` 对「只有 viewBox」的 SVG 尺寸推导无保证 | 标签栏图标不显示或错位 | 标签栏图标改用 81×81 PNG（`scripts/rasterize_tab_icons.py` 离线光栅化），见 §12.2 |
+| 多个 `npm install` 并发抢同一 `node_modules` | 安装互相锁死、长时间不推进 | 只允许单进程安装；`.npm-install.log` 落盘便于观察 |
 
 ---
 
-## 12. 待你确认的 3 项
+## 12. 确认记录
 
-1. **多选部分正确的给分**：按比例（`floor(60×对/总)`，与原型 02 显示的 `+30` 差 10 点）还是固定给 50%（与原型显示一致）？
-2. **`.env` 的 `DEEPSEEK_API_KEY`** 填好后告诉我，我需要用它做一次真实连通性验证（1 次最小请求）再正式开始写代码。
-3. 是否认可 Phase 0–5 的顺序与验收标准（特别是 Phase 1 的**先写测试后写实现**）。
+已于 **2026-09-16** 人工确认全部 3 项：
+
+| # | 事项 | 结论 |
+|---|---|---|
+| 1 | 多选部分正确的给分 | **固定给 50%**（30 XP），与原型 02 显示一致 → 已写入 §9.1 |
+| 2 | `.env` 的 `DEEPSEEK_API_KEY` | 已填写；连通性验证已完成（见 §2.4.1 实测结论表） |
+| 3 | Phase 0–5 顺序与验收标准 | **认可**，特别是 Phase 1 的「先写测试跑红、再写实现跑绿」 |
+
+**开工前的连通性验证结果（已完成）**
+
+| 验证项 | 结果 |
+|---|---|
+| `GET /models` | ✅ 200，仅返回 `deepseek-flash` 与 `deepseek-v4-pro`（证实 `deepseek-chat` 已退役） |
+| 基础对话 | ✅ 0.35–0.6s |
+| function calling + 强制 `tool_choice` | ✅ 1.0s，返回结构完整的题目对象 |
+| `response_format: json_object` | ✅ 0.95s，JSON 可正常解析 |
+| `response_format: json_schema` | ❌ 400 `This response_format type is unavailable now`（已按 §2.2 规避） |
+| 思考模式默认状态 | ⚠️ **默认开启**，必须显式关闭（已按 §2.4.1 处理） |
 
 ---
 
-**确认以上内容后，我将从 Phase 0 开始按序执行，并在每个 Phase 完成后向你汇报验收结果。**
+### 12.1 开工后的工程判定（编码期结论，追加记录）
+
+| # | 事项 | 结论与理由 |
+|---|---|---|
+| 4 | 兜底阶梯的**顺序** | 两个通道**交替**（主 → 降级 → 主 → 降级），而不是「主通道连撞 3 次再降级」。理由：空响应是瞬时的（换不换通道成功概率相同），而通道不兼容只有换通道能救 —— 交替在最坏情况下不亏、在最好情况下快得多。总次数 = `2 + QUIZ_MAX_RETRIES` |
+| 5 | 兜底阶梯的**时间上限** | 新增 `QUIZ_GENERATION_BUDGET_SECONDS`（默认 50s）。理由：单次 `timeout(30s)` 叠加 HTTP 重试后，最坏情况远超用户愿意等待的长度；越过预算即停止剩余尝试。注意第一次尝试**永远放行**，否则 0 会变成「永远失败」的死路 |
+| 6 | 「确定性模板」兜底**只属于报告链** | 方案设计 §13 描述的第五级「确定性模板」在**出题链不实现**。理由：报告是对已知数据（正确率 / XP / 金币）的复述，模板降级后仍是真话；而题库是纯生成内容，模板拼出来的题本质是编造学习材料，用户无法分辨 —— 比直接报错更有害。出题链停在 5001，把重试选择交回用户 |
+| 7 | 生成失败的**返回落点** | 轮询端点以 HTTP 200 + `status="failed"` + `error={code:5001, message}` 返回，而不是把轮询请求本身变成 502。理由：轮询请求本身是成功的；§7.3 专门为它留了 `status` 与 `error` 字段，若改用 HTTP 状态码表达，这两个字段就失去意义。**前端判 `error.code`，不判 HTTP 状态码** |
+| 8 | 轮询响应体**形状固定 10 键** | `task_id / task_type / status / progress / steps / quiz / report / error / created_at / updated_at`，含 `report`（Phase 3 用）且无值的字段给 `null` 而非省略。理由：前端只写一套解析逻辑；省略键会逼前端到处写 `?.`，漏一处就是线上白屏 |
+| 9 | `QuizDraft` 与 `Quiz` **分开定义** | `with_structured_output` 用 `QuizDraft`（只含模型该产出的字段），不用 `Quiz`。理由：不逼模型回显 `user_input`（浪费 token 且可能被改写），也不让它生成服务端才有权决定的 `quiz_id` |
+| 10 | 标签栏图标**改用 PNG** | 微信 `image` 官方支持 SVG，但同时列出「不支持百分比单位 / 不支持 `<style>` / `scaleToFill` 下 WebView 居中」三条限制；抽出的图标只有 `viewBox` 没有 `width/height`，尺寸推导属文档未兜底行为。标签栏是固定 81×81 的位图场景，改为 PNG 一次性消除不确定性。光栅化脚本只用 Python 标准库（不引入原生依赖），矢量副本仍保留在 `assets/icons/svg/` |
+| 11 | 检索 Provider 只落地 `base` + `noop` | 方案设计的目录里列了 `bocha` / `tavily`，但它们是 P1 范围。**不写空壳文件**（既无法测试，也会让人误以为已支持）；改为在 `get_search_provider` 里对这两个名字显式报「尚未接入」。开关打开但 Provider 未实现时**报错而非静默降级成不联网** —— 静默降级最糟：配置明明打开，用户却以为在联网 |
+| 12 | 出题主通道**由 `function_calling` 调换为 `json_mode`** | 实测量化：`json_mode` 一次通过 6/6，`function_calling` 4/6（失败形态为「模型系统性省略每题的 `knowledge_point`/`difficulty`」，偶尔是空响应）。降级通道保留 `function_calling` 而非删除 —— 两者失效原因不同，上游若不再支持 `response_format=json_object` 时只有换通道能救。量化脚本 `backend/scripts/compare_output_methods.py` 不进 pytest。详见 §2.4.2 |
+
+---
+
+**当前状态：Phase 0 已完成；Phase 1 已完成（1.1–1.14，170 个测试全绿、总覆盖率 90%，真实 API 抽验 10/10 可渲染）。**每个 Phase 完成后向用户汇报验收结果。

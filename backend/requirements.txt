@@ -1,0 +1,21 @@
+# 《知拾冒险社》后端依赖
+# 版本均为 2026-09-16 实测最新稳定版，勿随意升级（升级前请先跑 pytest）
+
+# --- Web 框架 ---
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# --- LLM ---
+langchain==1.4.0
+langchain-core==1.6.3
+langchain-openai==1.6.2
+
+# --- HTTP 客户端（搜索 Provider / 测试用）---
+httpx==0.28.1
+
+# --- 测试 ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==6.2.1

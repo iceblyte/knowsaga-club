@@ -1,0 +1,31 @@
+[project]
+name = "knowsaga-club-backend"
+version = "0.1.0"
+description = "知拾冒险社 · 后端服务"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "integration: 需要真实 LLM 请求的测试（默认不跑，用 -m integration 显式启用）",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/main.py", "*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
