@@ -140,7 +140,11 @@ export default function HallPage() {
         召唤副本
       </Button>
 
-      {/* 冒险者档案（演示数据，见 constants/mock.ts） */}
+      {/* 冒险者档案（演示数据，见 constants/mock.ts）。
+          注意：等级进度条属于**卡片内部**的元素 —— 原型里 `.between` 之后紧跟一个
+          8px 留白，然后才是 `.bar.blue`，但整条 bar 仍在 `.card` 里。
+          早前把它写在 `card` 闭合之后，于是变成一条悬在卡片与标签栏之间的孤立蓝条
+          （轨道色 $paper3 与底板 $board 接近，看上去就只剩那条 64% 的蓝色）。 */}
       <View className='card'>
         <View className='between'>
           <View className='row hall__adventurer'>
@@ -155,12 +159,14 @@ export default function HallPage() {
           </View>
           <Text className='pill gold'>连续 {adventurer.streakDays} 天</Text>
         </View>
-      </View>
 
-      <View className='hall__gap' />
+        {/* 原型 `<div style="height:8px">`：档案行与进度条之间的留白 */}
+        <View className='hall__gap' />
 
-      <View className='bar blue'>
-        <View style={styleOf({ width: `${MOCK_LEVEL_PERCENT}%` })} />
+        {/* 等级进度条，填充 64% = 1280 / 2000 */}
+        <View className='bar blue'>
+          <View style={styleOf({ width: `${MOCK_LEVEL_PERCENT}%` })} />
+        </View>
       </View>
     </PhoneShell>
   )
