@@ -1,0 +1,78 @@
+@use "../../styles/tokens" as *;
+
+.settle {
+  // 原型这一屏没有导览栏，只留 48px 空档保持与其它页相同的版式节奏
+  background: $paper;
+
+  &__nav-gap {
+    height: $h-nav;
+    flex: none;
+  }
+
+  &__hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $sp-7;
+    flex: none;
+  }
+
+  &__caption {
+    text-align: center;
+  }
+
+  &__title {
+    font-size: rpx(22);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  &__subtitle {
+    margin-top: rpx(6);
+  }
+
+  &__stamp-slot {
+    margin-top: $sp-5;
+  }
+
+  &__rewards {
+    margin-top: rpx(6);
+    flex: none;
+  }
+
+  // 金币卡：宝箱怪与数字并排
+  &__coins {
+    gap: $sp-4;
+  }
+
+  &__accuracy {
+    gap: $sp-5;
+  }
+
+  &__accuracy-title {
+    font-size: $fs-h3; // 13
+    font-weight: 600;
+  }
+
+  &__accuracy-note {
+    margin-top: rpx(4);
+  }
+
+  &__action {
+    flex: none;
+  }
+
+  &__action-secondary {
+    flex: none;
+    margin-top: $sp-4;
+  }
+
+  &--empty {
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__empty-text {
+    text-align: center;
+  }
+}

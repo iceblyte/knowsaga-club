@@ -1,0 +1,50 @@
+@use "../../styles/tokens" as *;
+
+.confirm {
+  // 标题与摘要需要「吃掉剩余宽度并允许换行」，否则长标题会把精灵挤扁
+  &__head {
+    align-items: flex-start;
+    gap: $sp-5;
+  }
+
+  &__head-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    margin-top: rpx(6);
+  }
+
+  &__summary {
+    margin-top: rpx(6);
+  }
+
+  &__points-label {
+    margin-bottom: $sp-4;
+  }
+
+  // chip 换行排列（原型 `flex-wrap:wrap;gap:6px`）
+  &__points {
+    flex-wrap: wrap;
+    gap: $sp-3;
+  }
+
+  &__start {
+    flex: none;
+  }
+
+  &__hint {
+    text-align: center;
+    flex: none;
+  }
+
+  &--empty {
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__empty-text {
+    text-align: center;
+  }
+}

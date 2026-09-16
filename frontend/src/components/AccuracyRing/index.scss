@@ -1,0 +1,40 @@
+@use "../../styles/tokens" as *;
+
+.ring {
+  position: relative;
+  flex: none;
+
+  // 轨道环的兜底：Canvas 未绘制时它就是用户看到的全部
+  &__track {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 50%;
+    border: 8px solid #e6d6b4; // 原型 stroke-width=8，与画布同一坐标系
+  }
+
+  &__canvas {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+
+  &__label {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: $f-disp;
+    font-size: $fs-h2; // 15，原型 font-size=15
+    font-weight: 800;
+    color: $ink;
+  }
+}

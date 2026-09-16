@@ -23,6 +23,12 @@ declare namespace NodeJS {
      * @see https://taro-docs.jd.com/docs/next/env-mode-config#特殊环境变量-taro_app_id
      */
     TARO_APP_ID: string
+    /**
+     * 后端地址，在 `.env.<mode>` 中定义（见 src/constants/api.ts）。
+     * 写成必填是为了让「忘了在 env 文件里定义」这件事在类型层面就能被注意到 ——
+     * 未定义的键不会被 DefinePlugin 替换，会在运行时炸掉。
+     */
+    TARO_APP_API_BASE_URL: string
   }
 }
 

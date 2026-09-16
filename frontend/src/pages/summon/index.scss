@@ -1,0 +1,60 @@
+@use "../../styles/tokens" as *;
+
+// 原型第 4 屏的内容区背景是纯纸面，不是公告板桌面
+.summon {
+  background: $paper;
+
+  &__spacer {
+    flex: 1;
+  }
+
+  // 法阵 + 标题 + 进度条作为一个整体居中；gap 对应原型的内联 gap:18px
+  &__hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $sp-10;
+    flex: none;
+  }
+
+  &__caption {
+    text-align: center;
+  }
+
+  &__caption-sub {
+    margin-top: rpx(6);
+  }
+
+  // 原型写死 180px 宽，明显窄于整行 —— 是「仪式感」而不是数据可视化
+  &__bar {
+    width: rpx(180);
+  }
+
+  &__step-gap {
+    height: $sp-4;
+  }
+
+  &__actions {
+    flex: none;
+  }
+
+  &__hint {
+    text-align: center;
+    flex: none;
+  }
+
+  // 弹层里的卡片：原型 `padding:18px`、内容居中
+  &__dialog {
+    width: 100%;
+    padding: $sp-9;
+    text-align: center;
+  }
+
+  &__dialog-body {
+    margin: $sp-4 0 $sp-8;
+  }
+
+  &__dialog-secondary {
+    margin-top: $sp-4;
+  }
+}
