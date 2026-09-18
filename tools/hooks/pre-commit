@@ -1,0 +1,31 @@
+#!/bin/sh
+# 提交前凭证体检。本仓库是公开仓库，一次误提交就会永久留在 git 历史里。
+#
+# 启用（在本仓库内执行一次即可）：
+#   git config core.hooksPath tools/hooks
+# 停用：
+#   git config --unset core.hooksPath
+# 确认本次提交无害、需要临时跳过：
+#   git commit --no-verify
+
+set -e
+
+PY=""
+for cand in "backend/.venv/Scripts/python.exe" "backend/.venv/bin/python" python3 python; do
+  if command -v "$cand" >/dev/null 2>&1; then
+    PY="$cand"
+    break
+  fi
+done
+
+if [ -z "$PY" ]; then
+  echo "pre-commit: 找不到可用的 python，跳过凭证体检（请手动运行 tools/scan_secrets.py）" >&2
+  exit 0
+fi
+
+if ! "$PY" tools/scan_secrets.py; then
+  echo "" >&2
+  echo "提交已被拦下：上面的内容很可能包含真实凭证。" >&2
+  echo "确认无害时可跳过：git commit --no-verify" >&2
+  exit 1
+fi

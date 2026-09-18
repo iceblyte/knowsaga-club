@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "frontend",
   "description": "知拾冒险社小程序",
-  "appid": "touristappid",
+  "appid": "wx0d0b52473b2391bd",
   "setting": {
     "urlCheck": true,
     "es6": false,
