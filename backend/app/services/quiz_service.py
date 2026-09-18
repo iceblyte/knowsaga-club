@@ -22,17 +22,21 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Callable
+
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError, ErrorCode, DEFAULT_MESSAGES
 from app.core.logging import get_logger
+from app.db.session import session_scope
 from app.llm import quiz_chain
 from app.llm.search import SearchProvider, get_search_provider
 from app.models.quiz import Quiz
-from app.services import task_service
+from app.services import quiz_repository, task_service
 from app.services.task_service import TaskRecord, TaskStep
 from app.utils.content_filter import check_content
 from app.utils.text_cleaner import validate_input
@@ -53,6 +57,14 @@ _PROGRESS_DONE = 100
 
 #: 后台执行器。**有界**是关键：无界的线程创建会让一次流量高峰把进程打穿。
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="quiz-gen")
+
+#: 落库用的会话工厂（可替换）。
+#:
+#: 出题跑在**后台线程**里，那里没有请求级会话，必须自己开一个。
+#: 做成模块级可替换的变量，是为了让测试能把它指向测试库 ——
+#: 否则后台写入会落到业务库上（`conftest` 里对此有明确警告）。
+#: 服务层的其它函数一律**显式接收 session**，只有这一处例外。
+_open_session: Callable[[], AbstractContextManager[Session]] = session_scope
 
 
 def _submit(fn: Callable[[], None]) -> None:
@@ -171,6 +183,7 @@ def _finish_failed(task_id: str, code: int, message: str, *, step_key: str = STE
 def run_quiz_generation(
     task_id: str,
     *,
+    user_id: int,
     user_input: str,
     question_count: int,
     difficulty: str,
@@ -182,6 +195,7 @@ def run_quiz_generation(
 
     Args:
         task_id: 已创建的任务。
+        user_id: 卷轴归属。落库时写进 `quizzes.user_id`。
         user_input: 已清洗的输入。
         generate: 注入出题函数（测试用）；不传则用 `quiz_chain.generate_quiz`。
         search_provider: 注入检索 Provider（测试用）；不传则按配置取。
@@ -256,6 +270,22 @@ def run_quiz_generation(
             detail="正在检查答案与选项是否自洽",
             progress=_PROGRESS_VALIDATE,
         )
+
+        # ---- 落库 ----
+        # 为什么放在「校验完成」之前：这一步是整条链上唯一会写数据库的动作，
+        # 也是最可能失败的一步（库不可用、列超长）。放在这里，失败会如实
+        # 反映在「校验题目结构」这一步上，而不是让界面显示「全部完成」
+        # 却在轮询结果里找不到题库。
+        #
+        # 落库之后 `quiz.quiz_id` 与每道题的 `id` 都被改写成数据库主键的
+        # 字符串形式（见 `quiz_repository` 的模块说明）。没有这一步，
+        # 前端拿到的题库无法交卷 —— 结算需要按主键反查题目快照。
+        quiz = _persist_quiz(
+            user_id=user_id,
+            quiz=quiz,
+            difficulty=difficulty,
+        )
+
         _advance(
             task_id,
             STEP_VALIDATE,
@@ -283,10 +313,30 @@ def run_quiz_generation(
 
 
 # -----------------------------------------------------------------------------
+# 落库
+# -----------------------------------------------------------------------------
+def _persist_quiz(*, user_id: int, quiz: Quiz, difficulty: str) -> Quiz:
+    """把题库写进 `quizzes` + `questions`，返回 id 已回填的题库。
+
+    **不要吞掉这里的异常**：落库失败必须让整个任务失败。返回一份没有数据库 id
+    的题库看起来「出题成功了」，但用户在答题结束交卷时才会撞上一个无法解释的错误 ——
+    那时他已经花了五分钟答题，而这次错误原本可以在十秒前就告诉他。
+
+    这里用 `session_scope()` 而不是请求级会话：本函数运行在后台线程里。
+    工厂是可替换的模块变量（`_open_session`），测试据此指向测试库。
+    """
+    with _open_session() as session:
+        return quiz_repository.persist_quiz(
+            session, user_id=user_id, quiz=quiz, difficulty=difficulty
+        )
+
+
+# -----------------------------------------------------------------------------
 # 提交入口
 # -----------------------------------------------------------------------------
 def submit_quiz_request(
     *,
+    user_id: int,
     user_input: str,
     question_count: int,
     difficulty: str,
@@ -299,6 +349,9 @@ def submit_quiz_request(
     而一段连 8 个字都不到的输入本来就该先提示「再多说一点」，
     不必走到敏感词判断。
 
+    Args:
+        user_id: 任务的归属用户。任务表不再允许匿名（见 `task_service.get_task_for_user`）。
+
     Raises:
         AppError: 4001 内容过短 / 过长 / 命中敏感词或提示词注入。
     """
@@ -309,12 +362,13 @@ def submit_quiz_request(
 
     provider = search_provider or get_search_provider(s)
     record = task_service.create_task(
-        "quiz", steps=_initial_steps(provider, question_count)
+        "quiz", user_id=user_id, steps=_initial_steps(provider, question_count)
     )
 
     _submit(
         lambda: run_quiz_generation(
             record.task_id,
+            user_id=user_id,
             user_input=cleaned,
             question_count=question_count,
             difficulty=difficulty,
@@ -336,6 +390,9 @@ def shutdown_executor(wait: bool = False) -> None:
     _executor.shutdown(wait=wait)
 
 
-def get_task_for_polling(task_id: str) -> TaskRecord:
-    """轮询入口的语义封装（等价于 `task_service.get_task`，便于上层换实现）。"""
-    return task_service.get_task(task_id)
+def get_task_for_polling(task_id: str, user_id: int) -> TaskRecord:
+    """轮询入口的语义封装：**带归属校验**。
+
+    不是自己的任务按「不存在」处理（4004），理由见 `task_service.get_task_for_user`。
+    """
+    return task_service.get_task_for_user(task_id, user_id)

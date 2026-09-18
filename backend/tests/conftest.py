@@ -25,6 +25,22 @@ TEST_ENV = {
     "KNOWLEDGE_SEARCH_ENABLED": "false",
     "LOG_LEVEL": "WARNING",
     "QUIZ_TASK_TTL_SECONDS": "600",
+    # ---------- 用户系统 ----------
+    # 固定测试用密钥（≥32 字符），保证测试不依赖开发者本地 .env
+    "JWT_SECRET": "unit-test-secret-0123456789abcdef0123456789abcdef",
+    "JWT_EXPIRE_HOURS": "168",
+    "APP_TIMEZONE": "Asia/Shanghai",
+    # 调试登录通道在测试里必须开启，否则 H5/本机链路无法验证
+    "DEV_LOGIN_ENABLED": "true",
+    "WECHAT_APPID": "wx_unittest_appid",
+    "WECHAT_APP_SECRET": "unittest_app_secret",
+    # **关键**：测试环境一律走 mock 身份 Provider。
+    # 若为 real，任何走登录接口的用例都会真的去请求微信服务器。
+    "WECHAT_PROVIDER": "mock",
+    "AVATAR_MAX_BYTES": str(2 * 1024 * 1024),
+    # 限流阈值调小，便于在一个用例里验证 4290
+    "LOGIN_RATE_LIMIT": "10",
+    "LOGIN_RATE_WINDOW_SECONDS": "60",
 }
 
 
@@ -201,3 +217,254 @@ def sample_draft_payload(sample_questions: list[dict]) -> dict:
         "knowledge_points": None,
         "questions": sample_questions,
     }
+
+
+# -----------------------------------------------------------------------------
+# 数据库夹具（用户系统）
+# -----------------------------------------------------------------------------
+# 设计原则：
+# 1. **绝不碰业务库**。所有用例走 `TEST_DATABASE_URL`，未配置时整体 skip
+#    而不是回退到业务库 —— 回退会让 pytest 的清表操作抹掉真实数据。
+# 2. 引擎在**会话级**建一次（连接池复用），表用 `create_all` 幂等确保存在
+#    （表已由 backend/sql/01_schema.sql 建好，这里是兜底，不是建表主路径）。
+# 3. 每个用例开始前 TRUNCATE 全部 10 张表，保证用例之间绝对隔离。
+#    用 `SET FOREIGN_KEY_CHECKS=0` 绕开外键顺序问题；走 AUTOCOMMIT 连接
+#    是因为 MySQL 的 TRUNCATE 会隐式提交，混在显式事务里会破坏事务边界。
+
+#: 需要清空的表在 `app.db.tables.ALL_TABLES` 里定义，这里只按名字取用
+def _truncate_all(engine) -> None:  # noqa: ANN001 - Engine
+    """清空全部业务表并重置自增（AUTO_INCREMENT = 1）。"""
+    from sqlalchemy import text
+
+    from app.db.tables import ALL_TABLES
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+        try:
+            for table in ALL_TABLES:
+                # 表名来自代码常量（非用户输入），不存在注入面
+                conn.execute(text(f"TRUNCATE TABLE `{table.__tablename__}`"))
+        finally:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+
+
+@pytest.fixture(scope="session")
+def test_engine():  # noqa: ANN201 - Iterator[Engine]
+    """测试库引擎（会话级）。未配置 `TEST_DATABASE_URL` 时跳过相关用例。"""
+    from sqlalchemy import create_engine, event
+
+    from app.core.config import Settings
+    from app.db import tables  # noqa: F401  导入即注册全部表元数据
+    from app.db.base import Base
+
+    url = Settings().effective_test_database_url
+    if not url:
+        pytest.skip("未配置 TEST_DATABASE_URL，跳过需要数据库的用例")
+
+    engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800, future=True)
+
+    @event.listens_for(engine, "connect")
+    def _force_utc(dbapi_connection, _record) -> None:  # noqa: ANN001
+        """与 `app/db/session.py` 一致：连接上强制 UTC。
+
+        本机 MySQL 的 `@@session.time_zone` 是 SYSTEM（北京），不显式设置的话
+        `CURRENT_TIMESTAMP` 会写北京时间，与「库里存 UTC」的约定冲突。
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET time_zone = '+00:00'")
+        finally:
+            cursor.close()
+
+    with engine.begin() as conn:
+        Base.metadata.create_all(conn)
+
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _clean_login_limiter() -> Iterator[None]:
+    """登录限流器是**进程内全局状态**，必须逐用例清零。
+
+    否则「先跑了 10 次登录的用例」会让后面的用例莫名其妙拿到 4290 ——
+    这种只在全量跑时出现的失败最难定位。
+    """
+    from app.core import ratelimit
+
+    ratelimit.reset_all()
+    yield
+    ratelimit.reset_all()
+
+
+@pytest.fixture
+def tmp_uploads(tmp_path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """把上传根目录指到临时目录。
+
+    为什么所有接口用例都要带它：默认路径是 `backend/uploads`，
+    测试会**真的写文件**进去，跑几次之后仓库里就多出一堆垃圾头像。
+    同时它也让「静态目录挂在哪」这件事在测试里可验证。
+    """
+    from app.core.config import get_settings
+
+    target = tmp_path / "uploads"
+    monkeypatch.setenv("UPLOADS_DIR", str(target))
+    get_settings.cache_clear()
+    yield target
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def db_engine(test_engine):
+    """每个用例一份干净的库。"""
+    _truncate_all(test_engine)
+    return test_engine
+
+
+@pytest.fixture
+def db_session(db_engine):  # noqa: ANN201 - Iterator[Session]
+    """直连测试库的会话（用于不经接口的 service 层单测）。
+
+    ⚠️ **「读 → 接口写 → 再读」会读到旧快照**：MySQL 默认隔离级别是
+    REPEATABLE READ，会话的第一次读就定下了整个事务的快照。如果用例先查一次，
+    再让接口（另一个连接）写库，然后又用**同一个**会话查 —— 第二次看到的
+    仍是第一次的快照，`expire_all()` 也救不了（它只让对象过期，不换快照）。
+    实测症状是「断言到一个明明是刚写进去的旧值」。
+
+    要在写之后重新读，必须**结束当前事务**再查：
+
+        db_session.rollback()          # 结束只读事务 → 下一次查询拿新快照
+        row = db_session.get(Row, pk)
+
+    另一种写法是让用例只查一次、或在查询前不碰会话。这里不把隔离级别改成
+    READ COMMITTED，是因为生产用的是默认级别 —— 测试应当跑在与线上同一套
+    语义下，代价是这个坑必须写在能被搜到的地方。
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def db_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """把**后台线程里的落库会话**指向测试库。
+
+    出题是异步任务，落库发生在后台线程里 —— 那里没有请求级会话，只能自己开一个
+    （`quiz_service._open_session`，默认是 `session_scope`）。而 `db_client`
+    覆盖的是 `get_db` 依赖，**管不到后台路径**。不替换的话，接口测试会真的往
+    业务库里写卷轴。
+
+    这正是本项目反复强调的那条约定：服务层一律显式接收 session，
+    只有后台线程这一个例外，所以它必须有一个显式的替换点。
+    """
+    from contextlib import contextmanager
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import quiz_service
+
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
+
+    @contextmanager
+    def scope():  # noqa: ANN202
+        session = factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    monkeypatch.setattr(quiz_service, "_open_session", scope)
+    return scope
+
+
+@pytest.fixture
+def db_client(db_engine, tmp_uploads):  # noqa: ANN201, ARG001 - Iterator[TestClient]
+    """把 `get_db` 依赖指向测试库的接口客户端。
+
+    为什么重写依赖而不是改配置：`get_db` 是**唯一**的请求级会话入口，
+    覆盖它就等于「所有请求都写测试库」，比改全局配置更不容易漏。
+    后台线程里的 `session_scope()` 不在此列 —— 所以服务层一律**显式接收
+    session**，不用全局工厂，这样后台路径在测试里也能被注入。
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.session import get_db
+    from app.main import create_app
+
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
+    app = create_app()
+
+    def _override_get_db():  # noqa: ANN202
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def dev_login(db_client: TestClient):  # noqa: ANN201
+    """走调试通道登录，返回 `{token, expires_in, user}`。"""
+
+    def _login(device_id: str = "pytest-device") -> dict:
+        resp = db_client.post("/api/v1/auth/dev", json={"device_id": device_id})
+        assert resp.status_code == 200, resp.text
+        return resp.json()["data"]
+
+    return _login
+
+
+@pytest.fixture
+def auth_headers(dev_login) -> dict[str, str]:  # noqa: ANN001
+    """默认用户的鉴权头。"""
+    return {"Authorization": f"Bearer {dev_login()['token']}"}
+
+
+@pytest.fixture
+def other_auth_headers(dev_login) -> dict[str, str]:  # noqa: ANN001
+    """**另一个**用户的鉴权头，专供越权用例。"""
+    return {"Authorization": f"Bearer {dev_login('pytest-device-2')['token']}"}
+
+
+# -----------------------------------------------------------------------------
+# 图片样本（头像上传用例）
+# -----------------------------------------------------------------------------
+#: 最小的合法图片字节：只保留魔数 + 少量数据，足够让「按魔数判类型」通过。
+#: 不能用任意字节 —— 那正是要拦的「伪造扩展名」输入。
+TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    b"\x1f\x15\xc4\x89\x00\x00\x00\nIDAT\x78\x9c\x63\x00\x01\x00\x00\x05\x00"
+    b"\x01\x0d\n\x2d\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+TINY_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + b"\xff\xd9"
+TINY_WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00" + b"\x00" * 24
+
+
+@pytest.fixture
+def tiny_png() -> bytes:
+    return TINY_PNG
+
+
+@pytest.fixture
+def tiny_jpeg() -> bytes:
+    return TINY_JPEG
+
+
+@pytest.fixture
+def tiny_webp() -> bytes:
+    return TINY_WEBP

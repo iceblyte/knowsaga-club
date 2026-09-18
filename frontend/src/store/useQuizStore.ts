@@ -22,7 +22,8 @@
 
 import { create } from 'zustand'
 
-import type { Quiz } from '../types/api'
+import type { AttemptSubmitResponse, Quiz } from '../types/api'
+import { uuidV4 } from '../utils/id'
 import type { QuestionResult } from '../utils/scoring'
 
 interface QuizState {
@@ -46,6 +47,23 @@ interface QuizState {
   startedAt: number
   /** 结束时刻（ms），0 表示尚未结束 */
   finishedAt: number
+  /**
+   * 本局的交卷令牌（一个 v4 UUID）。
+   *
+   * **一局一个，在 `start()` 时生成**，而不是在结算页生成 ——
+   * 结算页可能被重挂载（用户返回再进来），在那里生成会换出一个新令牌，
+   * 服务端就会把它当成**新的一局**，档案里凭空多一次挑战记录。
+   * 放在「开局」这个唯一时刻，重试与重挂载自动复用同一个值。
+   */
+  clientToken: string
+  /**
+   * 服务端的结算结果（权威口径）。
+   *
+   * 结算页拿到之后写进来，供：
+   *  1. 页面重挂载时直接用，不再打一次请求；
+   *  2. 冒险日志（Phase C）与「再来一局」复用 `attempt_id`。
+   */
+  attempt: AttemptSubmitResponse | null
 
   /** 记录一份刚生成好的题库，等待确认 */
   setPendingQuiz: (quiz: Quiz | null) => void
@@ -57,6 +75,8 @@ interface QuizState {
   setCurrentIndex: (index: number) => void
   /** 标记本局结束 */
   finish: () => void
+  /** 记录服务端的结算结果 */
+  setAttempt: (attempt: AttemptSubmitResponse | null) => void
   /** 清空会话 */
   reset: () => void
 }
@@ -68,6 +88,8 @@ export const useQuizStore = create<QuizState>((set) => ({
   results: {},
   startedAt: 0,
   finishedAt: 0,
+  clientToken: '',
+  attempt: null,
 
   setPendingQuiz: (quiz) => set({ pendingQuiz: quiz }),
 
@@ -77,7 +99,11 @@ export const useQuizStore = create<QuizState>((set) => ({
       currentIndex: 0,
       results: {},
       startedAt: Date.now(),
-      finishedAt: 0
+      finishedAt: 0,
+      // 新的一局 = 新的令牌。上一局的令牌绝不能带过来，
+      // 否则第二次交卷会被服务端当成「重试」而回放上一局的结果。
+      clientToken: uuidV4(),
+      attempt: null
     }),
 
   recordResult: (result) =>
@@ -87,6 +113,8 @@ export const useQuizStore = create<QuizState>((set) => ({
 
   finish: () => set({ finishedAt: Date.now() }),
 
+  setAttempt: (attempt) => set({ attempt }),
+
   reset: () =>
     set({
       pendingQuiz: null,
@@ -94,6 +122,8 @@ export const useQuizStore = create<QuizState>((set) => ({
       currentIndex: 0,
       results: {},
       startedAt: 0,
-      finishedAt: 0
+      finishedAt: 0,
+      clientToken: '',
+      attempt: null
     })
 }))

@@ -29,6 +29,15 @@ export const API_TIMEOUT_MS = 15000
 /** 健康检查超时：探测而已，不该让用户等太久 */
 export const HEALTH_TIMEOUT_MS = 5000
 
+/**
+ * 登录请求超时。
+ *
+ * 比常规请求短：登录是**在别的请求之前**发生的（请求层要等它拿到令牌），
+ * 挂太久会让用户看到的第一个页面一直空着。微信的 code2Session 正常在
+ * 几百毫秒内返回，8s 已经是非常宽松的上限。
+ */
+export const LOGIN_TIMEOUT_MS = 8000
+
 /** 兜底轮询间隔。正常情况下用后端返回的 `poll_interval_ms`。 */
 export const FALLBACK_POLL_INTERVAL_MS = 1200
 
@@ -66,12 +75,21 @@ export const ERROR_CODE = {
   OK: 0,
   INVALID_PARAM: 4000,
   INVALID_INPUT: 4001,
+  UPLOAD_INVALID: 4002,
   TASK_NOT_FOUND: 4004,
+  /** 「资源不存在**或**无权访问」。越权与不存在共用此码，前端不要试图区分 */
+  RESOURCE_NOT_FOUND: 4005,
   TASK_NOT_CANCELLABLE: 4090,
+  /** 登录态缺失 / 无效 / 过期 / 已被登出。请求层据此静默重建一次 */
+  UNAUTHORIZED: 4010,
+  WECHAT_CODE_INVALID: 4011,
+  ACCOUNT_BLOCKED: 4030,
+  RATE_LIMITED: 4290,
   INTERNAL_ERROR: 5000,
   AI_GENERATION_FAILED: 5001,
   AI_TIMEOUT: 5030,
-  AI_QUOTA_EXCEEDED: 5031
+  AI_QUOTA_EXCEEDED: 5031,
+  WECHAT_UPSTREAM_ERROR: 5032
 } as const
 
 /**
@@ -89,5 +107,9 @@ export const ERROR_FALLBACK_TEXT: Record<number, string> = {
   [CLIENT_ERROR_CODE.POLL_TIMEOUT]: '等待太久了，请重新生成一次',
   [ERROR_CODE.TASK_NOT_FOUND]: '这次召唤已经过期，请重新生成',
   [ERROR_CODE.AI_QUOTA_EXCEEDED]: '当前使用的人有点多，请稍后再试',
+  // 登录态重建之后仍然 4010 → 说明不是「过期」而是「登录本身没成功」。
+  // 这时候说「登录状态已过期」会误导用户（他可能压根没登录过）。
+  [ERROR_CODE.UNAUTHORIZED]: '登录状态已失效，请重新进入小程序',
+  [ERROR_CODE.WECHAT_UPSTREAM_ERROR]: '登录服务暂时不可用，请稍后再试',
   [ERROR_CODE.INTERNAL_ERROR]: '服务开小差了，请稍后重试'
 }

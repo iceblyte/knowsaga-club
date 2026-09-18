@@ -34,6 +34,13 @@ const MAX_XP: Record<QuestionType, number> = {
 /** 多选题部分正确的固定比例（§9.1，已确认口径为固定 50%，不按项数比例） */
 const MULTIPLE_PARTIAL_RATIO = 0.5
 
+/** 金币换算率：`coins = floor(XP × 0.18)` */
+const COIN_RATE = 0.18
+
+/** 演示用百分位的天花板与地板（§9.4） */
+const PERCENTILE_FLOOR = 5
+const PERCENTILE_CEIL = 95
+
 export interface QuestionResult {
   questionId: string
   type: QuestionType
@@ -49,6 +56,40 @@ export interface QuestionResult {
 /** 该题的满分经验值 */
 export function maxXpOf(type: QuestionType): number {
   return MAX_XP[type]
+}
+
+/**
+ * 正确率（0–100 整数）。
+ *
+ * 分母是**题量**而不是已作答题数：中途退出的一局里，没作答的题就是没拿分，
+ * 正确率不该因为「少答了几题」而变好看。题量为 0 时给 0，不做除法。
+ *
+ * 与后端 `services/scoring.py` 的 `accuracy_of` 对应，共享用例见
+ * `shared/scoring-cases.json` 的 `accuracy_cases`。
+ */
+export function accuracyOf(correctCount: number, totalCount: number): number {
+  if (totalCount <= 0) return 0
+  return Math.round((correctCount / totalCount) * 100)
+}
+
+/**
+ * `coins = floor(XP × 0.18)`。
+ *
+ * **向下取整，不四舍五入** —— 25 XP 给 4 不是 5。与后端 `coins_for` 对应。
+ */
+export function coinsOf(xp: number): number {
+  return Math.floor(Math.max(0, xp) * COIN_RATE)
+}
+
+/**
+ * 演示用百分位：`clamp(round(accuracy × 0.9), 5, 95)`。
+ *
+ * 没有真实用户池，这是正确率的单调映射（§9.4），**界面必须标注是演示值**。
+ * 与后端 `percentile_for` 对应。
+ */
+export function percentileOf(accuracy: number): number {
+  const clamped = Math.max(0, Math.min(100, accuracy))
+  return Math.min(PERCENTILE_CEIL, Math.max(PERCENTILE_FLOOR, Math.round(clamped * 0.9)))
 }
 
 /**
@@ -165,7 +206,7 @@ export function summarizeQuiz(
   const totalXp = ordered.reduce((sum, item) => sum + item.earnedXp, 0)
   const maxXp = ordered.reduce((sum, item) => sum + item.maxXp, 0)
 
-  const accuracy = totalCount === 0 ? 0 : Math.round((correctCount / totalCount) * 100)
+  const accuracy = accuracyOf(correctCount, totalCount)
 
   return {
     results: ordered,
@@ -174,9 +215,9 @@ export function summarizeQuiz(
     accuracy,
     totalXp,
     maxXp,
-    coins: Math.floor(totalXp * 0.18),
+    coins: coinsOf(totalXp),
     // 无真实用户池，用正确率做单调映射（§9.4）。界面必须标注这是演示值。
-    percentile: Math.min(95, Math.max(5, Math.round(accuracy * 0.9))),
+    percentile: percentileOf(accuracy),
     startedAt,
     finishedAt,
     durationSeconds:

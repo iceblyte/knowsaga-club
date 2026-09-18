@@ -29,9 +29,15 @@ import type {
 } from '../types/api'
 import { ApiError, request } from './request'
 
-/** 探测后端可达性与能力开关（`search_enabled` / `key_configured`）。 */
+/**
+ * 探测后端可达性与能力开关（`search_enabled` / `key_configured`）。
+ *
+ * `auth: false` 是刻意的：这个探测的目的是「后端在不在」，
+ * 而后端没起来时登录也必然失败 —— 让它先去等登录只会把启动拖住，
+ * 还会把一个「后端不可达」误报成「登录失败」。
+ */
 export function fetchHealth(): Promise<HealthInfo> {
-  return request<HealthInfo>({ path: '/health', timeoutMs: HEALTH_TIMEOUT_MS })
+  return request<HealthInfo>({ path: '/health', timeoutMs: HEALTH_TIMEOUT_MS, auth: false })
 }
 
 /** 创建出题任务。**只入队**，出题在后台推进，需轮询 `fetchTask`。 */

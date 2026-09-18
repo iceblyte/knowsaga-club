@@ -20,6 +20,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_FILE = REPO_ROOT / ".env"
 
+#: JWT 密钥的最低长度。低于它宁可让服务启动失败，也不用弱密钥兜底
+#: —— 弱密钥被爆破等于所有人都能伪造任意用户身份。
+JWT_SECRET_MIN_LEN = 32
+
 
 class Settings(BaseSettings):
     """全局配置。字段名小写，通过大小写不敏感匹配 .env 中的大写键。"""
@@ -91,9 +95,48 @@ class Settings(BaseSettings):
     quiz_task_ttl_seconds: int = 600
     quiz_task_poll_interval_ms: int = 1200
 
-    # ---------- 微信（MVP 不使用，预留）----------
+    # ---------- 微信（用户系统必需）----------
+    # APPID 是公开标识符；APP_SECRET 是真正的密钥，只允许存在于服务端。
+    # 两者都为空时登录接口会以 5032 失败（而不是崩溃），便于核心闭环先行联调。
     wechat_appid: str = ""
     wechat_app_secret: str = ""
+    #: code2Session 的连接与读取超时（秒）。上游抖动时不能把请求线程挂死。
+    wechat_timeout_seconds: int = 8
+    #: 身份校验实现。默认 `real`（生产安全）；测试环境必须显式设为 `mock`，
+    #: 否则任何走登录接口的用例都会真的去请求微信服务器。
+    wechat_provider: Literal["real", "mock"] = "real"
+
+    # ---------- 数据库（同步 PyMySQL）----------
+    # 为什么同步而不是异步：本项目接口全是同步 def，出题/报告链还跑在后台线程里。
+    # 同步驱动在两条路径上都能直接用，异步则需要事件循环桥接。
+    database_url: str = ""
+    test_database_url: str = ""
+
+    # ---------- 登录态 ----------
+    #: 必填且 ≥ 32 字符；缺失或过短时服务**拒绝启动**（绝不用默认弱密钥兜底）。
+    jwt_secret: str = ""
+    #: 有效期（小时）。默认 7 天，覆盖「一周回来一次」的典型回访节奏。
+    jwt_expire_hours: int = 168
+
+    # ---------- 业务时区 ----------
+    #: 「今天」「连续天数」「错题到期」都按此时区判定（见方案设计 §8.7）。
+    app_timezone: str = "Asia/Shanghai"
+
+    # ---------- 开发调试登录通道 ----------
+    #: 为 true **且** app_env=dev 时才注册 /auth/dev；否则该路由根本不存在。
+    dev_login_enabled: bool = False
+
+    # ---------- 登录限流 ----------
+    #: 同一来源 IP 在窗口内允许的登录次数。登录是「换个 code 就能新建账号」的入口，
+    #: 不限流等于把建档能力开放给脚本。
+    login_rate_limit: int = 20
+    login_rate_window_seconds: int = 60
+
+    # ---------- 头像上传 ----------
+    #: 单文件大小上限（字节），默认 2 MB。
+    avatar_max_bytes: int = 2 * 1024 * 1024
+    #: 上传根目录；留空则用 backend/uploads。
+    uploads_dir: str = ""
 
     # ---------- 校验与派生 ----------
     @field_validator("cors_origins")
@@ -120,6 +163,41 @@ class Settings(BaseSettings):
     def has_deepseek_key(self) -> bool:
         """是否已配置可用的 API Key。"""
         return bool(self.deepseek_api_key.strip())
+
+    # ---------- 用户系统派生 ----------
+    @property
+    def is_dev(self) -> bool:
+        """是否为开发环境。调试登录通道要求它同时为真。"""
+        return self.app_env == "dev"
+
+    @property
+    def has_jwt_secret(self) -> bool:
+        """密钥是否达到可用的最低强度（≥32 字符）。"""
+        return len(self.jwt_secret.strip()) >= JWT_SECRET_MIN_LEN
+
+    @property
+    def has_wechat_credentials(self) -> bool:
+        """微信平台凭据是否齐备（测试号无法换取身份，所以两个都要有）。"""
+        return bool(self.wechat_appid.strip()) and bool(self.wechat_app_secret.strip())
+
+    @property
+    def uploads_path(self) -> Path:
+        """上传根目录（绝对路径）。默认 `backend/uploads`。"""
+        if self.uploads_dir.strip():
+            return Path(self.uploads_dir.strip()).resolve()
+        # config.py -> core, app, backend
+        return (Path(__file__).resolve().parents[2] / "uploads").resolve()
+
+    @property
+    def avatars_path(self) -> Path:
+        """头像目录。"""
+        return self.uploads_path / "avatars"
+
+    @property
+    def effective_test_database_url(self) -> str:
+        """测试库连接串。未配置 TEST_DATABASE_URL 时**不做兜底**——
+        退回业务库会让 pytest 的清表操作直接抹掉真实数据，这里必须响亮的失败。"""
+        return self.test_database_url.strip()
 
 
 @lru_cache

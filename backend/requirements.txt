@@ -6,13 +6,36 @@ fastapi==0.141.1
 uvicorn[standard]==0.53.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
+# 头像上传走 multipart/form-data。FastAPI 的 UploadFile/File 依赖它，
+# 缺失时**在路由注册阶段**就报 "Form data requires python-multipart"，
+# 表现为整个应用起不来，而报错信息不会告诉你要装哪个包。
+python-multipart==0.0.32
+
+# --- 数据库（用户系统）---
+# 同步 SQLAlchemy + PyMySQL：本项目的接口全是同步 def，出题/报告链还跑在
+# ThreadPoolExecutor 后台线程里，同步驱动在两边都能直接用，少一层事件循环桥接。
+# 想换异步只需把 DSN 改成 mysql+aiomysql://（代码零改动），届时再加 aiomysql。
+sqlalchemy==2.0.54
+pymysql==1.2.3
+# MySQL 9.x 已移除 mysql_native_password，账号默认 caching_sha2_password，
+# 因此 cryptography 是**必需**依赖（不是可选），否则认证会直接失败。
+cryptography==50.0.1
+
+# --- 登录态 ---
+pyjwt==2.14.0
+
+# --- 时区数据 ---
+# Windows 没有系统 IANA 时区库，ZoneInfo("Asia/Shanghai") 会抛
+# ZoneInfoNotFoundError。业务时区（连续天数 / 错题到期 / 看板按天分组）
+# 依赖它，所以是运行依赖而不是测试依赖。
+tzdata==2026.4
 
 # --- LLM ---
 langchain==1.4.0
 langchain-core==1.6.3
 langchain-openai==1.6.2
 
-# --- HTTP 客户端（搜索 Provider / 测试用）---
+# --- HTTP 客户端（搜索 Provider / 微信接口 / 测试用）---
 httpx==0.28.1
 
 # --- 测试 ---

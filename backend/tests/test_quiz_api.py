@@ -54,6 +54,47 @@ def patch_generate(monkeypatch: pytest.MonkeyPatch, fake_quiz: Quiz) -> None:
     monkeypatch.setattr(quiz_chain, "generate_quiz", lambda **_: fake_quiz)
 
 
+class _AuthedClient:
+    """给每次请求自动带上鉴权头的薄包装。
+
+    只实现本文件用到的那几个方法，**不做任何断言或重试** —— 它必须是透明的，
+    否则用例里断言的就不再是真实调用的结果了。
+    """
+
+    def __init__(self, inner, headers: dict[str, str]) -> None:
+        self._inner = inner
+        self._headers = headers
+
+    def _kwargs(self, kwargs: dict) -> dict:
+        merged = dict(kwargs)
+        merged.setdefault("headers", self._headers)
+        return merged
+
+    def get(self, url: str, **kwargs):  # noqa: ANN201
+        return self._inner.get(url, **self._kwargs(kwargs))
+
+    def post(self, url: str, **kwargs):  # noqa: ANN201
+        return self._inner.post(url, **self._kwargs(kwargs))
+
+
+@pytest.fixture
+def client(db_client, db_scope, auth_headers):  # noqa: ANN001, ARG001 - _AuthedClient
+    """本文件的测试客户端：已登录 + 后台落库指向测试库。
+
+    ## 为什么在本文件里重定义 conftest 的 `client`
+
+    `POST /quiz/generate` 与两个 `/tasks/*` 端点从 Phase B 起都要求登录，
+    所以本文件所有请求都必须带鉴权头。逐个调用点去加 `headers=` 要改二十多处，
+    而且以后新增用例极易漏掉 —— 漏掉的后果是那个用例悄悄测了「未登录」，
+    却仍然可能通过它原本的断言（比如只断言 code == 0 的那些），
+    于是一个失效的用例看起来还是绿的。
+
+    这里用一层极薄的透明包装统一注入。需要**显式**测试未登录 / 无权限的用例，
+    直接用 `db_client` 与 `other_auth_headers` 绕过这层包装。
+    """
+    return _AuthedClient(db_client, auth_headers)
+
+
 # -----------------------------------------------------------------------------
 # 建任务
 # -----------------------------------------------------------------------------
@@ -315,11 +356,12 @@ def test_worker_does_not_overwrite_cancelled_task(settings: Settings, fake_quiz:
     from app.services import quiz_service
     from app.services import task_service as ts
 
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     ts.cancel_task(rec.task_id)
 
     quiz_service.run_quiz_generation(
         rec.task_id,
+        user_id=1,
         user_input=VALID_INPUT,
         question_count=5,
         difficulty="mixed",

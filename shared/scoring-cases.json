@@ -1,0 +1,161 @@
+{
+  "_comment": [
+    "判题与计分的**共享用例**。前后端各有一份实现，这个文件是它们之间唯一的契约。",
+    "订正这里之前先读 docs/用户系统方案设计文档.md §8.1 与 §6.5。",
+    "",
+    "消费者：",
+    "  - backend/tests/test_scoring.py            断言 Python 实现逐条吻合",
+    "  - frontend/scripts/check_scoring_parity.mjs 断言 TS 实现逐条吻合",
+    "两份实现只要有一边改动而没同步另一方，两边测试里必有一边先红。",
+    "",
+    "为什么用 JSON 而不是各写一份：本项目已经吃过一次「同一口径两处实现」的亏。",
+    "算分是最不能靠人眼比对的——一个 round 语义不同（JS 的 Math.round 遇 .5 进位，",
+    "Python 的 round 是银行家舍入）就会让结算数字和前端预览差 1。",
+    "",
+    "expected.earned_xp 的单位是 XP；accuracy / percentile 是 0-100 的整数。"
+  ],
+
+  "grade_cases": [
+    {
+      "name": "单选 · 选中唯一正确项",
+      "type": "single",
+      "answer": ["A"],
+      "selected": ["A"],
+      "expected": { "outcome": "correct", "earned_xp": 40, "max_xp": 40 }
+    },
+    {
+      "name": "单选 · 未作答",
+      "type": "single",
+      "answer": ["A"],
+      "selected": [],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 40 }
+    },
+    {
+      "name": "单选 · 选错",
+      "type": "single",
+      "answer": ["A"],
+      "selected": ["B"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 40 }
+    },
+    {
+      "name": "单选 · 重复点同一个选项仍算对（去重后长度为 1）",
+      "type": "single",
+      "answer": ["A"],
+      "selected": ["A", "A"],
+      "expected": { "outcome": "correct", "earned_xp": 40, "max_xp": 40 }
+    },
+    {
+      "name": "单选 · 选了正确项又误点多选，长度为 2 不算对",
+      "type": "single",
+      "answer": ["A"],
+      "selected": ["A", "B"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 40 }
+    },
+    {
+      "name": "单选 · 未知选项键",
+      "type": "single",
+      "answer": ["A"],
+      "selected": ["Z"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 40 }
+    },
+
+    {
+      "name": "多选 · 全对",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["C", "A"],
+      "expected": { "outcome": "correct", "earned_xp": 60, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 非空真子集 → 部分正确，固定 50%",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["A"],
+      "expected": { "outcome": "partial", "earned_xp": 30, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 含错选一票否决（即使也选对了部分）",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["A", "B"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 全选（含错选）也是 0",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["A", "B", "C", "D"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 空作答",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": [],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 重复项去重后判为全对",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["A", "C", "C"],
+      "expected": { "outcome": "correct", "earned_xp": 60, "max_xp": 60 }
+    },
+    {
+      "name": "多选 · 未知选项键算错选",
+      "type": "multiple",
+      "answer": ["A", "C"],
+      "selected": ["A", "Z"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 60 }
+    },
+
+    {
+      "name": "判断 · 正确",
+      "type": "judge",
+      "answer": ["T"],
+      "selected": ["T"],
+      "expected": { "outcome": "correct", "earned_xp": 20, "max_xp": 20 }
+    },
+    {
+      "name": "判断 · 错误",
+      "type": "judge",
+      "answer": ["T"],
+      "selected": ["F"],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 20 }
+    },
+    {
+      "name": "判断 · 未作答",
+      "type": "judge",
+      "answer": ["T"],
+      "selected": [],
+      "expected": { "outcome": "wrong", "earned_xp": 0, "max_xp": 20 }
+    }
+  ],
+
+  "accuracy_cases": [
+    { "name": "5 题对 4 题", "correct_count": 4, "total_count": 5, "expected": 80 },
+    { "name": "5 题全对", "correct_count": 5, "total_count": 5, "expected": 100 },
+    { "name": "5 题全错", "correct_count": 0, "total_count": 5, "expected": 0 },
+    { "name": "8 题对 1 题 → 12.5，JS 口径进位", "correct_count": 1, "total_count": 8, "expected": 13 },
+    { "name": "2 题对 1 题 → 50，整数无争议", "correct_count": 1, "total_count": 2, "expected": 50 },
+    { "name": "3 题对 2 题 → 66.67 → 67", "correct_count": 2, "total_count": 3, "expected": 67 },
+    { "name": "题量为 0 时不允许出现除零", "correct_count": 0, "total_count": 0, "expected": 0 }
+  ],
+
+  "coins_cases": [
+    { "name": "原型：180 XP → 32 金币", "xp": 180, "expected": 32 },
+    { "name": "原型：满分 200 XP → 36 金币", "xp": 200, "expected": 36 },
+    { "name": "0 XP → 0 金币", "xp": 0, "expected": 0 },
+    { "name": "55 XP → 9.9 → 向下取整 9", "xp": 55, "expected": 9 },
+    { "name": "25 XP → 4.5 → 向下取整 4（不能四舍五入）", "xp": 25, "expected": 4 }
+  ],
+
+  "percentile_cases": [
+    { "name": "原型：正确率 80% → 超过 72%", "accuracy": 80, "expected": 72 },
+    { "name": "正确率 5% → 4.5 → JS 口径进位为 5，恰好不触发下限", "accuracy": 5, "expected": 5 },
+    { "name": "正确率 4% → 3.6 → 4，被下限抬到 5", "accuracy": 4, "expected": 5 },
+    { "name": "正确率 0% → 下限 5", "accuracy": 0, "expected": 5 },
+    { "name": "正确率 15% → 13.5 → JS 口径进位为 14", "accuracy": 15, "expected": 14 },
+    { "name": "正确率 100% → 90（上限 95 在 0-100 区间内不可达，保留只为对称）", "accuracy": 100, "expected": 90 }
+  ]
+}

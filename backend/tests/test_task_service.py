@@ -31,7 +31,7 @@ def _clean_store():
 # 创建与查询
 # -----------------------------------------------------------------------------
 def test_create_task_returns_pending_record() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     assert rec.task_type == "quiz"
     assert rec.status == "pending"
@@ -41,7 +41,7 @@ def test_create_task_returns_pending_record() -> None:
 
 
 def test_task_id_has_prefix_and_is_unique() -> None:
-    ids = {ts.create_task("quiz").task_id for _ in range(50)}
+    ids = {ts.create_task("quiz", user_id=1).task_id for _ in range(50)}
 
     assert len(ids) == 50, "任务 ID 必须唯一"
     for task_id in ids:
@@ -49,7 +49,7 @@ def test_task_id_has_prefix_and_is_unique() -> None:
 
 
 def test_get_task_returns_same_record() -> None:
-    created = ts.create_task("quiz")
+    created = ts.create_task("quiz", user_id=1)
 
     fetched = ts.get_task(created.task_id)
 
@@ -72,7 +72,7 @@ def test_get_task_or_none_returns_none_for_unknown() -> None:
 # 更新
 # -----------------------------------------------------------------------------
 def test_update_task_patches_fields() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     updated = ts.update_task(
         rec.task_id,
@@ -96,7 +96,7 @@ def test_update_unknown_task_raises_4004() -> None:
 
 
 def test_update_rejects_unknown_field() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     with pytest.raises(TypeError):
         ts.update_task(rec.task_id, not_a_field=1)  # type: ignore[call-arg]
@@ -106,7 +106,7 @@ def test_update_rejects_unknown_field() -> None:
 # 取消
 # -----------------------------------------------------------------------------
 def test_cancel_pending_task() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     cancelled = ts.cancel_task(rec.task_id)
 
@@ -114,7 +114,7 @@ def test_cancel_pending_task() -> None:
 
 
 def test_cancel_running_task() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     ts.update_task(rec.task_id, status="running", progress=30)
 
     assert ts.cancel_task(rec.task_id).status == "cancelled"
@@ -123,7 +123,7 @@ def test_cancel_running_task() -> None:
 @pytest.mark.parametrize("final_status", ["succeeded", "failed", "cancelled"])
 def test_cancel_ended_task_raises_4090(final_status: str) -> None:
     """已结束（含已取消）的任务再取消一律 4090 —— 保证重复点击不会静默成功。"""
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     ts.update_task(rec.task_id, status=final_status)  # type: ignore[arg-type]
 
     with pytest.raises(AppError) as exc:
@@ -140,7 +140,7 @@ def test_cancel_unknown_task_raises_4004() -> None:
 
 
 def test_cancelled_task_is_not_cancellable_twice() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     ts.cancel_task(rec.task_id)
 
     with pytest.raises(AppError) as exc:
@@ -156,7 +156,7 @@ def test_task_expires_after_ttl(monkeypatch: pytest.MonkeyPatch, settings) -> No
     now = {"t": 1_000.0}
     monkeypatch.setattr(ts, "_clock", lambda: now["t"])
 
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     assert ts.get_task(rec.task_id).task_id == rec.task_id
 
     # 越过 TTL 边界
@@ -171,7 +171,7 @@ def test_task_alive_just_before_ttl(monkeypatch: pytest.MonkeyPatch, settings) -
     now = {"t": 1_000.0}
     monkeypatch.setattr(ts, "_clock", lambda: now["t"])
 
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     now["t"] += settings.quiz_task_ttl_seconds - 0.5
 
     assert ts.get_task(rec.task_id).status == "pending"
@@ -183,9 +183,9 @@ def test_cleanup_expired_removes_only_stale_tasks(
     now = {"t": 1_000.0}
     monkeypatch.setattr(ts, "_clock", lambda: now["t"])
 
-    stale = ts.create_task("quiz")
+    stale = ts.create_task("quiz", user_id=1)
     now["t"] += settings.quiz_task_ttl_seconds + 1
-    fresh = ts.create_task("quiz")
+    fresh = ts.create_task("quiz", user_id=1)
 
     removed = ts.cleanup_expired()
 
@@ -198,7 +198,7 @@ def test_cleanup_expired_is_idempotent(monkeypatch: pytest.MonkeyPatch, settings
     now = {"t": 1_000.0}
     monkeypatch.setattr(ts, "_clock", lambda: now["t"])
 
-    ts.create_task("quiz")
+    ts.create_task("quiz", user_id=1)
     now["t"] += settings.quiz_task_ttl_seconds + 1
 
     assert ts.cleanup_expired() == 1
@@ -206,7 +206,7 @@ def test_cleanup_expired_is_idempotent(monkeypatch: pytest.MonkeyPatch, settings
 
 
 def test_reset_store_clears_everything() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     ts.reset_store()
 
@@ -223,7 +223,7 @@ def test_task_step_default_detail_is_empty() -> None:
 
 
 def test_progress_is_clamped_to_0_100() -> None:
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
 
     assert ts.update_task(rec.task_id, progress=-5).progress == 0
     assert ts.update_task(rec.task_id, progress=140).progress == 100
@@ -237,7 +237,7 @@ def test_quiz_payload_is_kept_intact(sample_quiz_payload: dict) -> None:
     """
     from app.models.quiz import Quiz
 
-    rec = ts.create_task("quiz")
+    rec = ts.create_task("quiz", user_id=1)
     quiz = Quiz.model_validate(sample_quiz_payload)
 
     ts.update_task(rec.task_id, status="succeeded", progress=100, quiz=quiz)

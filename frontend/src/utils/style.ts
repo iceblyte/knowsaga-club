@@ -28,25 +28,10 @@
  *   <Image style={squareStyle(104)} />
  */
 
-import Taro from '@tarojs/taro'
+import { isH5 } from './platform'
 
 /** 设计稿宽度，与 `config/index.ts` 的 `designWidth` 保持一致 */
 const DESIGN_WIDTH = 750
-
-/** H5 判定结果缓存：`Taro.getEnv()` 每个渲染周期都会问，没必要重复算 */
-let cachedIsWeb: boolean | null = null
-
-function isH5(): boolean {
-  if (cachedIsWeb === null) {
-    try {
-      cachedIsWeb = Taro.getEnv() === Taro.ENV_TYPE.WEB
-    } catch {
-      // 取不到环境信息时按小程序处理：`rpx` 是小程序的原生单位，猜错的代价更小
-      cachedIsWeb = false
-    }
-  }
-  return cachedIsWeb
-}
 
 /**
  * 把「设计稿 px」（即 750 宽下的 rpx 数值）换算成当前平台合法的 CSS 长度。

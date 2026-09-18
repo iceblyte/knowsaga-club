@@ -34,7 +34,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.core.exceptions import task_not_cancellable, task_not_found
+from app.core.logging import get_logger
 from app.models.quiz import Quiz
+
+logger = get_logger(__name__)
 
 TaskType = Literal["quiz", "report"]
 TaskStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
@@ -74,6 +77,11 @@ class TaskRecord(BaseModel):
 
     task_id: str
     task_type: TaskType
+    #: 归属用户。**不出现在轮询响应里**（`to_payload` 只放行白名单字段）。
+    #:
+    #: 为什么需要它：任务表原本是匿名的，谁拿到 task_id 谁就能读进度与题库。
+    #: 纳入用户系统后必须能回答「这个任务是不是你的」——见 `get_task_for_user`。
+    user_id: int = Field(default=0, description="归属用户 id；0 表示未认领（不应出现）")
     status: TaskStatus = "pending"
     progress: int = Field(default=0, description="0–100")
     steps: list[TaskStep] = Field(default_factory=list)
@@ -127,14 +135,25 @@ def _purge_locked(task_id: str) -> None:
 # -----------------------------------------------------------------------------
 # 创建 / 读取
 # -----------------------------------------------------------------------------
-def create_task(task_type: TaskType, *, steps: list[TaskStep] | None = None) -> TaskRecord:
-    """新建一条 `pending` 任务。"""
+def create_task(
+    task_type: TaskType,
+    *,
+    user_id: int,
+    steps: list[TaskStep] | None = None,
+) -> TaskRecord:
+    """新建一条 `pending` 任务。
+
+    `user_id` 是**必填关键字参数**，没有默认值。这是刻意的：任务一旦匿名，
+    「谁都能读别人的进度与题库」这个缺口就会重新出现，而且不会报错。
+    让它成为编译期错误，比在 code review 里靠人发现可靠。
+    """
     from app.utils.id_generator import new_task_id
 
     now = _clock()
     record = TaskRecord(
         task_id=new_task_id(),
         task_type=task_type,
+        user_id=int(user_id),
         status="pending",
         progress=0,
         steps=list(steps or []),
@@ -148,7 +167,11 @@ def create_task(task_type: TaskType, *, steps: list[TaskStep] | None = None) -> 
 
 
 def get_task_or_none(task_id: str) -> TaskRecord | None:
-    """按 ID 取任务；不存在或已过期返回 `None`。"""
+    """按 ID 取任务；不存在或已过期返回 `None`。
+
+    **不做归属校验** —— 它服务于后台线程（那里没有「当前用户」的概念）。
+    面向请求的入口一律用 `get_task_for_user`。
+    """
     with _lock:
         _purge_locked(task_id)
         record = _tasks.get(task_id)
@@ -159,6 +182,32 @@ def get_task(task_id: str) -> TaskRecord:
     """按 ID 取任务；不存在或已过期抛 `AppError(4004)`。"""
     record = get_task_or_none(task_id)
     if record is None:
+        raise task_not_found(task_id)
+    return record
+
+
+def get_task_for_user(task_id: str, user_id: int) -> TaskRecord:
+    """取**属于该用户**的任务。
+
+    不是自己的任务一律按「不存在」处理（4004，而不是 4005）。
+
+    为什么不给越权单独设码：同一个端点在「你没有这个任务」这件事上返回两个不同的码，
+    前端就得写两个分支去提示，而两条提示文案对用户是同一句话。
+    更重要的是业务码差异会告诉攻击者「这个 task_id 真实存在，只是不是你的」——
+    这正是方案 §4.3 要求避免的「泄漏存在性」。任务 id 是随机串、且任务本身
+    十几分钟就过期，把「不存在」与「不是你的」合并成一个结果没有任何代价。
+
+    Raises:
+        AppError: 4004 —— 不存在、已过期、或不属于该用户。
+    """
+    record = get_task(task_id)
+    if int(record.user_id) != int(user_id):
+        logger.warning(
+            "任务归属校验失败：task=%s 属于用户 %s，请求来自用户 %s",
+            task_id,
+            record.user_id,
+            user_id,
+        )
         raise task_not_found(task_id)
     return record
 
@@ -232,6 +281,27 @@ def reset_store() -> None:
         _tasks.clear()
 
 
+#: 轮询响应**恰好**这 10 个键，不随任务类型变化。
+#:
+#: 为什么写成白名单而不是「把内部字段标成 exclude」：
+#: `TaskRecord` 上还会长出别的内部字段（`user_id` 就是第一个，`expires_at` 早就有了）。
+#: 用 `exclude=True` 的话，每加一个字段都要记得加一次标记，忘一次就把内部信息
+#: 送到客户端；而白名单是「默认不出去，要出去必须显式登记」，忘一次只是
+#: 前端少一个字段、会立刻暴露。方向相反的两类错误，选暴露早的那一类。
+PUBLIC_FIELDS: tuple[str, ...] = (
+    "task_id",
+    "task_type",
+    "status",
+    "progress",
+    "steps",
+    "quiz",
+    "report",
+    "error",
+    "created_at",
+    "updated_at",
+)
+
+
 def to_payload(record: TaskRecord) -> dict:
     """序列化成轮询端点返回的 `data` 结构。
 
@@ -239,4 +309,5 @@ def to_payload(record: TaskRecord) -> dict:
     没有值的字段一律给 `null`，而不是省略键：省略会让前端到处写 `?.`，
     而这类防御代码一旦漏掉一处就是线上白屏。
     """
-    return record.model_dump(mode="json")
+    raw = record.model_dump(mode="json")
+    return {key: raw[key] for key in PUBLIC_FIELDS}

@@ -62,6 +62,12 @@ project.private.config.json
 backend/.pytest_cache/
 backend/.coverage
 backend/htmlcov/
+# 用户上传的头像等运行期文件：属于用户数据，绝不入库
+backend/uploads/
+# 沙箱内 pip 装不通时用来本地安装的 wheel 缓存
+backend/.wheels/
+.venv*/
+.wheels/
 .coverage
 htmlcov/
 .pytest_cache/

@@ -15,7 +15,8 @@
     "dev:weapp": "npm run build:weapp -- --watch",
     "build:h5": "taro build --type h5",
     "dev:h5": "npm run build:h5 -- --watch",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check:scoring": "node scripts/check_scoring_parity.mjs"
   },
   "browserslist": [
     "defaults and fully supports es6-module",

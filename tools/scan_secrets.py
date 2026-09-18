@@ -51,6 +51,21 @@ SECRET_NAME_RE = re.compile(
 )
 
 PLACEHOLDER_RE = re.compile(
+    # 「明显是假的」这一类的词表，用于**源码扫描**。加 dummy/fake/sample/example 是
+    # 因为测试里**必须**有「看起来像凭证但不是凭证」的字符串（例如验证某个密钥
+    # 不会出现在错误信息里），若把它们一律报成泄漏，扫描器很快就会因为噪声
+    # 被忽略——那才是真正的安全损失。
+    r"[<>{}]|xxx|your[_-]?|change[_-]?me|\*\*\*|placeholder|示例|占位"
+    r"|dummy|fake|not[_-]?real|sample|example",
+    re.IGNORECASE,
+)
+
+# 用于**判断 `.env` 里的值是否本身就是占位符**（是的话就不值得拿去反查）。
+#
+# 这里刻意比 PLACEHOLDER_RE 更严格：`sample` / `example` 这类词在真实口令里
+# 完全可能出现（如 `Example#2026`），一旦因此跳过反向比对，就等于对那个键
+# 关掉了本仓库最有力的一道防线。源码扫描放宽无害，`.env` 侧不能跟着放宽。
+ENV_PLACEHOLDER_RE = re.compile(
     r"[<>{}]|xxx|your[_-]?|change[_-]?me|\*\*\*|placeholder|示例|占位",
     re.IGNORECASE,
 )
@@ -134,7 +149,7 @@ def collect_needles() -> dict[str, str]:
             continue
         if len(value) < 8 or value.lower() in SKIP_VALUES or value.isdigit():
             continue
-        if PLACEHOLDER_RE.search(value):
+        if ENV_PLACEHOLDER_RE.search(value):
             continue
         needles[key] = value
         match = DSN_CRED_RE.search(value)
