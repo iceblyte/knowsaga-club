@@ -1,0 +1,31 @@
+@use "../../../styles/tokens" as *;
+
+.report-suggestions {
+  &__item {
+    align-items: flex-start;
+    gap: $sp-5;
+  }
+
+  // 原型把建议序号缩到 30px / 13px 字（默认勋章是 62px / 18px 字）。
+  // 13 不在字号阶梯上，是这一处的例外 —— 序号是装饰而不是内容，
+  // 用 13.5 会让它在 30px 的圆里显得拥挤，所以按原型原值来。
+  &__badge {
+    width: rpx(30);
+    height: rpx(30);
+    font-size: rpx(13);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__text {
+    margin-top: rpx(5);
+  }
+
+  // 原型在文案与控件之间垫 10px，让「建议」与「可执行的动作」读起来是两段
+  &__gap {
+    height: rpx(10);
+  }
+}

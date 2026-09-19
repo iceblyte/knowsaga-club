@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     report_timeout_seconds: int = 30
     report_max_tokens: int = 2048
     report_max_retries: int = 2
+    # 报告链的总时间预算（秒）。语义与 `quiz_generation_budget_seconds` 相同，
+    # 但**不可省略**，理由与报告链的定位有关：
+    # 报告全失败会**降级成模板报告**（不像出题链那样报错），也就是说「超预算」
+    # 在这里不会表现为失败，而是表现为「用户拿到的报告话术一直很模板」。
+    # 没有一个明确的预算，这类降级会安静地发生很久而无人察觉。
+    report_generation_budget_seconds: int = 40
 
     # ---------- 结构化输出策略 ----------
     # 主通道 = json_mode，降级通道 = function_calling。

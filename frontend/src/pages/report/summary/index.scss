@@ -1,0 +1,36 @@
+@use "../../../styles/tokens" as *;
+
+.report-summary {
+  &__head {
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  &__lines {
+    margin-top: rpx(6);
+  }
+
+  &__line {
+    align-items: flex-start;
+    gap: $sp-4;
+  }
+
+  // 原型把方块往下压 8px 让它对齐首行文字的中线，而不是顶到行首
+  &__dot {
+    margin-top: rpx(8);
+  }
+
+  &__label {
+    margin-bottom: rpx(8);
+  }
+
+  &__pills {
+    flex-wrap: wrap;
+    gap: rpx(6);
+  }
+
+  &__secondary {
+    flex: none;
+    margin-top: $sp-4;
+  }
+}

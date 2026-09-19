@@ -1,0 +1,26 @@
+@use "../../styles/tokens" as *;
+
+.report-missing {
+  &--center {
+    align-items: center;
+    text-align: center;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $sp-7;
+    flex: none;
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: $sp-4;
+  }
+
+  &__desc {
+    max-width: rpx(240);
+  }
+}

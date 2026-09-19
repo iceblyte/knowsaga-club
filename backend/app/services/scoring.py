@@ -180,3 +180,33 @@ def percentile_for(accuracy: int) -> int:
     """
     value = js_round(max(0, min(100, int(accuracy))) * 0.9)
     return max(PERCENTILE_FLOOR, min(PERCENTILE_CEIL, value))
+
+
+#: 百分位的文字档位。区间取「左闭右开」并在最低档兜底，所以任意 0–100 都有归属，
+#: 不存在「算出 72 却不知道该显示什么」的缝隙。
+#:
+#: 原型 03 第 1 屏固定了 `72% → 「中上」` 这一种情况，其余档位是按设计系统的
+#: 语义色梯度补的（与 `AccuracyRing` 的绿 / 金 / 红三档同源）。
+#:
+#: ⚠️ 这套档位与 `percentile_for` 是**同一件事的两半**：都建立在「没有真实用户池」
+#: 这个前提上。将来接入真实分位时，两者必须一起替换 —— 只换数值不换文案，
+#: 会出现「超过了 3% 的人 · 优秀」这种自相矛盾的组合。
+_PERCENTILE_BANDS: tuple[tuple[int, str], ...] = (
+    (90, "顶尖"),
+    (75, "优秀"),
+    (50, "中上"),
+    (25, "中游"),
+)
+
+
+def percentile_label_for(percentile: int) -> str:
+    """把百分位映射成界面上的档位文字（原型 03 第 1 屏的胶囊）。
+
+    放在服务端而不是前端：这个胶囊与百分位是同一个演示口径的产物，
+    分开两处实现迟早会出现「数字说领先、文案说落后」。
+    """
+    value = max(0, min(100, int(percentile)))
+    for threshold, label in _PERCENTILE_BANDS:
+        if value >= threshold:
+            return label
+    return "起步"

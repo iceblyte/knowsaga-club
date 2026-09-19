@@ -32,6 +32,9 @@ package-lock.corrupt.json
 .tmp*
 .tmp_*/
 
+# 浏览器实测（Playwright MCP）的截图 / 快照 / 控制台日志：本地产物，不入库
+.playwright-mcp/
+
 # 其他
 .agents
 skills-lock.json

@@ -48,12 +48,15 @@ IdStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, ma
 _CLIENT_TOKEN_RE = re.compile(r"^[0-9a-fA-F-]{8,36}$")
 
 
-def _require_numeric_id(value: str) -> str:
+def require_numeric_id(value: str) -> str:
     """校验「数据库 id 的字符串形式」。
 
     为什么不用 `str.isdigit()`：它对上标与部分 Unicode 数字（`²`、`٣`）也返回 True，
     而 `int("²")` 会直接抛 `ValueError` —— 那就变成 500 而不是 4000。
     必须同时要求 ASCII。
+
+    公开而非私有：报告接口（`models/report.py`）也要用同一套判定。
+    两处各写一份的话，总有一天会有一处被改松，而这类校验松掉是**静默**的。
     """
     if not (value.isascii() and value.isdigit()) or int(value) <= 0:
         raise ValueError("必须是数据库 id 的十进制字符串形式")
@@ -72,7 +75,7 @@ class AttemptAnswerRequest(BaseModel):
     @field_validator("question_id")
     @classmethod
     def _check_question_id(cls, value: str) -> str:
-        return _require_numeric_id(value)
+        return require_numeric_id(value)
 
 
 class AttemptSubmitRequest(BaseModel):
@@ -98,7 +101,7 @@ class AttemptSubmitRequest(BaseModel):
     @field_validator("quiz_id")
     @classmethod
     def _check_quiz_id(cls, value: str) -> str:
-        return _require_numeric_id(value)
+        return require_numeric_id(value)
 
     @field_validator("client_token")
     @classmethod

@@ -94,6 +94,20 @@ def inline_submit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def inline_report_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """报告链的同步执行版（理由同 `inline_submit`）。
+
+    单独一个夹具而不是复用 `inline_submit`：两者替换的是**不同的执行器**
+    （报告链刻意用独立的池，不与出题抢槽位）。合并成一个夹具会让人以为
+    替换了出题器就等于替换了报告器 —— 那样报告用例会变成「真的起线程」，
+    于是轮询断言时好时坏。
+    """
+    from app.services import report_service
+
+    monkeypatch.setattr(report_service, "_submit", lambda fn: fn())
+
+
+@pytest.fixture
 def client(settings) -> Iterator[TestClient]:  # noqa: ARG001
     """FastAPI 测试客户端。"""
     from app.main import create_app
@@ -361,12 +375,16 @@ def db_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
 
     这正是本项目反复强调的那条约定：服务层一律显式接收 session，
     只有后台线程这一个例外，所以它必须有一个显式的替换点。
+
+    ⚠️ **每新增一个会在后台线程里写库的服务，都必须加进下面的 `modules`。**
+    漏掉的症状很隐蔽：接口测试照样通过（它走 `get_db`），
+    但会**悄悄往业务库里写数据** —— 下一次有人跑开发环境时才会发现多了一堆脏数据。
     """
     from contextlib import contextmanager
 
     from sqlalchemy.orm import sessionmaker
 
-    from app.services import quiz_service
+    from app.services import quiz_service, report_service
 
     factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
 
@@ -382,7 +400,8 @@ def db_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         finally:
             session.close()
 
-    monkeypatch.setattr(quiz_service, "_open_session", scope)
+    for module in (quiz_service, report_service):
+        monkeypatch.setattr(module, "_open_session", scope)
     return scope
 
 

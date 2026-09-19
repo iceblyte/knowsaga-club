@@ -33,8 +33,13 @@
     align-items: center;
     justify-content: center;
     font-family: $f-disp;
-    font-size: $fs-h2; // 15，原型 font-size=15
+    font-size: $fs-h2; // 15，原型 64px 环的 font-size=15
     font-weight: 800;
     color: $ink;
+  }
+
+  // 大环：原型 03 第 1 屏的 88px 环配 font-size=21，环与字同步变大
+  &--lg .ring__label {
+    font-size: $fs-title; // 21
   }
 }

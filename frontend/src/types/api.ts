@@ -101,8 +101,8 @@ export interface TaskRecord {
   steps: TaskStep[]
   /** quiz 任务成功后填充 */
   quiz: Quiz | null
-  /** report 任务成功后填充（Phase 3） */
-  report: Record<string, unknown> | null
+  /** report 任务成功后填充。两种任务共用轮询端点，故这里一定有一个是 `null` */
+  report: AttemptReport | null
   error: TaskError | null
   created_at: number
   updated_at: number
@@ -275,4 +275,107 @@ export interface AttemptRetryResponse {
   /** 这一局是重做的第几次 */
   attempt_no: number
   quiz: Quiz
+}
+
+// -----------------------------------------------------------------------------
+// 冒险日志 / 复盘报告（backend/app/models/report.py）
+// -----------------------------------------------------------------------------
+/**
+ * 复习建议卡上的动作类型。闭集 —— 前端按值决定渲染成什么控件。
+ *
+ * - `retry_question` → 按钮「立即重做」，把 `question_id` 指向的题**排到卷轴第一位**
+ * - `review_plan`    → **胶囊**（状态展示，不可点）「已加入复习计划」
+ * - `new_scroll`     → 按钮「召唤新副本」
+ *
+ * `review_plan` 不是按钮，因为它表达的是「系统已经替你排好了」这个既成事实，
+ * 做成可点按钮会让用户以为还要自己操作一次。
+ *
+ * ⚠️ `retry_question` 是「排到第一位」而不是「跳到第 N 题」：
+ * 重做接口返回的是**整卷**，而答题页只能线性前进，跳题会让被跳过的题
+ * 以「未作答」计 0 分。完整理由见
+ * `pages/report/suggestions/index.tsx` 的「立即重做怎么落到那道题上」。
+ */
+export type ReportActionKind = 'retry_question' | 'review_plan' | 'new_scroll'
+
+export interface ReportAction {
+  kind: ReportActionKind
+  /** 按钮 / 胶囊上的文字。**由后端给**，前端不自己拼 */
+  label: string
+  /** `retry_question` 时指向具体题目（要排到最前的那一道） */
+  question_id: string | null
+}
+
+export interface ReportAdvice {
+  title: string
+  body: string
+  /** 没有适用动作时为 `null` —— 此时只渲染文案，不给按钮 */
+  action: ReportAction | null
+}
+
+/**
+ * 一份复盘报告。`GET /tasks/{id}` 成功时 `data.report` 的结构。
+ *
+ * ## 两段数据的来源不同（这是本类型最需要注意的地方）
+ *
+ * | 字段 | 来源 |
+ * |---|---|
+ * | 正确率 / 答对答错数 / 用时 / XP / 金币 / 百分位 | `attempts` 表，与结算页**逐位相同** |
+ * | 掌握点 / 薄弱点 / 三句话总结 / 复习建议 | AI 生成（失败时为确定性模板兜底） |
+ *
+ * 所以前端**不做任何二次计算** —— 原型第 1 屏的「答对 4/5」「8.4s」「超过 72%」
+ * 分别直接读 `correct_count` / `total_count`、`avg_seconds_per_question`、`percentile`。
+ */
+export interface AttemptReport {
+  attempt_id: string
+  quiz_id: string
+  quiz_title: string
+  /** 本局结束时刻（UTC ISO 串，展示时按业务时区格式化） */
+  finished_at: string
+
+  // ---- 统计数字：全部来自 attempts ----
+  accuracy: number
+  total_count: number
+  /** 完全答对；多选部分正确不计入 */
+  correct_count: number
+  wrong_count: number
+  partial_count: number
+  duration_ms: number
+  avg_seconds_per_question: number
+  xp_gained: number
+  max_xp: number
+  coins_gained: number
+  percentile: number
+  /** 原型第 1 屏的档位胶囊，如「中上」 */
+  percentile_label: string
+
+  // ---- 叙述内容 ----
+  mastered_points: string[]
+  weak_points: string[]
+  /** 恰好 3 句 */
+  three_line_summary: string[]
+  /** 恰好 3 条 */
+  advice: ReportAdvice[]
+
+  /**
+   * 是否由「确定性模板」兜底生成。
+   *
+   * 正常情况下用不到，但**必须渲染出来**：模板报告与 AI 报告读起来差别明显，
+   * 不告知会让用户以为 AI 就这个水平。见报告页的说明。
+   */
+  degraded: boolean
+}
+
+/** `POST /report/generate` 入参。**只回传 `attempt_id`**，不传作答内容。 */
+export interface ReportGenerateRequest {
+  attempt_id: string
+  /** 已有报告时是否强制重新生成。默认复用（幂等） */
+  force?: boolean
+}
+
+/** `POST /report/generate` 返回内容。形状与 `QuizSubmission` 对齐。 */
+export interface ReportGenerateResponse {
+  task_id: string
+  status: TaskStatus
+  poll_interval_ms: number
+  estimated_seconds: number
 }

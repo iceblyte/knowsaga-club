@@ -40,6 +40,7 @@
  */
 
 import { Button, View } from '@tarojs/components'
+import Taro from '@tarojs/taro'
 import { useEffect, useMemo } from 'react'
 
 import AccuracyRing from '../../components/AccuracyRing'
@@ -50,6 +51,7 @@ import { SETTLE_COPY } from '../../constants/copy'
 import { useCountUp } from '../../hooks/useCountUp'
 import { submitAttempt } from '../../services/attempt'
 import { useQuizStore } from '../../store/useQuizStore'
+import { useReportStore } from '../../store/useReportStore'
 import { goPage, goTab } from '../../utils/navigation'
 import { summarizeQuiz } from '../../utils/scoring'
 
@@ -144,7 +146,17 @@ export default function SettlePage() {
   }
 
   const handleViewReport = () => {
-    // 冒险日志是 Phase 3 的范围。这里保留原型的主 CTA，先切到日志标签页。
+    const id = attempt?.attempt_id
+    if (!id) {
+      // 交卷没送到服务端 → 服务端没有这一局，报告无从生成。
+      // 跳到日志页只会看到一个空态，用户会以为报告功能坏了 ——
+      // 留在原地说明原因更好，本页的数字本来就是对的。
+      Taro.showToast({ title: SETTLE_COPY.reportUnavailable, icon: 'none' })
+      return
+    }
+    // 把「要给哪一局出报告」交给日志页。放在这里而不是让它去猜，
+    // 是因为日志页是标签页，可能在任何时刻被点开 —— 它需要一个明确的目标。
+    useReportStore.getState().begin(id)
     goTab('/pages/report/index')
   }
 

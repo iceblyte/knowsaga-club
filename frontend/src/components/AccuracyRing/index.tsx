@@ -71,9 +71,22 @@ export interface AccuracyRingProps {
   size?: number
   /** 环心文字，默认「N%」 */
   label?: string
+  /**
+   * 是否用大号环心文字。
+   *
+   * 原型两处用到的环心字号**随环径一起变大**，不是固定值：
+   * 结算页是 64px 环配 15px 字，报告主视图是 88px 环配 21px 字。
+   * 只放大环而不放大字，88px 的环心会读作「一个没填满的小数字」。
+   */
+  labelLarge?: boolean
 }
 
-export default function AccuracyRing({ percent, size = BASE, label }: AccuracyRingProps) {
+export default function AccuracyRing({
+  percent,
+  size = BASE,
+  label,
+  labelLarge = false
+}: AccuracyRingProps) {
   const canvasId = useRef(`ring-${Math.random().toString(36).slice(2, 9)}`).current
   const clamped = Math.max(0, Math.min(100, percent))
 
@@ -206,7 +219,7 @@ export default function AccuracyRing({ percent, size = BASE, label }: AccuracyRi
   const rpxSize = Math.round(size * RATIO)
 
   return (
-    <View className='ring' style={squareStyle(rpxSize)}>
+    <View className={labelLarge ? 'ring ring--lg' : 'ring'} style={squareStyle(rpxSize)}>
       {/* 轨道环：Canvas 没画出来时的兜底，读起来仍是一个完整的环 */}
       <View className='ring__track' />
       <Canvas

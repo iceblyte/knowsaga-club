@@ -50,14 +50,13 @@ Pydantic 校验器里 —— 脏数据绝不外传（§11）。
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Any, Callable
-
-from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError, ai_generation_failed
 from app.core.logging import get_logger
+from app.llm import fallback
+from app.llm.fallback import AttemptFailure
 from app.llm.langchain_factory import build_structured_llm
 from app.llm.output_schemas import QuizDraft, draft_to_quiz
 from app.models.quiz import Quiz
@@ -71,85 +70,32 @@ _clock: Callable[[], float] = time.monotonic
 #: `method` -> 可供 invoke 的 runnable
 LlmFactory = Callable[[str], Any]
 
-# 失败原因（写日志用，不对外返回）
-REASON_EMPTY = "empty_response"
-REASON_MAPPING = "schema_mapping_failed"
-REASON_INVALID = "invalid_draft"
-REASON_INVOKE = "invoke_error"
-REASON_BUDGET = "budget_exhausted"
-REASON_SHAPE = "unexpected_output_shape"
-
-
-@dataclass(frozen=True)
-class AttemptFailure:
-    """一次失败尝试的归档。"""
-
-    method: str
-    reason: str
-    detail: str = ""
+# 失败原因常量与「分类一次返回值」的逻辑都在 `app/llm/fallback` ——
+# 出题链与报告链必须用同一套判定，否则两条链的失败率会莫名其妙地不一样。
+# 这里保留同名别名，让本模块的调用点与既有测试的 import 路径都不必改。
+REASON_EMPTY = fallback.REASON_EMPTY
+REASON_MAPPING = fallback.REASON_MAPPING
+REASON_INVALID = fallback.REASON_INVALID
+REASON_INVOKE = fallback.REASON_INVOKE
+REASON_BUDGET = fallback.REASON_BUDGET
+REASON_SHAPE = fallback.REASON_SHAPE
 
 
 def _attempt_plan(settings: Settings) -> list[str]:
-    """按配置排出完整尝试顺序：**主通道与降级通道交替**。
+    """出题链的尝试顺序（交替主 / 降级通道）。
 
-    ```
-    retries=2（默认）→ [primary, fallback, primary, fallback]   共 4 次
-    retries=0        → [primary, fallback]                      共 2 次
-    ```
-
-    为什么交替，而不是「先连撞 3 次主通道再降级」：
-
-    - 如果失败原因是**通道不兼容**（例如上游某天又不支持 tool_choice），
-      同一条通道重试多少次都不会成功，只有换通道能救 —— 交替能立刻覆盖这种情况；
-    - 如果失败原因是**瞬时**的（空响应），换不换通道成功概率一样，
-      交替并不会变差。
-
-    也就是说，交替在最坏情况下不亏，在最好情况下显著更快。
+    实现与「为什么交替」的完整理由见 `app.llm.fallback.attempt_plan`。
     """
-    primary = settings.structured_output_primary
-    fallback = settings.structured_output_fallback
-
-    total = 2 + max(0, settings.quiz_max_retries)
-    return [primary if index % 2 == 0 else fallback for index in range(total)]
-
-
-def _describe_raw(raw: Any) -> str:
-    """把原始返回压成一行可读的诊断信息（不打全量内容，避免日志炸掉）。"""
-    if raw is None:
-        return "raw=None"
-    content = getattr(raw, "content", None)
-    tool_calls = getattr(raw, "tool_calls", None)
-
-    if isinstance(content, str):
-        content_desc = f"content_len={len(content)}"
-    elif content:
-        content_desc = f"content_blocks={len(content)}"
-    else:
-        content_desc = "content_empty"
-
-    return f"{content_desc} tool_calls={len(tool_calls) if tool_calls else 0}"
+    return fallback.attempt_plan(
+        settings.structured_output_primary,
+        settings.structured_output_fallback,
+        settings.quiz_max_retries,
+    )
 
 
 def _classify(method: str, result: Any) -> tuple[QuizDraft | None, AttemptFailure | None]:
     """把一次 invoke 的返回值判定为「合格草稿」或「一次失败」。"""
-    if not isinstance(result, dict):
-        return None, AttemptFailure(method, REASON_SHAPE, f"type={type(result).__name__}")
-
-    parsing_error = result.get("parsing_error")
-    if parsing_error is not None:
-        return None, AttemptFailure(method, REASON_MAPPING, str(parsing_error)[:200])
-
-    parsed = result.get("parsed")
-    if parsed is None:
-        return None, AttemptFailure(method, REASON_EMPTY, _describe_raw(result.get("raw")))
-
-    try:
-        draft = parsed if isinstance(parsed, QuizDraft) else QuizDraft.model_validate(parsed)
-    except ValidationError as exc:
-        # 字段缺失 / 题量越界 / 答案不在选项里 —— 全部走这里
-        return None, AttemptFailure(method, REASON_INVALID, str(exc)[:200])
-
-    return draft, None
+    return fallback.classify_result(method, result, QuizDraft)
 
 
 def generate_quiz(

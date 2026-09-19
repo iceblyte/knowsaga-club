@@ -4,7 +4,12 @@ export default defineAppConfig({
     'pages/splash/index',
     'pages/hall/index',
     'pages/workshop/index',
+    // 冒险日志拆三页：主视图（标签页）+ 三句话总结 + 复习建议。
+    // 原型 03 的这三屏各自有独立的导览栏标题，也是
+    // docs/用户系统方案设计文档.md §7.3 页面清单里的 12 / 13 号
     'pages/report/index',
+    'pages/report/summary/index',
+    'pages/report/suggestions/index',
     'pages/guild/index',
     'pages/mine/index',
     'pages/summon/index',

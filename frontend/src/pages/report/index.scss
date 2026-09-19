@@ -1,0 +1,94 @@
+@use "../../styles/tokens" as *;
+
+.report {
+  // 原型第 1 屏：正确率环 88px，与右侧标题/日期/胶囊同排
+  &__hero {
+    gap: rpx(14);
+    align-items: center;
+  }
+
+  &__hero-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__hero-meta {
+    margin-top: rpx(6);
+  }
+
+  &__hero-pills {
+    margin-top: rpx(10);
+    gap: rpx(6);
+  }
+
+  // 百分位卡：墨墨 + 「超过 N% 的冒险者」+ 进度条
+  &__percentile {
+    gap: rpx(10);
+    align-items: center;
+  }
+
+  &__percentile-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__percentile-title {
+    font-size: $fs-body; // 12.5
+    font-weight: 600;
+  }
+
+  &__percentile-gap {
+    height: rpx(10);
+  }
+
+  &__percentile-note {
+    margin-top: rpx(8);
+  }
+
+  &__note {
+    flex: none;
+    padding: 0 $sp-1;
+  }
+
+  // 进入下一段的次级按钮
+  &__next {
+    flex: none;
+  }
+
+  &__secondary {
+    flex: none;
+    margin-top: $sp-4;
+  }
+
+  // ---- 生成中 / 失败 / 断网：居中一块内容，按钮贴底 ----
+  &--center {
+    align-items: center;
+    text-align: center;
+  }
+
+  &__center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $sp-7;
+    flex: none;
+  }
+
+  &__center-text {
+    display: flex;
+    flex-direction: column;
+    gap: $sp-4;
+  }
+
+  &__center-desc {
+    max-width: rpx(240);
+  }
+
+  &__bar {
+    width: rpx(170); // 原型「海报生成中」那屏的进度条宽度
+  }
+
+  &__step-gap {
+    height: $sp-6;
+  }
+}
