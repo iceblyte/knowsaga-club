@@ -1,29 +1,39 @@
-"""用户资料、设置与复习提醒的读接口。
+"""用户资料、设置、复习提醒与冒险者档案的读接口。
 
-## 一个刻意的空实现
+## 档案四屏（Phase D）
 
-`GET /users/me/dashboard`、`/knowledge-tree`、`/scrolls`、`/wrong-questions`、
-`/badges` 属于 Phase D，本阶段**不建占位路由**。返回假数据的占位接口比
-「404」更危险：前端联调时会以为已经通了，直到真正接数据才发现口径不对。
+| 屏 | 接口 | 契约 |
+|---|---|---|
+| 04·3 数据看板 | `GET /users/me/dashboard` | `models/archive.py` |
+| 04·4 知识树 | `GET /users/me/knowledge-tree` | 同上 |
+| 04·7 旧识重温 | `GET /users/me/wrong-questions` | 同上 |
+| 04·9 勋章墙 | `GET /users/me/badges` | 同上 |
+
+四个都是**只读聚合**，业务逻辑在 `archive_service` 与 `badge_service`，
+路由层只负责把查询参数翻译成调用参数、把结果包成统一响应体。
+
+`/users/me/scrolls`（历史卷轴）不在本阶段 —— 它属于「冒险日志」那条链，
+与这四屏不是同一批数据。
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Query, UploadFile
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
 from app.core.constants import NICKNAME_UI_MAX_LEN
 from app.core.exceptions import invalid_input
 from app.core.response import ok
+from app.models.archive import DashboardRange
 from app.models.user import (
     ProfileUpdateRequest,
     SnoozeResponse,
     UserSettingsUpdateRequest,
 )
-from app.services import user_service
+from app.services import archive_service, badge_service, user_service
 from app.utils.crypto import NicknameError, normalize_nickname
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -96,6 +106,57 @@ def update_settings(
 ) -> dict:
     """改设置。只提交传了的字段。"""
     return ok(user_service.update_settings(session, user, payload).model_dump(mode="json"))
+
+
+# -----------------------------------------------------------------------------
+# 冒险者档案（原型 04 的四屏）
+# -----------------------------------------------------------------------------
+@router.get("/me/dashboard")
+def read_dashboard(
+    user: CurrentUser,
+    session: DbSession,
+    range_: Annotated[DashboardRange, Query(alias="range")] = "7d",
+) -> dict:
+    """数据看板（原型 04·3）。
+
+    `range` 是 Python 关键字，所以参数名走 `alias`。用 `Literal` 而不是手工校验：
+    非法值由 FastAPI 直接挡成 4000，不必在这里写一遍取值表。
+    """
+    payload = archive_service.dashboard(session, user, range_=range_)
+    return ok(payload.model_dump(mode="json"))
+
+
+@router.get("/me/knowledge-tree")
+def read_knowledge_tree(user: CurrentUser, session: DbSession) -> dict:
+    """知识树（原型 04·4）。节点含「还没碰过」的领域，三态由后端判定。"""
+    payload = archive_service.knowledge_tree(session, user)
+    return ok(payload.model_dump(mode="json"))
+
+
+@router.get("/me/wrong-questions")
+def read_wrong_questions(
+    user: CurrentUser,
+    session: DbSession,
+    due: Annotated[int, Query(ge=0, le=1)] = 0,
+) -> dict:
+    """旧识重温（原型 04·7）。
+
+    `due=1` 只回到期的题（复习关卡的组卷入口用它）；不传则回整个队列，
+    页面自己按 `due` 标注两种胶囊。
+
+    用 `int` + `ge/le` 而不是 `bool`：查询串里 `due=false` 在 `bool` 下会被
+    Pydantic 解析成 `False` 但 `due=0` 也可以，而 `due=2` 会被静默当成真 ——
+    显式限定 0/1 才能让写错的值报错而不是悄悄改变语义。
+    """
+    payload = archive_service.wrong_questions(session, user, due_only=bool(due))
+    return ok(payload.model_dump(mode="json"))
+
+
+@router.get("/me/badges")
+def read_badges(user: CurrentUser, session: DbSession) -> dict:
+    """勋章墙（原型 04·9）。恒返回全部 18 枚，未解锁的也带名称与条件。"""
+    payload = badge_service.list_badges(session, user)
+    return ok(payload.model_dump(mode="json"))
 
 
 @router.get("/me/reminders/today")

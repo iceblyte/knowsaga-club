@@ -31,6 +31,17 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = 5
 
+#: `Quiz`（对外契约）题量的**下限**，与上面的 `MIN_QUESTIONS` 不是同一件事。
+#:
+#: `MIN_QUESTIONS = 3` 是**出题链**的要求（一次召唤至少给 3 道，否则不值得开局），
+#: 它由 `llm/output_schemas.QuizDraft` 与 `POST /quiz/generate` 的入参边界守着。
+#: 而 `Quiz` 是**已经存在的一份题库**的表示 —— 复习关卡（旧识重温）用的是
+#: 真实到期的错题，用户可能只有 1 道到期。若契约也卡 3，那道题就永远复习不了，
+#: 而这是数据事实，不是质量问题。
+#:
+#: 所以下限在这里放宽到 1；「至少 3 道」留在出题链那一层（见 output_schemas.py）。
+MIN_SESSION_QUESTIONS = 1
+
 MIN_OPTIONS = 3
 MAX_OPTIONS = 5
 
@@ -41,7 +52,10 @@ NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 
 QuestionType = Literal["single", "multiple", "judge"]
 Difficulty = Literal["easy", "medium", "hard"]
-SourceType = Literal["text", "pdf", "web", "video"]
+#: 卷轴来源。`review` 是**复习关卡**（旧识重温）——它不是「资料」，而是一局
+#: 由到期错题组成的卷轴。单独一个取值而不是复用 `text`：否则历史卷轴列表里
+#: 那些复习局会显示成「来自一段文字」，是编出来的来源。
+SourceType = Literal["text", "pdf", "web", "video", "review"]
 
 
 class Option(BaseModel):
@@ -163,9 +177,10 @@ class Quiz(BaseModel):
         min_length=1, description="知识点标签（派生字段）"
     )
     questions: list[Question] = Field(
-        min_length=MIN_QUESTIONS,
+        min_length=MIN_SESSION_QUESTIONS,
         max_length=MAX_QUESTIONS,
-        description=f"题目列表，{MIN_QUESTIONS}–{MAX_QUESTIONS} 道",
+        description=f"题目列表，{MIN_SESSION_QUESTIONS}–{MAX_QUESTIONS} 道"
+        f"（出题链另有 {MIN_QUESTIONS} 道下限，见 MIN_SESSION_QUESTIONS 的说明）",
     )
 
     @model_validator(mode="before")

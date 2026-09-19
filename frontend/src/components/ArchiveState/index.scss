@@ -1,0 +1,51 @@
+// 档案页三态占位样式。
+//
+// 沿用 ComingSoon 的语言（法阵 + 标题 + 说明整体居中、次级按钮贴底）：
+// 两种空态出现在产品里的角色相同，视觉不该有第二套。
+//
+// 用 `.btn.ghost` 而不是主按钮 —— 这里没有主任务，主按钮的视觉权重会浪费。
+
+@use "../../styles/tokens" as *;
+
+.archive-state {
+  // 铺满内容区。`flex: 1` 而不是固定高度：内容区（scroll-view）的高度
+  // 由 PhoneShell 按视口算好后给出，这里只是把它吃掉。
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.archive-state__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $sp-9;
+}
+
+.archive-state__text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $sp-4;
+  // 左右留白：窄屏下长文案不贴屏幕边缘
+  padding: 0 $sp-6;
+}
+
+.archive-state__title {
+  text-align: center;
+}
+
+.archive-state__desc {
+  text-align: center;
+  line-height: $lh-body;
+}
+
+.archive-state__btn {
+  flex: none;
+  width: 100%;
+}

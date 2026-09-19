@@ -46,7 +46,13 @@ from app.models.attempt import (
     AttemptSubmitResponse,
     AttemptSummary,
 )
-from app.services import growth_service, quiz_repository, scoring, user_service
+from app.services import (
+    badge_service,
+    growth_service,
+    quiz_repository,
+    scoring,
+    user_service,
+)
 from app.utils.timeutil import from_timestamp_ms, utcnow
 
 logger = get_logger(__name__)
@@ -121,7 +127,10 @@ def submit_attempt(
         user,
         items=[
             growth_service.GradedItem(
-                question_id=item.question.id,
+                # ⚠️ 不是 `item.question.id`：复习关卡的题目是**副本**，
+                # 错题要按原题认身份，否则复习答对推进的是副本那条记录，
+                # 原错题永远移不出队列（见 `review_service` 的模块说明）。
+                question_id=_growth_question_id(item.question),
                 outcome=item.result.outcome,
                 knowledge_point=item.question.knowledge_point,
             )
@@ -130,6 +139,17 @@ def submit_attempt(
         xp_gained=summary.xp_gained,
         coins_gained=summary.coins_gained,
         finished_at=finished_at,
+    )
+
+    # 勋章必须**在成长体系写完之后**判：它读的 `longest_streak` / `lit_points` /
+    # `mastered_wrong_count` 正是刚被 `apply_attempt` 更新的那几个值。
+    # 顺序反了不会报错，只会让每一枚勋章都「晚一局解锁」—— 用户打完第 17 枚
+    # 拿不到「神秘成就」，要再随便打一局才补上。
+    new_badges = badge_service.evaluate_after_attempt(
+        session,
+        user,
+        signal=_signal_of(graded, summary=summary, finished_at=finished_at),
+        now=finished_at,
     )
 
     try:
@@ -152,7 +172,7 @@ def submit_attempt(
         results=[item.to_wire() for item in graded],
         summary=summary,
         user=user_service.to_user_public(user),
-        new_badges=[],  # Phase D 接入勋章规则引擎
+        new_badges=new_badges,
         wrong_queued_count=git.wrong_queued_count,
         duplicate=False,
     )
@@ -296,6 +316,36 @@ def _avg_seconds(duration_ms: int, total_count: int) -> float:
         return 0.0
     seconds = Decimal(duration_ms) / Decimal(1000) / Decimal(total_count)
     return float(seconds.quantize(_SECONDS_SCALE, rounding=ROUND_HALF_UP))
+
+
+def _growth_question_id(question: QuestionRecord) -> int:
+    """成长体系认这道题的**身份**用哪个 id。
+
+    普通题就是自己；复习关卡的副本题是原题的 id —— 错题本的
+    `WrongQuestion` 行挂在原题上，复习答对要推进的是那一行。
+    """
+    origin = question.origin_question_id
+    return int(origin) if origin is not None else int(question.id)
+
+
+def _signal_of(
+    graded: list[_GradedQuestion], *, summary: AttemptSummary, finished_at: datetime
+) -> badge_service.AttemptSignal:
+    """把这一局的逐题判定投影成勋章引擎要的「本局信号」。
+
+    只带题型与结果：勋章条件（连击、满分、用时、完成时刻）都能从这两个字段
+    加本局汇总派生出来，多传没有用处。
+    """
+    return badge_service.AttemptSignal(
+        items=tuple(
+            badge_service.AttemptItem(
+                question_type=item.question.type, outcome=item.result.outcome
+            )
+            for item in graded
+        ),
+        avg_seconds_per_question=float(summary.avg_seconds_per_question),
+        finished_at=finished_at,
+    )
 
 
 def _resolve_timing(payload: AttemptSubmitRequest) -> tuple[datetime, datetime, int]:

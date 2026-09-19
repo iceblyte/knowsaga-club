@@ -117,13 +117,23 @@ CREATE TABLE IF NOT EXISTS `questions` (
   `explanation`     TEXT         NOT NULL COMMENT '知识讲解（答对答错都要给）',
   `knowledge_point` VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '知识点标签，知识树与报告的聚合依据',
   `difficulty`      VARCHAR(16)  NOT NULL DEFAULT 'easy',
+  `origin_question_id` BIGINT UNSIGNED DEFAULT NULL
+                    COMMENT '复习关卡的副本题指回原错题；NULL 表示这是原题（错题本按它归并）',
   `created_at`      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updated_at`      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_questions_quiz_seq` (`quiz_id`, `seq`),
   KEY `idx_questions_quiz_kp` (`quiz_id`, `knowledge_point`),
+  KEY `idx_questions_origin` (`origin_question_id`),
   CONSTRAINT `fk_questions_quiz` FOREIGN KEY (`quiz_id`)
-    REFERENCES `quizzes` (`id`) ON DELETE CASCADE
+    REFERENCES `quizzes` (`id`) ON DELETE CASCADE,
+  -- 复习关卡组卷时会把错题**复制**进一份新卷轴（questions 的 UNIQUE(quiz_id, seq)
+  -- 决定了题目不能跨卷轴共享）。副本必须能指回原题，否则复习答对只会推进副本，
+  -- 原错题的阶段永远不动 —— 而那正是「旧识重温」要的东西。
+  -- ON DELETE SET NULL：原题随卷轴被删时，副本退化成它自己，而不是留下悬空引用
+  -- （悬空引用会让错题本写入撞外键，用户看到的是「交卷失败」）。
+  CONSTRAINT `fk_questions_origin` FOREIGN KEY (`origin_question_id`)
+    REFERENCES `questions` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='题目快照';
 
 -- ------------------------------------------------------------

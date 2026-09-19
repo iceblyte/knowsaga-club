@@ -1,0 +1,94 @@
+// 数据看板（原型 04·3）。
+//
+// 版面与原型一致的部分直接从原型 CSS 取值（柱区 88px、柱间距 8px、
+// 柱头圆角 6px、柱下标签 10px），换算一律走 tokens 的 rpx()。
+
+@use "../../../styles/tokens" as *;
+
+// 原型柱状图的两档颜色。浅色那档是主色压在白纸上的一层（#B9D5F2），
+// 不在 tokens 里 —— 它只出现在这一屏，不上升为设计令牌。
+$bar-past: #b9d5f2;
+
+// 卡片标题与柱区之间的留白（原型 `<div style="height:12px">`）
+.dash__gap {
+  height: rpx(12);
+}
+
+// 柱区：固定高度 + 底部对齐。柱子用**百分比高度**而不是写死的 px，
+// 这样换设备不用重算，也不会碰到「内联样式写死单位」那个坑（见 utils/style.ts）。
+.dash__bars {
+  height: rpx(88);
+  display: flex;
+  align-items: flex-end;
+  gap: rpx(8);
+}
+
+// 每一列：撑满柱区高度，柱子在标签之上、底部对齐 ——
+// 这样 7 个标签永远在同一水平线上，不会随柱高上下浮动。
+.dash__col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: rpx(5);
+}
+
+.dash__bar {
+  width: 100%;
+  border-radius: rpx(6) rpx(6) 0 0;
+  background: $bar-past;
+
+  // 今天那一根用主色 —— 原型把「当前」挑出来，其余日子是同色的浅调
+  &--today {
+    background: $magic;
+  }
+
+  // 零答题的一天只留一个刻度点。用压痕色而不是浅蓝：
+  // 浅蓝会读成「有一点点数据」，而它其实是 0。
+  &--zero {
+    background: $paper3;
+  }
+}
+
+.dash__bar-label {
+  // 原型柱下标签是 10px（比 $fs-tiny 的 11 更小）
+  font-size: rpx(10);
+}
+
+// 区间切换：靠右，紧贴它真正影响的那两张卡
+.dash__range {
+  justify-content: flex-end;
+}
+
+// 用复合选择器提高优先级 —— 只写 `.dash__range-item--on` 时它与 `.chip`
+// 同为单类选择器，谁生效取决于样式表的先后顺序（而页面样式与 base 样式
+// 由 Taro 分别编译，顺序不稳）。
+.chip.dash__range-item--on {
+  background: $paper-blue;
+  border-color: rgba(47, 107, 216, 0.34);
+  color: $magic-d;
+  font-weight: 600;
+}
+
+.dash__stat {
+  margin-top: rpx(6);
+}
+
+.dash__delta {
+  margin-top: rpx(4);
+}
+
+.dash__domains-title {
+  margin-bottom: rpx(8);
+}
+
+// 掌握度低于 60% 的进度条用朱砂 —— 原型给 58% 那一行单独覆了红色。
+// `.bar > view` 是 base 里的默认黄铜填充，这里必须压过它，所以带上 `.bar`。
+.bar.dash__domain-bar--low {
+  > view,
+  > i {
+    background: $bad;
+  }
+}

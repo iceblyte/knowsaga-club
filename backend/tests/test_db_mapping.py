@@ -26,8 +26,10 @@ EXPECTED_TABLES = {
     "user_badges",
 }
 
-#: 方案设计 §9.1 实测的外键数量
-EXPECTED_FK_COUNT = 13
+#: 方案设计 §9.1 实测的外键数量（13），Phase D 新增 1 个：
+#: `questions.fk_questions_origin` —— 复习关卡的副本指回原错题（见
+#: `sql/02_questions_origin.sql`）。
+EXPECTED_FK_COUNT = 14
 
 
 def test_ten_tables_defined() -> None:

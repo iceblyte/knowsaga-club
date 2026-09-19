@@ -10,6 +10,13 @@ export default defineAppConfig({
     'pages/report/index',
     'pages/report/summary/index',
     'pages/report/suggestions/index',
+    // 冒险者档案（Phase D）：从「我的」下钻的四个只读聚合页。
+    // 04·2 公会卡 / 04·5 历史卷轴 / 04·6 卷轴详情 / 04·8 复习提醒属 Phase E，
+    // 不在本轮注册 —— app.config 里声明了却没有实现的路由会让 build 直接失败。
+    'pages/profile/dashboard/index',
+    'pages/profile/knowledge-tree/index',
+    'pages/profile/review/index',
+    'pages/profile/badges/index',
     'pages/guild/index',
     'pages/mine/index',
     'pages/summon/index',

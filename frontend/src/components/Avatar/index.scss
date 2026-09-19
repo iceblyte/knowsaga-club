@@ -1,0 +1,28 @@
+// 冒险者头像。
+//
+// ⚠️ 这里**故意不定义 `.advatar`** —— 它是 `styles/base.scss` 里从设计规范
+// 移植过来的类（`display:block; flex:none; overflow:visible`），本组件直接复用。
+// 两处各写一份会让「谁覆盖谁」取决于打包顺序，而那种问题只在某个平台上出现。
+//
+// 本文件只负责「预置头像不需要额外样式」与「照片需要怎么裁」。
+
+@use "../../styles/tokens" as *;
+
+// 自定义照片：一圈金属描边 + 圆形裁切。
+// 用 border 而不是 `box-shadow: inset`：`<image>` 在小程序端由原生图层绘制，
+// inset 阴影可能既不报错也不生效（静默失效）。border 配合 border-box
+// 会把图片压进内圈，描边因此总是画在图片之上 —— 不依赖原生组件的实现细节。
+.advatar--photo {
+  border-radius: 50%;
+  border: 1PX solid $gold;
+  box-sizing: border-box;
+  // 万一图片自带正方角（mode=aspectFill 会填满容器），圆角裁切必须在这一层生效
+  overflow: hidden;
+}
+
+.advatar__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}

@@ -1,0 +1,147 @@
+// 知识树（原型 04·4）。
+//
+// 树冠的几何全部来自 TS 算出的百分比坐标（见 index.tsx 的说明），
+// 这里只负责「圆点长什么样、容器多高」。
+//
+// 尺寸比例与 index.tsx 里的常量必须一致：
+//   宽 300 / 高 176 / 点径 14（原型 px）
+
+@use "sass:math";
+@use "../../../styles/tokens" as *;
+
+$canopy-w: 300;
+$canopy-h: 176;
+// 圆点在原型里也是 14px；容器高度按宽高比撑出来，所以宽高用两个不同的百分比
+$dot: 14;
+
+// -----------------------------------------------------------------------------
+// 树冠
+// -----------------------------------------------------------------------------
+.tree__canopy {
+  position: relative;
+  // 用 padding 撑出宽高比：绝对定位子元素的百分比 top 是按**包含块的 padding box**
+  // 解析的，所以 padding 里这部分高度也算数，坐标能直接用。
+  padding-top: math.div($canopy-h, $canopy-w) * 100%;
+  // 中心一团暖光：把散落的点读作「一株」而不是「一堆」
+  background: radial-gradient(circle at 50% 52%, rgba(200, 145, 42, 0.12), transparent 68%);
+}
+
+.tree__dot {
+  position: absolute;
+  // 宽按容器宽、高按容器高换算，两个百分比对应的物理长度都是 14px
+  width: math.div($dot, $canopy-w) * 100%;
+  height: math.div($dot, $canopy-h) * 100%;
+  border-radius: 50%;
+
+  // 已点亮：实心绿
+  &--lit {
+    background: $ok;
+  }
+
+  // 进行中：黄铜（与 XP 同色，读作「正在积累」）
+  &--growing {
+    background: $gold;
+  }
+
+  // 未开始：只有一圈轮廓。它是「位置已经留好、等你来点亮」，
+  // 所以要有形状，但不能有重量。
+  &--none {
+    background: transparent;
+    box-shadow: inset 0 0 0 1PX $line;
+  }
+}
+
+// 树根：拾拾守在正中间。整棵树的生长都发生在他周围
+.tree__root {
+  position: absolute;
+  left: 50%;
+  // 与 index.tsx 的 CANOPY_CY / CANOPY_H 一致（92 / 176）
+  top: math.div(92, $canopy-h) * 100%;
+  transform: translate(-50%, -50%);
+}
+
+// -----------------------------------------------------------------------------
+// 领域清单
+// -----------------------------------------------------------------------------
+// 复合选择器压过 `.row` 的默认 gap（原型这里是 10px）
+.row.tree__row {
+  gap: rpx(10);
+}
+
+.row.tree__row--target {
+  position: relative;
+  padding-left: rpx(8);
+
+  // 「下一步」标记：左侧一道黄铜短线。用它而不是给整行加底色 ——
+  // 底色会与卡片的纸面材质打架，而这行本来就在纸面上。
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: rpx(3);
+    height: rpx(20);
+    border-radius: 1px;
+    background: $gold;
+    transform: translateY(-50%);
+  }
+}
+
+// 28px 单字方块，三态三套配色（原型三行样例）
+.tree__ico {
+  width: rpx(28);
+  height: rpx(28);
+  border-radius: $r-knob;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: $f-disp;
+  font-size: $fs-body;
+  font-weight: 700;
+
+  &--lit {
+    background: $paper-ok;
+    box-shadow: inset 0 0 0 1PX rgba(47, 125, 79, 0.34);
+    color: $ok;
+  }
+
+  &--growing {
+    background: $paper-gold;
+    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.36);
+    color: $gold-d;
+  }
+
+  &--none {
+    background: $paper2;
+    box-shadow: inset 0 0 0 1PX $stroke-knob-strong;
+    color: $ink3;
+  }
+}
+
+.tree__body {
+  flex: 1;
+  // 名称可能很长，没有 min-width:0 时 flex 子项会被内容撑破
+  min-width: 0;
+}
+
+.tree__row-gap {
+  height: rpx(6);
+}
+
+// -----------------------------------------------------------------------------
+// 建议条
+// -----------------------------------------------------------------------------
+.tree__tip-text {
+  flex: 1;
+  min-width: 0;
+}
+
+// `.btn` 默认 width:100%，在行内会把文字挤没。这里收回宽度，
+// 横向 padding 自己给 —— 必须带 `.btn` 才压得住 base 里的规则。
+.btn.tree__tip-btn {
+  flex: none;
+  width: auto;
+  padding-left: rpx(14);
+  padding-right: rpx(14);
+}

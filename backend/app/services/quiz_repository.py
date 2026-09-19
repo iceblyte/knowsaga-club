@@ -76,6 +76,7 @@ def persist_quiz(
     user_id: int,
     quiz: Quiz,
     difficulty: str = "mixed",
+    origins: Sequence[int | None] | None = None,
 ) -> Quiz:
     """落库一份题库，返回**id 已回填**的新 `Quiz`。
 
@@ -86,7 +87,13 @@ def persist_quiz(
         session: 直连会话。**由调用方负责事务边界**（这里是 flush + commit）。
         user_id: 卷轴归属。
         difficulty: 出题时的难度偏好（`easy`/`medium`/`hard`/`mixed`）。
+        origins: 逐题的原题 id，用于**复习关卡的副本题**。
+            `questions` 在同一卷轴内 `seq` 唯一，所以复习时只能复制题目；
+            副本靠这一列指回原错题，成长体系才认得出「复习的是哪一道」。
+            不传则为全 `None`（普通出题）。
     """
+    if origins is not None and len(origins) != len(quiz.questions):
+        raise ValueError("origins 必须与题目一一对应")
     row = QuizRecord(
         user_id=int(user_id),
         title=_clip(quiz.title, TITLE_MAX),
@@ -115,6 +122,7 @@ def persist_quiz(
             explanation=question.explanation,
             knowledge_point=_clip(question.knowledge_point, KNOWLEDGE_POINT_MAX),
             difficulty=question.difficulty,
+            origin_question_id=origins[seq - 1] if origins is not None else None,
         )
         session.add(question_row)
         session.flush()

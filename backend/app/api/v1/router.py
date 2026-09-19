@@ -15,7 +15,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.routes import attempts, auth, health, quiz, report, tasks, users
+from app.api.v1.routes import (
+    attempts,
+    auth,
+    health,
+    quiz,
+    report,
+    review,
+    tasks,
+    users,
+)
 from app.core.config import get_settings
 
 
@@ -30,6 +39,7 @@ def build_api_router() -> APIRouter:
     router.include_router(tasks.router)
     router.include_router(attempts.router)
     router.include_router(report.router)
+    router.include_router(review.router)
 
     settings = get_settings()
     if settings.is_dev and settings.dev_login_enabled:

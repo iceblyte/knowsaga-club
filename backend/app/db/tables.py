@@ -162,6 +162,18 @@ class QuestionRecord(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     knowledge_point: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="easy")
+    #: 复习关卡的**副本题**指回原错题；原题为 `NULL`。
+    #:
+    #: 见 `sql/02_questions_origin.sql` 的说明：错题本按
+    #: `COALESCE(origin_question_id, id)` 归并，所以复习答对推进的是原题。
+    #: 自引用外键 + `ON DELETE SET NULL`：原题消失时副本退化成它自己。
+    origin_question_id: Mapped[int | None] = mapped_column(
+        PK,
+        ForeignKey(
+            "questions.id", name="fk_questions_origin", ondelete="SET NULL"
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

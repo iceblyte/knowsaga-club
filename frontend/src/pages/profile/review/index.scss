@@ -1,0 +1,11 @@
+// 错题本 · 旧识重温（原型 04·7）。
+//
+// 列表本身几乎全部复用设计系统：`.card.parch` 承载、「.li」是账本横格行、
+// `.ico` 是行首方块、右侧状态用 `.pill`。这里只补原型里那一处 8px 间距。
+
+@use "../../../styles/tokens" as *;
+
+// 引言与标题行之间的留白（原型 `<div class="body sm" style="margin-top:8px">`）
+.review__intro {
+  margin-top: rpx(8);
+}

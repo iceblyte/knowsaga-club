@@ -1,0 +1,35 @@
+// 勋章墙（原型 04·9）。
+//
+// 折叠态 = 原型的 4 列方格（圆底单字 + 名称）；展开态换成 base 里的账本行 `.li`，
+// 这里只负责方格那部分，以及两处原型的固定间距。
+
+@use "../../../styles/tokens" as *;
+
+// 标题行与进度条之间（原型 `<div style="height:10px">`）
+.badges__gap {
+  height: rpx(10);
+}
+
+// 原型这里是 12px，比 `.grid4` 默认的 8px 松 —— 勋章是「收藏品」，
+// 挤在一起会失去陈列感
+.grid4.badges__grid {
+  gap: rpx(12);
+}
+
+.badges__cell {
+  text-align: center;
+}
+
+.badges__cell-icon {
+  display: flex;
+  justify-content: center;
+}
+
+.badges__name {
+  display: block;
+  margin-top: rpx(6);
+}
+
+.badges__all {
+  text-align: center;
+}

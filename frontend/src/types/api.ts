@@ -27,7 +27,14 @@ export interface ApiEnvelope<T> {
 // -----------------------------------------------------------------------------
 export type QuestionType = 'single' | 'multiple' | 'judge'
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type SourceType = 'text' | 'pdf' | 'web' | 'video'
+/**
+ * 卷轴来源。
+ *
+ * `review` 是**复习关卡**（旧识重温）—— 它不是「资料」，而是一局由到期错题
+ * 组成的卷轴。单独一个取值而不是复用 `text`：否则历史卷轴列表里那些复习局
+ * 会显示成「来自一段文字」，那是编出来的来源。
+ */
+export type SourceType = 'text' | 'pdf' | 'web' | 'video' | 'review'
 
 export interface QuizOption {
   /** 选项键；判断题固定为 T / F */
@@ -261,7 +268,13 @@ export interface AttemptSubmitResponse {
   summary: AttemptSummary
   /** 结算后的最新用户快照（XP 已累加、等级已重算） */
   user: UserPublic
-  /** 本次新解锁的勋章键。Phase D 接入规则引擎前恒为空数组 */
+  /**
+   * 本次新解锁的勋章**键**，顺序即注册表顺序。
+   *
+   * 只有键、没有名称与图标：名称映射在前端的 `BADGE_BY_KEY` 里（与勋章墙
+   * 共用一份），结算页据此弹「新勋章」。重复提交时恒为 `[]` ——
+   * 网络抖动重试一次不该再弹一遍同样的勋章。
+   */
   new_badges: string[]
   /** 本次因答错而（重新）入队的错题数；重复提交时为 0 */
   wrong_queued_count: number
@@ -378,4 +391,213 @@ export interface ReportGenerateResponse {
   status: TaskStatus
   poll_interval_ms: number
   estimated_seconds: number
+}
+
+
+// -----------------------------------------------------------------------------
+// 冒险者档案（backend/app/models/archive.py）
+// -----------------------------------------------------------------------------
+// 四屏：04·3 数据看板 / 04·4 知识树 / 04·7 旧识重温 / 04·9 勋章墙。
+//
+// 这里**没有**任何「较上周 +18%」这类句子 —— 后端给的是数字
+// （`week_delta_percent` / `accuracy_delta` / `duration_delta_ms`），
+// 句子在前端拼。数字是事实，措辞是界面。
+
+/**
+ * 看板的统计区间。原型导览栏右侧的「近 30 天」去掉（全站右侧不放文字），
+ * 改由页面上的切换控件承担。
+ */
+export type DashboardRange = '7d' | '30d'
+
+export interface DashboardBar {
+  /** 星期几的单字（一…日） */
+  label: string
+  /** 业务时区日期（`YYYY-MM-DD`），便于排查「这根柱子是哪天」 */
+  date: string
+  /** 这一天的**答题数**（不是挑战局数） */
+  count: number
+}
+
+export interface DomainMastery {
+  name: string
+  /** 0–100 */
+  mastery: number
+  total_count: number
+  correct_count: number
+}
+
+/**
+ * `GET /users/me/dashboard?range=7d|30d`。
+ *
+ * ## 柱状图恒为 7 根，与 `range` 无关
+ *
+ * 原型图注写明「柱状图只展示最近 7 天，避免移动端柱子过密不可读」，
+ * 所以 `range` 只影响正确率 / 平均用时这两项，柱子固定最近 7 天。
+ */
+export interface DashboardResponse {
+  range: DashboardRange
+  /** 这个用户**曾经**挑战过。为 false 时出「还没有开始冒险」空态 */
+  has_data: boolean
+  /**
+   * **所选区间内**有没有作答记录。
+   *
+   * 与 `has_data` 是两件事：老用户切到「近 30 天」时 `has_data` 为 true、
+   * 这一项可能为 false。空窗口里 `accuracy` 与 `avg_duration_ms` 都是 0，
+   * 原样渲染成「正确率 0% · 用时 0 秒」读起来像考砸了，实际只是这段时间没来 ——
+   * 所以界面靠这个标志把两个数字显示成「—」。
+   */
+  range_has_data: boolean
+
+  /** 恰好 7 项，按日期升序，最后一项是今天 */
+  bars: DashboardBar[]
+  /** 7 天答题合计 */
+  week_answers: number
+  /** 与上一个 7 天相比的变化百分比；上周期无数据时为 `null`（不编造对比） */
+  week_delta_percent: number | null
+
+  /** 区间内平均正确率（0–100，按题量加权） */
+  accuracy: number
+  /** 与上一个等长周期相比的**百分点**变化；上周期无数据时为 `null` */
+  accuracy_delta: number | null
+
+  /** 区间内平均单局用时 */
+  avg_duration_ms: number
+  /** 与上一周期相比的变化（毫秒，**正数 = 变慢**）；上周期无数据时为 `null` */
+  duration_delta_ms: number | null
+
+  /** 各知识领域掌握度（只含答过题的领域），按掌握度降序 */
+  domains: DomainMastery[]
+}
+
+/** 知识领域三态。`not_started` 是「没碰过」，不是「0% 掌握」。 */
+export type KnowledgeState = 'lit' | 'growing' | 'not_started'
+
+export interface KnowledgeNode {
+  name: string
+  mastery: number
+  total_count: number
+  correct_count: number
+  state: KnowledgeState
+}
+
+/**
+ * `GET /users/me/knowledge-tree`。
+ *
+ * `nodes` 含**还没碰过**的领域（掌握度 0）—— 知识树的意义正是
+ * 「还有什么没点亮」，只列已答过的话这一屏就永远没有新东西。
+ */
+export interface KnowledgeTreeResponse {
+  nodes: KnowledgeNode[]
+  lit_count: number
+  growing_count: number
+  not_started_count: number
+  /** 一句按事实生成的建议；没有可说的时为空串 */
+  suggestion: string
+  /** `suggestion` 提到的领域名，前端据此高亮那个节点；无建议时为 `null` */
+  next_target: string | null
+}
+
+export interface WrongQuestionItem {
+  question_id: string
+  stem: string
+  knowledge_point: string
+  /** 这道题来自哪份卷轴 —— 用户需要这个上下文才知道「错在哪儿」 */
+  quiz_title: string
+  wrong_count: number
+  /** 复习阶段 0–5，对应间隔 1/2/4/7/15/30 天 */
+  stage: number
+  /** 现在是否已到期 */
+  due: boolean
+  /** 下次到期时刻（UTC ISO 串） */
+  next_review_at: string
+  /** 面向用户的到期说法（「已经到期」「今天」「明天」「3 天后」）。**后端按业务时区算好** */
+  next_review_label: string
+}
+
+/**
+ * `GET /users/me/wrong-questions?due=1`。
+ *
+ * `due_count` 与 `total_count` **恒按整个队列统计**，与 `due` 参数无关 ——
+ * 原型 04·7 的胶囊写「3 题到期」而列表里同时列着未到期的题。
+ */
+export interface WrongQuestionsResponse {
+  due_count: number
+  /** 队列总题数（不含已攻克的） */
+  total_count: number
+  items: WrongQuestionItem[]
+}
+
+export interface BadgeItem {
+  key: string
+  name: string
+  /** 解锁条件的一句话说明，显示在未解锁的那几枚下面 */
+  desc: string
+  /** 圆底上的单字 */
+  icon: string
+  tier: 'gold' | 'rare'
+  unlocked: boolean
+  /** UTC ISO 串；未解锁时为 `null` */
+  unlocked_at: string | null
+}
+
+/**
+ * `GET /users/me/badges`。
+ *
+ * `items` 恒为全部 18 枚、顺序即注册表顺序（前端不重排）——
+ * 未解锁的也带名称与条件，原型明确要求「保留轮廓与名称，让用户知道还有什么可追求」。
+ */
+export interface BadgeListResponse {
+  unlocked_count: number
+  total: number
+  items: BadgeItem[]
+}
+
+// -----------------------------------------------------------------------------
+// 复习关卡（backend/app/models/archive.py → ReviewStartResponse）
+// -----------------------------------------------------------------------------
+/**
+ * `POST /review/start`：用到期错题组一局。
+ *
+ * 返回的就是**普通题库**，直接喂给既有的「确认 → 答题 → 交卷」链路 ——
+ * 复习不需要第二条交卷路径。
+ *
+ * 副本题通过 `origin_question_id` 指回原错题，所以复习答对推进的是
+ * **原错题的阶段**（这件事由后端负责，前端无感）。
+ */
+export interface ReviewStartResponse {
+  quiz: Quiz
+  /** 本局用到的到期错题数（= `quiz.questions.length`） */
+  question_count: number
+}
+
+// -----------------------------------------------------------------------------
+// 个人中心（backend/app/models/user.py）
+// -----------------------------------------------------------------------------
+export interface ProfileStats {
+  /** 闯关副本 */
+  attempt_count: number
+  /** 平均正确率（0–100 整数） */
+  avg_accuracy: number
+  /** 知识树：已点亮领域数 */
+  lit_kp_count: number
+  /** 历史卷轴：条目数（= 挑战次数） */
+  scroll_count: number
+  /** 勋章墙：已解锁数 */
+  badge_unlocked: number
+  /** 勋章墙：总数（原型「6 / 18」的分母） */
+  badge_total: number
+}
+
+/** `GET /users/me`：个人中心首屏的全部数据（一个接口而不是四个）。 */
+export interface ProfileResponse {
+  user: UserPublic
+  stats: ProfileStats
+}
+
+/** `GET /users/me/reminders/today`（原型 04·8 的三宫格）。 */
+export interface RemindersTodayResponse {
+  due_count: number
+  estimated_minutes: number
+  available_xp: number
+  snoozed_today: boolean
 }

@@ -262,6 +262,18 @@ scroll-view {
 .btn {
   display: block;
   width: 100%;
+  // 禁止被 flex 压缩（`flex: 0 0 auto`）。
+  //
+  // `.screen` 是**定高**的 flex 列容器（高度由 TS 算出后写死，见 PhoneShell）。
+  // 当内容比容器高时，flex 布局会按各子项的 basis 比例收缩 —— `.card` 因为
+  // `min-height:auto` 顶住了，`.spacer` 的 basis 是 0 没得缩，于是**收缩全部落到
+  // 按钮上**：实测按钮从 75.9px 被压到 30.7px，像被挤扁的饼干，而 CSS 里没有任何
+  // 一处写过「让按钮变矮」，DevTools 里也看不到被覆盖的声明 —— 典型静默失效。
+  //
+  // 本应用里 `.btn` 一律是页脚的一条整宽动作条，任何情况下都不该被压扁，
+  // 所以在基类上直接锁死。原来 confirm / knowledge-tree 页各自打的局部补丁
+  // 就是这条规则，此处收口到根上。
+  flex: none;
   border: 0;
   border-radius: $r-btn;
   background: $magic;
