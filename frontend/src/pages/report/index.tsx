@@ -328,7 +328,15 @@ export default function ReportPage() {
         <Button className='btn' onClick={handleReconnect}>
           {REPORT_COPY.reconnect}
         </Button>
-        <Button className='btn ghost report__secondary' onClick={() => goTab('/pages/hall/index')}>
+        {/* 「查看历史日志」按其字面跳**历史卷轴**（04·5），与全局断网页
+            `pages/exception/index` 的同名按钮一致。
+            原来这里跳的是大厅 —— 文案与动作对不上（按钮名实不符）。
+            用 `navigate` 保留本页：断网时用户多半只是想确认「记录还在不在」，
+            看完要能退回来重连；历史卷轴在断网时显示自己的失败态与「重新加载」。 */}
+        <Button
+          className='btn ghost report__secondary'
+          onClick={() => goPage('/pages/profile/scrolls/index', 'navigate')}
+        >
           {REPORT_COPY.viewHistory}
         </Button>
       </PhoneShell>

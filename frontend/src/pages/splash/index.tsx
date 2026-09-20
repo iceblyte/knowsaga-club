@@ -8,6 +8,17 @@
  *    所以这里 `showNav={false}`。
  * 2. 原型的进度条停在 45%、文案是「正在展开冒险卷轴…」—— 那是一个**快照**。
  *    真机上进度条从 0 走到 100，文案按阶段切换。
+ *
+ * ## 为什么在动画期间并发一次健康探活
+ *
+ * 这是全局断网页（`pages/exception/index`，原型 03 第 7 屏）**唯一合理的接线点**。
+ * 断网时若照常进大厅，用户看到的是「页面正常、数字全是 `—`」—— 他能感觉到不对，
+ * 却猜不到原因是网络；而这时刻是唯一「用户还没进入任何页面、不打断任何人」的时机。
+ *
+ * 探活用的是 `fetchHealth`（`auth:false`，见 `services/quiz.ts`）—— 它本来就不需要
+ * 登录态，正是为「后端还没起来也要能探测」留的口子。**只有明确探不通才改道**：
+ * 探活还没回来（慢网）时照常进大厅，因为大厅自己也有降级（档案卡显示 `—`），
+ * 把用户扣在启动页更糟。
  */
 
 import { Text, View } from '@tarojs/components'
@@ -15,7 +26,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
-import { goTab } from '../../utils/navigation'
+import { fetchHealth } from '../../services/quiz'
+import { goPage, goTab } from '../../utils/navigation'
 import { styleOf } from '../../utils/style'
 
 import './index.scss'
@@ -35,8 +47,20 @@ export default function SplashPage() {
   const [progress, setProgress] = useState(0)
   const [stageText, setStageText] = useState(STAGES[0].text)
   const navigated = useRef(false)
+  /** 探活结果：`null` = 还没回来（此时不阻塞，照常进大厅） */
+  const healthOk = useRef<boolean | null>(null)
 
   useEffect(() => {
+    // 动画播放期间**并发**探一次后端；结果只用来决定「进大厅还是进断网页」。
+    // 不 await：探活的耗时不该改变启动页的节奏。
+    fetchHealth()
+      .then(() => {
+        healthOk.current = true
+      })
+      .catch(() => {
+        healthOk.current = false
+      })
+
     const startedAt = Date.now()
 
     const timer = setInterval(() => {
@@ -53,8 +77,13 @@ export default function SplashPage() {
       if (elapsed >= TOTAL_MS && !navigated.current) {
         navigated.current = true
         clearInterval(timer)
-        // 大厅是标签页，必须走 switchTab；失败时由 goTab 兜底
-        goTab('/pages/hall/index')
+        if (healthOk.current === false) {
+          // 明确探不通 → 去全局断网页（它自带「重新连接」，探通了才走人）
+          goPage('/pages/exception/index', 'redirect')
+        } else {
+          // 大厅是标签页，必须走 switchTab；失败时由 goTab 兜底
+          goTab('/pages/hall/index')
+        }
       }
     }, TICK_MS)
 

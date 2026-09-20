@@ -594,6 +594,20 @@ def unlocked_keys(client, headers) -> set[str]:
     return {item["key"] for item in body["items"] if item["unlocked"]}
 
 
+#: 默认交卷时刻：**昨天 10:00**（业务时区）。
+#:
+#: 为什么不能用 `at(0)`（今天 10:00）：`POST /attempts` 的 `_resolve_timing` 会把
+#: **晚于服务端当前时刻**的 `finished_at` 夹到「现在」。今天 10:00 在上午 10 点之前
+#: 都属于「未来」，一夹就变成了「测试跑在哪一刻」—— 本局完成小时不再是稳定的 10 点，
+#: 而是随墙钟漂移，于是下面那条**反面**断言（普通时刻不该拿时间类勋章）只在一天中的
+#: 部分时段成立：
+#:   · 业务时间 00:00–02:00 跑 → 夹到 0/1 点 → 落进「深夜求知」（22–2 右开）窗口
+#:   · 业务时间 06:00–08:00 跑 → 夹到 6/7 点 → 落进「早起冒险者」（6–8 右开）窗口
+#: 取**昨天** 10:00：永远早于当前时刻（`min` 恒等，不会被夹），且离两个窗口都很远。
+#: 见 `test_default_settlement_moment_is_always_in_the_past`。
+SETTLED_AT = at(-1, hour=10)
+
+
 def settle_one(
     client,
     session,
@@ -603,7 +617,11 @@ def settle_one(
     finished_at: datetime | None = None,
     client_token: str | None = None,
 ) -> dict:
-    """建一份与 `outcomes` 等长的卷轴并结算一局。"""
+    """建一份与 `outcomes` 等长的卷轴并结算一局。
+
+    `finished_at` 缺省用 `SETTLED_AT` 而不是「今天」—— 理由见该常量的说明：
+    只有当交卷时刻**必定已过去**时，完成小时才是可预期的。
+    """
     quiz = make_quiz(
         session,
         current_user_id(client, headers),
@@ -615,7 +633,7 @@ def settle_one(
         session,
         quiz,
         outcomes=outcomes,
-        finished_at=finished_at or at(0),
+        finished_at=finished_at or SETTLED_AT,
         client_token=client_token,
     )
 
@@ -676,14 +694,41 @@ def test_settlement_reads_the_finish_hour_in_business_timezone(
     assert "midnight_learner" in result["new_badges"]
 
 
-def test_settlement_does_not_unlock_time_badges_at_noon(
+def test_settlement_does_not_unlock_time_badges_at_an_ordinary_hour(
     db_client, db_session, auth_headers
 ) -> None:
-    """反面：10 点交卷不该拿到「深夜求知」或「早起冒险者」——否则判定是恒真的。"""
+    """反面：一个普通时刻交卷不该拿到「深夜求知」或「早起冒险者」——否则判定是恒真的。
+
+    ⚠️ 这条断言曾经**只在一天中的部分时段成立**：默认交卷时刻是「今天 10:00」，
+    上午 10 点前它是未来时刻，被 `_resolve_timing` 夹到「现在」；若此刻恰在
+    00:00–02:00 或 06:00–08:00，夹出来的完成小时就落进了时间窗口。现在默认取
+    昨天 10:00（`SETTLED_AT`），与运行时刻无关。
+    """
     result = settle_one(db_client, db_session, auth_headers)
 
     assert "midnight_learner" not in result["new_badges"]
     assert "early_riser" not in result["new_badges"]
+
+
+def test_default_settlement_moment_is_always_in_the_past() -> None:
+    """守住 `SETTLED_AT` 的两个不变量 —— 它们才是上面那条反面断言的前提。
+
+    1. **必定已过去**：否则 `_resolve_timing` 的 `min(..., now)` 会把它夹到「现在」，
+       完成小时变成「测试跑在哪一刻」。
+    2. **不在任何时间窗口内**：万一将来有人把它改成别的时刻，也不该恰好落在
+       22–2 或 6–8 里。
+
+    第 1 条正是这次修掉的脆弱点：把 `SETTLED_AT` 换回 `at(0)`，本用例会在
+    上午 10 点之前失败 —— 这就是一个跑得出来、且不需要等半夜的回归守门。
+    """
+    assert SETTLED_AT < utcnow(), "默认交卷时刻落在未来，会被夹到「现在」"
+
+    hour = badge_service.facts_from_signal(
+        signal(("single", "correct"), finished_at=SETTLED_AT)
+    ).finished_hour
+    assert hour is not None
+    assert not spec_of("midnight_learner").met(with_facts(finished_hour=hour))
+    assert not spec_of("early_riser").met(with_facts(finished_hour=hour))
 
 
 def test_replaying_a_submission_does_not_unlock_anything(
