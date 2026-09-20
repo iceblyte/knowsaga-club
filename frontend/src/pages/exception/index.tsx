@@ -14,11 +14,17 @@
  * 合并成一个「出错了」会让用户不知道该做什么 —— 而原型的图注明确要求
  * 「失败文案给出具体原因与重试动作」。
  *
- * ## 「查看历史日志」为什么只给提示
+ * ## 「查看历史日志」已经能真的跳过去
  *
- * 历史冒险日志是**已确认不做**的 MVP 之外功能（见 `docs/MVP开发计划.md` §3）。
- * 按钮位置与样式按原型保留，点击时明确说明 —— 与大厅页处理 P1 能力的方式一致：
- * 明说比静默失败好，比假装能用更好。
+ * 这个按钮原来只弹一句「历史日志还没开放」——那是 `docs/MVP开发计划.md §1`
+ * 第 8 行「历史冒险日志不做」时期的说法。该决策已在
+ * `docs/用户系统需求分析文档.md` §8 第 8 行**修订为「做」**，并随 Phase E
+ * 落地成「历史卷轴」（04·5 列表 / 04·6 详情）。所以这里改成真跳转。
+ *
+ * ⚠️ 它是 `navigate` 而不是 `redirect`：断网时用户点进来多半只是想确认
+ * 「我的记录还在不在」，看完要能退回来重连。而真正的降级也在对面那一页：
+ * 断网仍在时，历史卷轴会显示自己的失败态与「重新加载」，
+ * 不在这里假装能离线读（本实现没有离线缓存）。
  */
 
 import { Button, Text, View } from '@tarojs/components'
@@ -29,7 +35,7 @@ import PhoneShell from '../../components/PhoneShell'
 import Sprite from '../../components/Sprite'
 import { REPORT_COPY } from '../../constants/copy'
 import { fetchHealth } from '../../services/quiz'
-import { goTab } from '../../utils/navigation'
+import { goPage, goTab } from '../../utils/navigation'
 
 import './index.scss'
 
@@ -53,7 +59,7 @@ export default function ExceptionPage() {
   }
 
   const handleHistory = () => {
-    Taro.showToast({ title: REPORT_COPY.historyUnavailable, icon: 'none' })
+    goPage('/pages/profile/scrolls/index', 'navigate')
   }
 
   return (

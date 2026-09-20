@@ -199,12 +199,7 @@ export const REPORT_COPY = {
 
   // ---- 空态：本地没有可复盘的一局 ----
   emptyTitle: '日志本还是空的',
-  emptyBody: '完成一次副本挑战，这里就会出现你的正确率、答对题数与复习建议。',
-
-  // ---- 尚未实现的能力（诚实提示，不静默失败）----
-  historyUnavailable: '历史日志还没开放，敬请期待',
-  reviewUnavailable: '错题复习还没开放，敬请期待',
-  detailsUnavailable: '答题详情还没开放，可以回到大厅再挑战一次'
+  emptyBody: '完成一次副本挑战，这里就会出现你的正确率、答对题数与复习建议。'
 } as const
 
 /**
@@ -431,12 +426,34 @@ export const PROFILE_COPY = {
   statAccuracy: '平均正确率',
 
   iconTree: '树',
+  iconReview: '题',
   iconScroll: '账',
   iconBadge: '印',
   iconCard: '卡',
 
   rowKnowledgeTree: '知识树',
   rowKnowledgeTreeDesc: (count: number) => `已点亮 ${count} 个知识领域`,
+
+  /**
+   * 错题本（04·7 旧识重温）的入口行。
+   *
+   * 原型给 04·7 画的标签栏里高亮的是「我的」，说明它归属这一栏；
+   * 但它和 04·8 复习提醒都不在 04·1 的入口行列表里 —— 于是这一屏
+   * 在原型里其实**没有任何入口**，只在「今日有到期错题」时才从
+   * 大厅 / 个人中心的页内提醒进得去。那意味着 `due_count` 为 0 的用户
+   * 永远打不开它，而错题本恰恰是最该「随时想看就看」的一页：
+   * 用户要确认自己的错题有没有排上、下次什么时候复习。
+   *
+   * 所以按 04·2 / 07·5 同样的做法，在这一列补一个看得见的入口。
+   *
+   * ⚠️ 这一行的副标题是**固定的**，不像上面三行那样带计数 ——
+   * `GET /users/me` 的 `stats` 里没有错题数，而为了一个副标题
+   * 去扩这个接口的契约（并且要重跑一遍后端闸门）不划算。
+   * 字面上也不撒谎：它说的是机制，不是数量。理由同 `rowCard`。
+   */
+  rowReview: '错题本',
+  rowReviewDesc: '答错的题会按遗忘曲线回来找你',
+
   rowScrolls: '历史卷轴',
   rowScrollsDesc: (count: number) => `共 ${count} 份冒险日志`,
   rowBadges: '勋章墙',

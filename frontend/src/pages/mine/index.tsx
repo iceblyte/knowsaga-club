@@ -17,10 +17,15 @@
  * 全部列入要去掉的名单），所以这里连占位都不给 —— 标题居中由
  * `PhoneShell` 自己保留等宽空白来维持。
  *
- * ## 入口行从三行变成了五行
+ * ## 入口行从三行变成了六行
  *
- * 原型 04·1 只有三个入口行。Phase E 加了两行，两行都不是「顺手加的」：
+ * 原型 04·1 只有三个入口行。另外三行都不是「顺手加的」，每一行都补掉了
+ * 一个**在原型里无处安放**的页面：
  *
+ * - **错题本（04·7）**：原型的标签栏把 04·7 划给「我的」，但它不在
+ *   04·1 的入口列表里 —— 于是它在原型里只能靠「今日有到期错题」的页内
+ *   提醒进入。那意味着没有到期错题的用户永远打不开这一页，
+ *   而错题本恰恰是最该随时能看的一页。
  * - **公会卡（04·2）**：它需要一个入口，而它既不该挤进导览栏，也不该把
  *   身份卡做成隐式按钮（原型的身份卡没有任何可点的暗示）。
  * - **设置（07·5）**：原型把「设置」长在导览栏右侧，而那一处已按全局口径
@@ -166,6 +171,17 @@ export default function MinePage() {
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowKnowledgeTree}</View>
             <View className='d'>{PROFILE_COPY.rowKnowledgeTreeDesc(stats.lit_kp_count)}</View>
+          </View>
+          <Text className='pill'>{PROFILE_COPY.rowView}</Text>
+        </View>
+
+        {/* 错题本（04·7）。原型把这一屏划给「我的」却没有给它入口行，
+            于是没有到期错题的时期它整页不可达 —— 理由见 `PROFILE_COPY.rowReview`。 */}
+        <View className='li' onClick={() => goPage('/pages/profile/review/index')}>
+          <View className='ico'>{PROFILE_COPY.iconReview}</View>
+          <View className='tx'>
+            <View className='n'>{PROFILE_COPY.rowReview}</View>
+            <View className='d'>{PROFILE_COPY.rowReviewDesc}</View>
           </View>
           <Text className='pill'>{PROFILE_COPY.rowView}</Text>
         </View>

@@ -17,15 +17,21 @@
  * ## 两个刻意的取舍
  *
  * 1. **知识点胶囊不可点**。原型图注说「点击可跳到对应题目的讲解」，
- *    但那需要「按知识点检索题目」的接口（属 Phase D 的错题本/复习范围）。
- *    本期渲染为静态胶囊 —— 看起来不能点，就没有「点了没反应」的困惑。
- * 2. **「复习薄弱知识点」按钮会提示「还没开放」**。它指向「旧识重温」复习流程
- *    （`pages/profile/review`，Phase D）。按钮位置与样式按原型保留，
- *    但点击时明确说明，而不是静默失败。
+ *    但那需要「按知识点检索题目」的接口 —— 目前错题本（04·7）是按
+ *    遗忘曲线排期的队列，不提供「按某个知识点取题」。本期渲染为静态胶囊：
+ *    看起来不能点，就没有「点了没反应」的困惑。
+ * 2. **「复习薄弱知识点」跳到错题本（04·7）**。这一页原本只弹一句
+ *    「错题复习还没开放」，那是 Phase D 交付这一页之前的事了 ——
+ *    错题本与复习关卡都已落地，所以这里改成真跳转。
+ *
+ *    ⚠️ 跳过去的是**错题本列表**，不是直接开局：押「复习薄弱知识点」
+ *    不等于「现在就把所有到期题做一遍」（用户可能只想看看有哪些）。
+ *    真的想开局，04·7 页面底部就有「开始旧识重温关卡」。
+ *    从这一页直接 `startReview()` 会绕掉那个确认，而且组卷失败时
+ *    用户会停在总结页看到一句与上下文无关的报错。
  */
 
 import { Button, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 
 import PhoneShell from '../../../components/PhoneShell'
 import ReportMissing from '../../../components/ReportMissing'
@@ -71,10 +77,10 @@ export default function ReportSummaryPage() {
 
       <View className='spacer' />
 
-      {/* 位置与样式按原型保留；能力属 Phase D，所以点了要说明白 */}
+      {/* 「复习薄弱知识点」= 去错题本看这些知识点排队到哪一天了（见文件头说明） */}
       <Button
         className='btn gold'
-        onClick={() => Taro.showToast({ title: REPORT_COPY.reviewUnavailable, icon: 'none' })}
+        onClick={() => goPage('/pages/profile/review/index', 'navigate')}
       >
         {REPORT_COPY.reviewWeak}
       </Button>

@@ -358,9 +358,16 @@ export default function ReportPage() {
         <Button className='btn' onClick={handleRetry}>
           {REPORT_COPY.regenerate}
         </Button>
+        {/* 「先看看答题详情」= 去这一局的卷轴详情（04·6）。
+            报告失败**不影响**这一局的作答记录：交卷那一刻记录就已经落库，
+            报告只是它上面的一层解读。所以这里的出口必须是真的能走的 ——
+            原先只弹一句「答题详情还没开放」是 Phase D 交付 04·6 之前的事。
+            用 `navigate` 而不是 `redirect`：用户看完详情还能返回这里重试生成。 */}
         <Button
           className='btn ghost report__secondary'
-          onClick={() => Taro.showToast({ title: REPORT_COPY.detailsUnavailable, icon: 'none' })}
+          onClick={() =>
+            goPage(`/pages/profile/scroll-detail/index?attempt_id=${attemptId}`, 'navigate')
+          }
         >
           {REPORT_COPY.viewDetails}
         </Button>
