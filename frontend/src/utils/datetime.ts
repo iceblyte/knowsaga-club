@@ -105,6 +105,37 @@ export function formatDuration(ms: number): string {
   return `${seconds} 秒`
 }
 
+/**
+ * 「加入第 N 天」里的那个 N（原型 04·2 公会卡底部）。
+ *
+ * ## 为什么是自然日之差 + 1
+ *
+ * 注册当天就应该是**第 1 天**而不是第 0 天 —— 「加入第 0 天」读起来像没加入。
+ * 而且这里必须按**业务时区的自然日**算，不能按小时数除以 24：
+ * 晚上 11 点注册、第二天早上 8 点再看，按小时算还是「第 1 天」，
+ * 但用户认为那已经是第二天了。
+ *
+ * ## 解析失败返回 `0`
+ *
+ * 让调用方据此**隐藏这一句**，而不是渲染出「加入第 NaN 天」或「加入第 -1 天」。
+ * 与 `formatDate` 返回空串是同一个约定：拿不准就不说。
+ */
+export function daysSinceJoin(iso: string, now: number = Date.now()): number {
+  const timestamp = parse(iso)
+  if (Number.isNaN(timestamp)) return 0
+
+  const today = businessParts(now)
+  const joined = businessParts(timestamp)
+  const gap = Math.round(
+    (Date.UTC(today.year, today.month - 1, today.day) -
+      Date.UTC(joined.year, joined.month - 1, joined.day)) /
+      86_400_000
+  )
+
+  // 时钟偏差可能让 `created_at` 落进「明天」，夹到 1 天而不是给出 0 或负数
+  return Math.max(1, gap + 1)
+}
+
 /** 平均用时：「8.4s」（原型第 1 屏的三分之一卡用的是这个写法） */
 export function formatSeconds(seconds: number): string {
   const value = Number(seconds)

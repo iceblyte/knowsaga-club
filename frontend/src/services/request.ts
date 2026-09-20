@@ -28,6 +28,13 @@
  *
  * 重试**只做一次**：如果拿着新令牌立刻又是 4010，说明问题不在令牌
  * （比如调试通道被关掉了、AppID 配错了），再重试只会把失败拖长。
+ *
+ * ## 文件上传是同一个模块里的第二条通道
+ *
+ * `upload()` 走 `Taro.uploadFile`（`multipart/form-data`），不是
+ * `Taro.request` —— 后者没有地方放文件。它复用了上面 1 / 3 / 4 三件事，
+ * 具体差异见该函数的说明。两条通道放在一个文件里，是为了让
+ * 「带上登录态 + 解包信封 + 4010 重试」这套口径只有一份实现。
  */
 
 import Taro from '@tarojs/taro'
@@ -38,7 +45,8 @@ import {
   API_TIMEOUT_MS,
   CLIENT_ERROR_CODE,
   ERROR_CODE,
-  ERROR_FALLBACK_TEXT
+  ERROR_FALLBACK_TEXT,
+  UPLOAD_TIMEOUT_MS
 } from '../constants/api'
 import type { ApiEnvelope } from '../types/api'
 import { ensureSession } from './auth'
@@ -59,7 +67,7 @@ export class ApiError extends Error {
   }
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 /**
  * `Taro.request` 的原始返回。
@@ -162,6 +170,104 @@ async function send<T>(options: RequestOptions, allowRelogin: boolean): Promise<
 
   if (body.code !== 0) {
     throw new ApiError(body.code, body.message || '请求失败', res.statusCode)
+  }
+
+  return body.data as T
+}
+
+export interface UploadOptions {
+  /** 相对 `API_PREFIX` 的路径，如 `/users/me/avatar` */
+  path: string
+  /** 本地文件路径（`chooseImage` / `chooseAvatar` 的产物） */
+  filePath: string
+  /**
+   * multipart 里的字段名，默认 `file` —— 必须与后端 `File()` 参数名一致，
+   * 对不上时 FastAPI 会报「field required」，而前端只会看到一次 4000。
+   */
+  name?: string
+  timeoutMs?: number
+}
+
+/**
+ * 上传一个文件并返回解包后的 `data`。
+ *
+ * ## 为什么不复用 `request()`
+ *
+ * `Taro.request` 的 `data` 会被序列化成 JSON 或查询串，**没有地方放文件**。
+ * 文件走的是 `Taro.uploadFile`（`multipart/form-data`），它是另一个 API、
+ * 另一套返回结构（`data` 是**字符串**而不是对象）。把它塞进 `request()`
+ * 需要给每个字段都加上「如果是文件就……」，而它唯一的使用者是头像上传。
+ *
+ * ## 与 `request()` 保持一致的三件事
+ *
+ * 1. 没有登录态时先登录，并带上 `Authorization`；
+ * 2. 统一解包 `{code, message, data}` —— 后端出错时**也**是这个信封
+ *    （HTTP 状态码是 400，`data` 里仍是可解析的 JSON 字符串）；
+ * 3. 4010 时静默重建登录态并重试**一次**（判断依据同 `send()`：
+ *    要比对本次实际用的令牌有没有被别的并发请求换掉）。
+ *
+ * @throws {ApiError} 网络失败、响应结构异常、业务失败
+ */
+export function upload<T>(options: UploadOptions): Promise<T> {
+  return sendUpload<T>(options, true)
+}
+
+async function sendUpload<T>(options: UploadOptions, allowRelogin: boolean): Promise<T> {
+  const { path, filePath, name = 'file', timeoutMs = UPLOAD_TIMEOUT_MS } = options
+
+  await ensureSession()
+  const usedToken = getToken()
+
+  const header: Record<string, string> = {}
+  if (usedToken) header.Authorization = `Bearer ${usedToken}`
+
+  let res: Awaited<ReturnType<typeof Taro.uploadFile>>
+  try {
+    res = await Taro.uploadFile({
+      url: `${API_BASE_URL}${API_PREFIX}${path}`,
+      filePath,
+      name,
+      header,
+      timeout: timeoutMs
+    })
+  } catch {
+    // 同 `send()`：原始错误在小程序里可能不带 message，往上抛会拼出 `[object Object]`
+    throw new ApiError(
+      CLIENT_ERROR_CODE.NETWORK,
+      ERROR_FALLBACK_TEXT[CLIENT_ERROR_CODE.NETWORK]
+    )
+  }
+
+  // `uploadFile` 的 `data` 是**字符串**：成功与失败都要自己解析。
+  // 解析不出来时给 `null`，落进下面的「响应结构异常」分支 ——
+  // 直接把字符串交给 `isEnvelope` 也能得出同样结论，但 `JSON.parse`
+  // 抛出的异常会盖住真正的原因。
+  let body: unknown = res.data
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body) as unknown
+    } catch {
+      body = null
+    }
+  }
+
+  if (!isEnvelope(body)) {
+    throw new ApiError(
+      CLIENT_ERROR_CODE.BAD_RESPONSE,
+      ERROR_FALLBACK_TEXT[CLIENT_ERROR_CODE.BAD_RESPONSE],
+      res.statusCode
+    )
+  }
+
+  if (body.code === ERROR_CODE.UNAUTHORIZED && allowRelogin) {
+    if (getToken() === usedToken) {
+      await ensureSession({ force: true })
+    }
+    return sendUpload<T>(options, false)
+  }
+
+  if (body.code !== 0) {
+    throw new ApiError(body.code, body.message || '上传失败', res.statusCode)
   }
 
   return body.data as T

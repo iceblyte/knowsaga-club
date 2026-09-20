@@ -1,0 +1,52 @@
+// 卷轴详情（原型 04·6）。
+//
+// 版面骨架全部来自全局类（`.card` / `.between` / `.h` / `.tiny` / `.body` /
+// `.pill` / `.spacer` / `.btn.ghost`），这里只补原型用内联 `style` 表达的
+// 三处间距，以及原型没有画、但图注要求存在的「讲解」开关。
+
+@use "../../../styles/tokens" as *;
+
+// 头部左侧：标题可能很长（用户导入的文档标题），要吃掉剩余宽度并允许换行。
+// 不给 `min-width:0` 时 flex 子项会被内容撑破，把右边的正确率环挤出卡片。
+.detail__head {
+  flex: 1;
+  min-width: 0;
+}
+
+// 原型 `<div class="tiny" style="margin-top:4px">`
+.detail__meta {
+  margin-top: rpx(4);
+}
+
+// 原型 `<div class="body sm" style="margin-top:6px">`
+.detail__stem {
+  margin-top: rpx(6);
+}
+
+// 原型 `<div class="tiny" style="margin-top:8px">`
+.detail__answer {
+  margin-top: rpx(8);
+}
+
+// 讲解开关。
+//
+// 原型静态版没有这个控件（三张卡都是收起态），但图注明确写了
+// 「可展开任意一题重看讲解」，所以它必须有。用主色的深调而不是 `$ink3`：
+// 这一行的字大小与「我的答案」那行一样（都是 `.tiny`），
+// 只有换色才能让人看出它是**可以点的**。
+//
+// 复合选择器压过 `.tiny` —— 页面样式与 base 样式由 Taro 分别编译，先后顺序不稳。
+.tiny.detail__toggle {
+  margin-top: rpx(8);
+  color: $magic-d;
+  font-weight: 600;
+}
+
+// 展开后的讲解正文。上面加一条虚线，把它与「我的答案」分开 ——
+// 两者是不同的东西（一个是用户的作答，一个是知识讲解），
+// 中间没有分隔会被读成同一段。
+.detail__explain {
+  margin-top: rpx(6);
+  padding-top: rpx(6);
+  border-top: 1PX dashed $stroke-line-dash;
+}

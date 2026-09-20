@@ -163,6 +163,8 @@ CREATE TABLE IF NOT EXISTS `attempts` (
   `percentile`              TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '演示口径：clamp(round(accuracy*0.9),5,95)',
   `avg_seconds_per_question` DECIMAL(6,2) NOT NULL DEFAULT 0.00 COMMENT '数据看板「平均单局用时」',
   `status`                  VARCHAR(16) NOT NULL DEFAULT 'finished',
+  `deleted_at`              DATETIME(3) DEFAULT NULL
+                            COMMENT '历史卷轴里被删除的时刻；NULL = 未删除。只影响列表与详情，不影响任何聚合统计',
   `created_at`              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updated_at`              DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),

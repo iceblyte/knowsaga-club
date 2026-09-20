@@ -10,13 +10,30 @@ export default defineAppConfig({
     'pages/report/index',
     'pages/report/summary/index',
     'pages/report/suggestions/index',
-    // 冒险者档案（Phase D）：从「我的」下钻的四个只读聚合页。
-    // 04·2 公会卡 / 04·5 历史卷轴 / 04·6 卷轴详情 / 04·8 复习提醒属 Phase E，
-    // 不在本轮注册 —— app.config 里声明了却没有实现的路由会让 build 直接失败。
+    // 冒险者档案：从「我的」下钻的只读聚合页（Phase D 四页 + Phase E 两页）。
+    // app.config 里声明了却没有实现的路由会让 build 直接失败 ——
+    // 加一行就必须同时有对应的 `pages/**/index.tsx`。
     'pages/profile/dashboard/index',
     'pages/profile/knowledge-tree/index',
     'pages/profile/review/index',
     'pages/profile/badges/index',
+    // 公会卡（04·2）：卡面数据与个人中心同源；「保存到相册」只在非 H5 出现。
+    'pages/profile/card/index',
+    // 复习提醒（04·8）：大厅与个人中心的页内提醒入口的落地页，亦可从档案进入。
+    'pages/profile/reminder/index',
+    // 历史卷轴（Phase E）：列表 + 详情。详情靠 `attempt_id` 参数下钻，
+    // 参数缺失时页面不发请求、直接给出「不在了」的出口（见该页说明）。
+    'pages/profile/scrolls/index',
+    'pages/profile/scroll-detail/index',
+    // 设置（Phase E）：07·5 列表 → 07·6 学习提醒 / 07·8 帮助与反馈，
+    // 外加方案 §7.4 要求新增的「头像与昵称」。
+    // 原型给这几屏标的是 `tabbar(4)`（属于「我的」那一栏），但实现一律是
+    // **下钻页**（带返回键、不渲染标签栏）——与 04·7 旧识重温同例：
+    // `tabbar(n)` 标注的是归属，不是布局。
+    'pages/settings/index',
+    'pages/settings/profile/index',
+    'pages/settings/reminder/index',
+    'pages/settings/help/index',
     'pages/guild/index',
     'pages/mine/index',
     'pages/summon/index',

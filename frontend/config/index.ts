@@ -1,6 +1,7 @@
 import { defineConfig, type UserConfigExport } from '@tarojs/cli'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
 import devConfig from './dev'
+import pkg from '../package.json'
 import prodConfig from './prod'
 
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
@@ -21,6 +22,15 @@ export default defineConfig<'webpack5'>(async (merge) => {
       "@tarojs/plugin-generator"
     ],
     defineConstants: {
+      /**
+       * 应用版本号，取自 `package.json` 的 `version`。
+       *
+       * 「版本 1.0.0」这类文案要是手写在源码里，就一定会和真实版本漂开 ——
+       * 需求 FR-D4 明确要求「版本号取自真实版本」。DefinePlugin 做的是
+       * 文本替换，所以源码里必须**字面**写 `APP_VERSION`（同
+       * `constants/api.ts` 里 `TARO_APP_API_BASE_URL` 的约束）。
+       */
+      APP_VERSION: JSON.stringify(pkg.version)
     },
     copy: {
       patterns: [

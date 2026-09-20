@@ -1,5 +1,15 @@
 /// <reference types="@tarojs/taro" />
 
+/**
+ * 构建期注入的应用版本号，来自 `frontend/package.json` 的 `version`
+ * （定义见 `config/index.ts` 的 `defineConstants`）。
+ *
+ * 它是 DefinePlugin 的**文本替换**，不是一个真正的全局变量 ——
+ * 所以只能在源码里字面写 `APP_VERSION`，不能 `globalThis.APP_VERSION`
+ * 或解构到别的对象上。
+ */
+declare const APP_VERSION: string
+
 declare module '*.png';
 declare module '*.gif';
 declare module '*.jpg';

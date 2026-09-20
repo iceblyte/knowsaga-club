@@ -1,9 +1,11 @@
-"""冒险者档案四个接口的契约（原型 04 的第 3 / 4 / 7 / 9 屏）。
+"""冒险者档案各接口的契约（原型 04 的第 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 屏）。
 
 | 页面 | 接口 | 本文件的契约 |
 |---|---|---|
 | 04·3 数据看板 | `GET /users/me/dashboard` | `DashboardResponse` |
 | 04·4 知识树 | `GET /users/me/knowledge-tree` | `KnowledgeTreeResponse` |
+| 04·5 历史卷轴 | `GET /users/me/scrolls` | `ScrollListResponse` |
+| 04·6 卷轴详情 | `GET /users/me/scrolls/{id}` | `ScrollDetailResponse` |
 | 04·7 旧识重温 | `GET /users/me/wrong-questions` | `WrongQuestionsResponse` |
 | 04·9 勋章墙 | `GET /users/me/badges` | `BadgeListResponse` |
 | （组卷） | `POST /review/start` | `ReviewStartResponse` |
@@ -35,7 +37,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
-from app.models.quiz import Quiz
+from app.models.quiz import Option, QuestionType, Quiz, SourceType
 from app.utils.timeutil import as_aware_utc
 
 #: 序列化时补上 UTC 偏移的 datetime（见模块说明）
@@ -51,6 +53,10 @@ DashboardRange = Literal["7d", "30d"]
 #: 知识领域的三态。**判定必须先把「未开始」摘出来**：
 #: `total_count = 0` 的领域不是「0% 掌握」，它只是还没碰过（方案 §8.3）。
 KnowledgeState = Literal["lit", "growing", "not_started"]
+
+#: 一道题的判定结果。与 `models/attempt.py` 的 `outcome` 同一套取值 ——
+#: 结算时算出来的那个值原样落进 `answers.outcome`，这里只是把它读回来。
+AnswerOutcome = Literal["correct", "partial", "wrong"]
 
 
 # -----------------------------------------------------------------------------
@@ -148,6 +154,117 @@ class KnowledgeTreeResponse(BaseModel):
     not_started_count: int = 0
     suggestion: str = ""
     next_target: str | None = None
+
+
+# -----------------------------------------------------------------------------
+# 04·5 历史卷轴
+# -----------------------------------------------------------------------------
+class ScrollItem(BaseModel):
+    """历史卷轴列表里的一条。
+
+    **一条 = 一次挑战（`attempts` 的一行），不是一份卷轴。**
+
+    原型 04·5 每条显示「正确率 80% · 5 题」而详情页带「重做」按钮，
+    所以列表项只能是「一局」；同一份卷轴重做几次就有几条记录
+    （方案 §5.5 的口径裁决）。个人中心「闯关副本 N」与「历史卷轴 N」
+    数字一致，也印证了这一点。
+    """
+
+    #: 挑战记录 ID —— 列表项的主键，详情 / 重做 / 删除都用它
+    attempt_id: str
+    quiz_id: str
+    title: str
+    finished_at: UtcDatetime
+    #: 面向用户的时间说法（「今天 14:20」「昨天 21:05」「9 月 11 日」）。
+    #:
+    #: 与 `WrongQuestionItem.next_review_label` 同一个理由由后端派生：
+    #: 按**业务时区**的自然日判断「今天/昨天」，客户端时区不同才会看到同样的说法。
+    finished_label: str
+    accuracy: int
+    correct_count: int
+    total_count: int
+    duration_ms: int
+    #: 这一局是该卷轴的第几次挑战
+    attempt_no: int
+
+
+class ScrollListResponse(BaseModel):
+    """`GET /users/me/scrolls?domain=&page=&size=`。
+
+    `total` 是**未删除**的记录总数（04·5 页脚「已经到底了 · 共 N 份卷轴」用），
+    与 `items` 的长度不同 —— 分页时列表只给当前页。
+    """
+
+    total: int = 0
+    page: int = 1
+    size: int = 0
+    has_more: bool = False
+    #: 可用的领域筛选项（不含「全部」）。取自该用户**未删除**记录涉及过的知识点，
+    #: 由后端给：让前端从当前页的题目里现攒，翻页时 chips 会随页面内容变。
+    domains: list[str] = Field(default_factory=list)
+    items: list[ScrollItem] = Field(default_factory=list)
+
+
+# -----------------------------------------------------------------------------
+# 04·6 卷轴详情
+# -----------------------------------------------------------------------------
+class ScrollQuestionItem(BaseModel):
+    """详情页里的一道题（含用户当时的作答）。
+
+    题干、选项、答案、讲解全部来自 `questions` —— 那张表**本身就是快照**
+    （方案 §5.4），所以历史卷轴能无限期回看，不受后续删除或重新出题影响。
+    """
+
+    seq: int
+    type: QuestionType
+    stem: str
+    options: list[Option]
+    #: 正确答案（用户答错时前端要显示它）
+    answer: list[str]
+    #: 用户当时选中的键
+    selected: list[str]
+    outcome: AnswerOutcome
+    explanation: str
+    earned_xp: int
+    max_xp: int
+
+
+class ScrollDetailResponse(BaseModel):
+    """`GET /users/me/scrolls/{attempt_id}`。
+
+    逐题明细 + 这一局的汇总。已删除的记录**不返回**（路由层转 4005），
+    否则「删除后从列表消失」还能从详情页绕回来。
+    """
+
+    attempt_id: str
+    quiz_id: str
+    title: str
+    source_type: SourceType
+    finished_at: UtcDatetime
+    finished_label: str
+    duration_ms: int
+    accuracy: int
+    correct_count: int
+    partial_count: int
+    wrong_count: int
+    total_count: int
+    xp_gained: int
+    max_xp: int
+    percentile: int
+    attempt_no: int
+    questions: list[ScrollQuestionItem] = Field(default_factory=list)
+
+
+class ScrollDeleteResponse(BaseModel):
+    """`DELETE /users/me/scrolls/{attempt_id}`。
+
+    只是把 `attempts.deleted_at` 写上时间戳（软删除）——
+    **累计 XP / 正确率 / 等级 / 看板一概不变**（需求 FR-B5）。
+    见 `sql/03_attempts_deleted_at.sql` 里对「为什么不能硬删」的说明。
+    """
+
+    attempt_id: str
+    deleted: bool = True
 
 
 # -----------------------------------------------------------------------------

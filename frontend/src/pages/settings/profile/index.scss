@@ -1,0 +1,54 @@
+// 头像与昵称（原型外，方案 §7.4 新增的一屏）。
+//
+// 原型里没有这一屏，所以版面按设计系统既有的语法拼：三张 `.card.plain`
+// （头像 / 预置头像 / 昵称）+ 一个 `.spacer` + 一颗 `.btn`，与 07·6 的排法一致 ——
+// 同一个应用里两屏「设置类表单」长得不一样，用户会以为是两个功能。
+//
+// 预置头像那一排是全页唯一的自定义控件：6 个精灵 + 名字。选中态用
+// 「淡蓝底 + 浅蓝边」（`$opt-selected` / `$chip-sel-border`），与 07·6 里
+// 选中 chip 用的是同一组颜色 —— 不引入第三种「选中」的样子。
+
+@use "../../../styles/tokens" as *;
+
+.settings-profile__label {
+  margin-bottom: rpx(10);
+}
+
+// 6 个一排放不下（44px 的头像 + 文字），所以允许换行。
+// 不换成 `grid4`：那一排要读的是「哪一个是选中的」，等宽网格会把
+// 三个字的名字（「游侠」「工匠」）压得比两个字的更挤。
+.settings-profile__presets {
+  gap: rpx(12);
+  flex-wrap: wrap;
+}
+
+.settings-profile__preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $sp-2;
+  padding: rpx(6);
+  border-radius: $r-knob;
+  // 未选中时也留一条透明边：否则选中时多出 1px 会让整排跳一下
+  border: 1PX solid transparent;
+
+  &--on {
+    background: $opt-selected;
+    border-color: $chip-sel-border;
+  }
+}
+
+// 昵称输入框：与 `.field.solid` 同一种「可以填的压痕面」，
+// 但不套 `.field` —— 那个类自带 6px 内边距与虚线变体，改起来要先覆盖再覆盖。
+.settings-profile__input {
+  width: 100%;
+  background: $paper2;
+  border: 1PX solid $stroke-ghost;
+  border-radius: $r-opt;
+  padding: $sp-5 $sp-6;
+  font-size: $fs-body;
+}
+
+.settings-profile__hint {
+  margin-top: $sp-3;
+}

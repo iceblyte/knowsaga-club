@@ -13,6 +13,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.exceptions import ErrorCode
+from app.db.tables import QuestionRecord
+from tests.helpers import (
+    at,
+    current_user_id,
+    make_quiz,
+    set_due,
+    set_last_wrong,
+    settle,
+    wrong_rows,
+)
 
 ME = "/api/v1/users/me"
 
@@ -406,3 +416,130 @@ def test_snooze_does_not_touch_schedule(
     db_session.refresh(row)
     assert row.remind_snooze_date is not None
     assert row.reminder_time is not None  # 提醒时间未被改动
+
+
+# -----------------------------------------------------------------------------
+# 复习提醒的「为什么是今天」（04·8 的第二句文案）
+# -----------------------------------------------------------------------------
+def test_reminders_hint_is_absent_when_nothing_is_due(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """刚答错的题还**没到**复习日（入队即「明天到期」），所以此时不该有理由。
+
+    那句话回答的是「为什么**现在**」。硬凑一句「今天你在…上失手」
+    会把还没到期的题说成今天就该做，反而催错了节奏。
+    """
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("还没到复习日",))
+    settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["due_count"] == 0
+    assert data["hint"] is None
+
+
+def test_reminders_hint_names_topic_and_days_waited(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """原型那一句的数据面：「三天前」+「RAG 与搜索引擎的边界」。"""
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("RAG 与搜索引擎的边界",))
+    settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    row = wrong_rows(db_session, user_id)[0]
+    set_due(db_session, row, days=-1)
+    set_last_wrong(db_session, row, days=3)
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["due_count"] == 1
+    assert data["hint"] == {"days_ago": 3, "topic": "RAG 与搜索引擎的边界"}
+
+
+def test_reminders_hint_counts_whole_business_days(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """天数按**业务时区自然日**之差算，不是按小时数。
+
+    「昨天 23:00」距今只有 21 小时 —— 按小时算会被读成 0 天
+    （也就是「今天」）。排期的单位是「天」，说「1 天前」指的是那一天的
+    零点，所以这里必须是 1。
+    """
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("跨零点的那次失手",))
+    settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    row = wrong_rows(db_session, user_id)[0]
+    set_due(db_session, row, days=-1)
+    set_last_wrong(db_session, row, days=1, hour=23)
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["hint"] == {"days_ago": 1, "topic": "跨零点的那次失手"}
+
+
+def test_reminders_hint_ignores_mastered_questions(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """已移出队列的错题既不进 `due_count`，也不该成为那句理由。"""
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("已经被攻克的点",))
+    settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    row = wrong_rows(db_session, user_id)[0]
+    set_due(db_session, row, days=-1)
+    row.mastered = True
+    db_session.commit()
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["due_count"] == 0
+    assert data["hint"] is None
+
+
+def test_reminders_hint_picks_the_question_that_waited_longest(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """有多个到期错题时取**等得最久**的那一道。
+
+    其它题只会更晚，而这一道超过自己的排期最久 —— 它才是「现在就该做」
+    的那个理由。取「最久」而不是「最近」：说最近的等于什么都没解释。
+    """
+    user_id = current_user_id(db_client, auth_headers)
+    for topic in ("刚错不久的点", "等得最久的点"):
+        quiz = make_quiz(db_session, user_id, kps=(topic,))
+        settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    for row in wrong_rows(db_session, user_id):
+        set_due(db_session, row, days=-1)
+        question = db_session.get(QuestionRecord, int(row.question_id))
+        if question.knowledge_point == "等得最久的点":
+            set_last_wrong(db_session, row, days=9)
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["due_count"] == 2
+    assert data["hint"] == {"days_ago": 9, "topic": "等得最久的点"}
+
+
+def test_reminders_hint_falls_back_to_quiz_title(
+    db_client: TestClient, auth_headers: dict, db_session  # noqa: ANN001
+) -> None:
+    """题干没给知识点时退化为卷轴标题。
+
+    宁可说得粗一点，也不要渲染出「你在「」上失手」这种空引号。
+    """
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("占位知识点",), title="近代史纲要 · 第三章")
+    settle(db_client, auth_headers, db_session, quiz, outcomes=("wrong",), finished_at=at(0))
+
+    row = wrong_rows(db_session, user_id)[0]
+    set_due(db_session, row, days=-1)
+    question = db_session.get(QuestionRecord, int(row.question_id))
+    question.knowledge_point = ""
+    db_session.commit()
+
+    data = db_client.get(f"{ME}/reminders/today", headers=auth_headers).json()["data"]
+
+    assert data["hint"] == {"days_ago": 0, "topic": "近代史纲要 · 第三章"}

@@ -1,0 +1,32 @@
+// 头像选择控件（07·4）。
+//
+// 与 04·2 公会卡一样是「内容居中」的一屏：头像、按钮、提示依次排开。
+// 按钮用 `.btn.ghost.sm`（原型 00 里有 `sm` 一档）而不是整宽主按钮 ——
+// 这一屏的主按钮是底部的「保存」，换头像只是它的前置动作。
+
+@use "../../styles/tokens" as *;
+
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $sp-5;
+
+  &__img {
+    // 头像本身不该被压缩（与 `.btn` 同理：定高 flex 列里会被压扁）
+    flex: none;
+  }
+
+  &__btn {
+    // 换头像按钮是固定的窄条，不是整宽动作条
+    width: auto;
+    min-width: $tap-min;
+    padding-left: $sp-9;
+    padding-right: $sp-9;
+  }
+
+  &__hint {
+    color: $ink3;
+    text-align: center;
+  }
+}

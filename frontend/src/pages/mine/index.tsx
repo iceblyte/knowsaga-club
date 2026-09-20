@@ -6,7 +6,7 @@
  *
  * ## 一个接口把整屏取回来
  *
- * 身份 + 等级进度 + 三宫格 + 三个入口的计数**全部来自 `GET /users/me`**。
+ * 身份 + 等级进度 + 三宫格 + 各个入口的计数**全部来自 `GET /users/me`**。
  * 不拆成四个请求的理由很直接：这些数字在同一个屏幕上，拆开必然出现
  * 「昵称已经在了、等级还是空的」这类中间态，而用户看到的是界面在抽动。
  *
@@ -17,10 +17,18 @@
  * 全部列入要去掉的名单），所以这里连占位都不给 —— 标题居中由
  * `PhoneShell` 自己保留等宽空白来维持。
  *
- * 设置页（07·5）是 Phase E 的页面，本轮没有任何入口指向它，
- * 因此这里也不放一个「点了没反应」的设置按钮。历史卷轴那一行同理：
- * 入口**保留在版面上**（抽掉一行会让这一屏看起来像没做完），
- * 但点击时明说还没开放，而不是静默失败。
+ * ## 入口行从三行变成了五行
+ *
+ * 原型 04·1 只有三个入口行。Phase E 加了两行，两行都不是「顺手加的」：
+ *
+ * - **公会卡（04·2）**：它需要一个入口，而它既不该挤进导览栏，也不该把
+ *   身份卡做成隐式按钮（原型的身份卡没有任何可点的暗示）。
+ * - **设置（07·5）**：原型把「设置」长在导览栏右侧，而那一处已按全局口径
+ *   去掉 —— 于是它在原型里唯一的位置没有了。设置是 Phase E 的页面，
+ *   必须有一个**看得见**的入口，所以按其它入口行的做法落在这里。
+ *
+ * 历史卷轴（04·5 / 04·6）那一行也不再是占位：它已随 Phase E 落地，
+ * 与知识树、勋章墙一样直接跳转。
  *
  * ## 数字不在这里算
  *
@@ -35,16 +43,20 @@
  * 「闯关副本 12」必须变成 13 —— 只在挂载时取一次数据的话，用户会看到
  * 一个永远停在进页面那一刻的档案。所以在 `useDidShow` 里重取，
  * 并跳过首次（挂载时的那次请求已经由 `useAsyncData` 发起了）。
+ *
+ * 在设置页换过头像或昵称之后回到这一屏，也靠它刷新 ——
+ * 「设置里改完、个人中心还是旧的」是这类页面最典型的一种不一致。
  */
 
 import { Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
-import { useRef } from 'react'
+import { useDidShow } from '@tarojs/taro'
+import { useRef, useState } from 'react'
 
 import ArchiveState from '../../components/ArchiveState'
 import Avatar from '../../components/Avatar'
 import PhoneShell from '../../components/PhoneShell'
-import { ARCHIVE_COMMON, COMMON_COPY, PROFILE_COPY } from '../../constants/copy'
+import ReminderPrompt from '../../components/ReminderPrompt'
+import { ARCHIVE_COMMON, PROFILE_COPY } from '../../constants/copy'
 import { useAsyncData } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
 import { fetchProfile } from '../../services/archive'
@@ -58,6 +70,9 @@ export default function MinePage() {
 
   const { status, data, reload } = useAsyncData(() => fetchProfile())
 
+  /** 每次「重新显示」递增，透给页内提醒让它也重新判断该不该出现 */
+  const [showSeq, setShowSeq] = useState(0)
+
   // 首次（挂载时）跳过：那次刷新由 useAsyncData 自己完成，
   // 不跳过的话首屏会连发两个一模一样的请求
   const firstShowRef = useRef(true)
@@ -67,6 +82,7 @@ export default function MinePage() {
       return
     }
     reload()
+    setShowSeq((value) => value + 1)
   })
 
   if (!data) {
@@ -86,6 +102,10 @@ export default function MinePage() {
 
   return (
     <PhoneShell navTitle={PROFILE_COPY.navTitle} showBack={false} reserveTabBar>
+      {/* ---- 今日有到期错题的页内提示（方案 §8.5）----
+          自己判断要不要出现：今日无到期错题、或今天已点过「今天先不复习」时它什么都不渲染 */}
+      <ReminderPrompt refreshKey={showSeq} />
+
       {/* ---- 身份卡 ---- */}
       <View className='card gold'>
         <View className='row profile__who'>
@@ -137,9 +157,9 @@ export default function MinePage() {
         </View>
       </View>
 
-      {/* ---- 三个入口 ----
-          直接铺在纸板上、不套卡片：原型里这三行就是「账本横格行」
-          （`.li` 自带虚线分隔），套一层卡片反而变成三张一模一样的圆角卡。 */}
+      {/* ---- 入口行 ----
+          直接铺在纸板上、不套卡片：原型里这几行就是「账本横格行」
+          （`.li` 自带虚线分隔），套一层卡片反而会变成几张一模一样的圆角卡。 */}
       <View className='profile__rows'>
         <View className='li' onClick={() => goPage('/pages/profile/knowledge-tree/index')}>
           <View className='ico'>{PROFILE_COPY.iconTree}</View>
@@ -150,11 +170,8 @@ export default function MinePage() {
           <Text className='pill'>{PROFILE_COPY.rowView}</Text>
         </View>
 
-        {/* 历史卷轴属 Phase E：入口留着，点击明说还没开放 */}
-        <View
-          className='li'
-          onClick={() => Taro.showToast({ title: COMMON_COPY.comingSoon, icon: 'none' })}
-        >
+        {/* 历史卷轴（04·5 / 04·6）已随 Phase E 落地，不再是「点了没反应」的占位 */}
+        <View className='li' onClick={() => goPage('/pages/profile/scrolls/index')}>
           <View className='ico'>{PROFILE_COPY.iconScroll}</View>
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowScrolls}</View>
@@ -172,6 +189,29 @@ export default function MinePage() {
             </View>
           </View>
           <Text className='pill'>{stats.badge_unlocked}</Text>
+        </View>
+
+        {/* 公会卡（04·2）。原型只有上面三行，这一行是 Phase E 新增的入口 ——
+            04·2 需要一个入口，而把身份卡做成隐式按钮（原型没有任何可点的暗示）
+            是另一种形式的不可发现。理由见 `PROFILE_COPY.rowCard` 的说明。 */}
+        <View className='li' onClick={() => goPage('/pages/profile/card/index')}>
+          <View className='ico'>{PROFILE_COPY.iconCard}</View>
+          <View className='tx'>
+            <View className='n'>{PROFILE_COPY.rowCard}</View>
+            <View className='d'>{PROFILE_COPY.rowCardDesc}</View>
+          </View>
+          <Text className='pill'>{PROFILE_COPY.rowView}</Text>
+        </View>
+
+        {/* 设置（07·5）。原型的「设置」长在导览栏右侧，而那一处全站不放文字，
+            所以它按其它入口行的做法落进这一列。理由见 `PROFILE_COPY.rowSettings`。 */}
+        <View className='li' onClick={() => goPage('/pages/settings/index')}>
+          <View className='ico'>{PROFILE_COPY.iconSettings}</View>
+          <View className='tx'>
+            <View className='n'>{PROFILE_COPY.rowSettings}</View>
+            <View className='d'>{PROFILE_COPY.rowSettingsDesc}</View>
+          </View>
+          <Text className='pill'>{PROFILE_COPY.rowView}</Text>
         </View>
       </View>
     </PhoneShell>

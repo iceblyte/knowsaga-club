@@ -248,3 +248,20 @@ def set_due(session, row: WrongQuestion, *, days: int) -> None:
     """把一道错题的到期时间挪到「今天 + days 天」（负数为已过期）并提交。"""
     row.next_review_at = at(days)
     session.commit()
+
+
+def set_last_wrong(session, row: WrongQuestion, *, days: int, hour: int = 10) -> None:
+    """把「上次答错」挪到「今天 - days 天的 hour 点」并提交。
+
+    04·8 的「N 天前你在「X」上失手」用它造数。**不能**只靠
+    `settle(..., finished_at=at(-3))` 得到老日期：错题行的
+    `last_wrong_at` 取的是**写入时刻**（`growth_service` 的 `now`），
+    与请求里补交的 `finished_at` 无关 —— 那是有意的，补交一局旧记录
+    不该把错题排期一并改回上周。
+
+    `hour` 用业务时区的钟点（`at` 的语义）。它在这里不是装饰：
+    「昨天 23:00」与现在的**小时**之差只有 21 小时，而**自然日**之差
+    是 1 天 —— 用例靠它把「按天算」和「按小时算」区分开。
+    """
+    row.last_wrong_at = at(-days, hour=hour)
+    session.commit()

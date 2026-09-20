@@ -221,6 +221,24 @@ class UserSettingsUpdateRequest(BaseModel):
 # -----------------------------------------------------------------------------
 # 复习提醒（原型 04·8）
 # -----------------------------------------------------------------------------
+class ReminderHint(BaseModel):
+    """「为什么是今天」的两个事实（原型 04·8 的第二句文案）。
+
+    只给事实、不给整句：措辞属于面向用户的文案，由前端 `copy.ts` 统一持有
+    （「今天 / 昨天 / N 天前」三种说法）。服务端只保证**天数**是按业务时区
+    的**自然日**之差算出来的 —— 换到前端算，客户端时区不同的人会各算各的。
+
+    与 `scroll_service.finished_label` 的差别是有意的：那里给整句，因为
+    「今天 14:20」不含可选措辞，拼出来只有一种说法；这里要拼进一句带引号的
+    知识点，留一个槽位给前端比传一整句更不容易在改动时走样。
+    """
+
+    #: 上次答错距今几个业务日（0 = 今天，1 = 昨天）
+    days_ago: int
+    #: 在哪个知识点上失手；题干没给知识点时退化为卷轴标题
+    topic: str
+
+
 class RemindersTodayResponse(BaseModel):
     """今日复习提醒的三宫格与入口开关。"""
 
@@ -232,6 +250,8 @@ class RemindersTodayResponse(BaseModel):
     available_xp: int
     #: 今天是否已被「今天先不复习」忽略
     snoozed_today: bool
+    #: 「为什么是今天」；没有到期错题时为 `None`（见 `ReminderHint`）
+    hint: ReminderHint | None = None
 
 
 class SnoozeResponse(BaseModel):

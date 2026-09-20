@@ -38,6 +38,15 @@ export const HEALTH_TIMEOUT_MS = 5000
  */
 export const LOGIN_TIMEOUT_MS = 8000
 
+/**
+ * 文件上传超时。
+ *
+ * 比常规请求宽松得多：头像最大 2 MB，手机在弱网下上传两兆要几十秒。
+ * 用 15s 会在正常但慢的网络里砍掉一次本来能成功的上传，
+ * 而用户看到的只是「上传失败」，重试还是要再传一遍。
+ */
+export const UPLOAD_TIMEOUT_MS = 30000
+
 /** 兜底轮询间隔。正常情况下用后端返回的 `poll_interval_ms`。 */
 export const FALLBACK_POLL_INTERVAL_MS = 1200
 

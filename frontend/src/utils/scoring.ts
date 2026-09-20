@@ -233,6 +233,25 @@ export const QUESTION_TYPE_LABEL: Record<QuestionType, string> = {
 }
 
 /**
+ * 题型的**短**称，用于「第 N 题 · 单选」这类题头。
+ *
+ * ## 为什么两套并存，而不是统一成一套
+ *
+ * 两处原型用的就是两种长度，而它们承担的作用不同：
+ *
+ * - 答题页（02）的**胶囊**独立成块、周围没有别的字，写「单选题」更清楚；
+ * - 卷轴详情（04·6）的题头是「第 1 题 · 单选」，整行是辅助信息（`.tiny`），
+ *   在这里再多一个「题」字会让每一行的前缀变长，而它有 5 行。
+ *
+ * 所以不是「一处忘了改」—— 改掉任何一边都会让那一屏偏离自己的原型。
+ */
+export const QUESTION_TYPE_SHORT: Record<QuestionType, string> = {
+  single: '单选',
+  multiple: '多选',
+  judge: '判断'
+}
+
+/**
  * 确认页的题型构成文案，如「3 单选 · 1 多选 · 1 判断」。
  *
  * 与后端 `QuestionStats.summary_text()` 的措辞**故意不同**：后端给「3 单选」，

@@ -1,0 +1,45 @@
+// 隐私协议同意面板（07·4）。
+//
+// 材质用 `.slip`（纸片）：它是一件**贴上来待处理的事**，不是阅读区（`.card`），
+// 也不是常驻的通知条 —— 用户处理完它就消失了。这与 `.slip` 在原型里的
+// 语义（「撕下来的条子」）一致。
+
+@use "../../styles/tokens" as *;
+
+.privacy-gate {
+  // 与 `.btn`、`.reminder-prompt` 同理：定高 flex 列里会被压扁
+  flex: none;
+
+  &__title {
+    font-size: $fs-h3;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  &__body {
+    margin-top: $sp-3;
+  }
+
+  &__link {
+    display: block;
+    margin-top: $sp-4;
+    color: $magic-d;
+    font-weight: 600;
+  }
+
+  &__actions {
+    margin-top: $sp-6;
+    display: flex;
+    flex-direction: column;
+    gap: $sp-4;
+  }
+
+  // 「暂不使用」是次级动作，收窄一点，别和主按钮平分视觉重量
+  &__later {
+    align-self: center;
+    width: auto;
+    min-width: $tap-min;
+    padding-left: $sp-9;
+    padding-right: $sp-9;
+  }
+}

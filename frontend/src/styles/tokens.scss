@@ -64,6 +64,14 @@ $opt-sel-border: $magic;
 $opt-ok-border: $ok;
 $opt-bad-border: $bad;
 
+// chip 的选中态描边。
+//
+// 与 `$opt-sel-border`（`$magic` 实心蓝）**不是**一回事：原型 07·6 的
+// 提醒时间 / 提醒日 chips 用的是更浅的一档蓝（`#7FA9D8`），因为它们是
+// 「表单里勾了这个」，而 `.opt` 是「这个答案被选中了」，后者需要更强的语气。
+// 逐字取自 `prototype/07-会员与设置.html` 的内联样式。
+$chip-sel-border: #7fa9d8;
+
 // 按钮底边（物理按键的暗面）
 $btn-magic-edge: $magic-d; // #1F4694
 $btn-gold-edge: $gold-d; // #9C6E15

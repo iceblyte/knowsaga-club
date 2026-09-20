@@ -1,30 +1,30 @@
-"""用户资料、设置、复习提醒与冒险者档案的读接口。
+"""用户资料、设置、复习提醒与冒险者档案的读写接口。
 
-## 档案四屏（Phase D）
+## 档案各屏
 
 | 屏 | 接口 | 契约 |
 |---|---|---|
 | 04·3 数据看板 | `GET /users/me/dashboard` | `models/archive.py` |
 | 04·4 知识树 | `GET /users/me/knowledge-tree` | 同上 |
+| 04·5 历史卷轴 | `GET /users/me/scrolls` | 同上 |
+| 04·6 卷轴详情 | `GET /users/me/scrolls/{attempt_id}` | 同上 |
 | 04·7 旧识重温 | `GET /users/me/wrong-questions` | 同上 |
 | 04·9 勋章墙 | `GET /users/me/badges` | 同上 |
 
-四个都是**只读聚合**，业务逻辑在 `archive_service` 与 `badge_service`，
+四个只读聚合的业务逻辑在 `archive_service` 与 `badge_service`；
+历史卷轴那三个（列表 / 详情 / 删除）在 `scroll_service`。
 路由层只负责把查询参数翻译成调用参数、把结果包成统一响应体。
-
-`/users/me/scrolls`（历史卷轴）不在本阶段 —— 它属于「冒险日志」那条链，
-与这四屏不是同一批数据。
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, Path, Query, UploadFile
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
-from app.core.constants import NICKNAME_UI_MAX_LEN
+from app.core.constants import NICKNAME_UI_MAX_LEN, SCROLL_PAGE_SIZE, SCROLL_PAGE_SIZE_MAX
 from app.core.exceptions import invalid_input
 from app.core.response import ok
 from app.models.archive import DashboardRange
@@ -33,7 +33,7 @@ from app.models.user import (
     SnoozeResponse,
     UserSettingsUpdateRequest,
 )
-from app.services import archive_service, badge_service, user_service
+from app.services import archive_service, badge_service, scroll_service, user_service
 from app.utils.crypto import NicknameError, normalize_nickname
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -156,6 +156,73 @@ def read_wrong_questions(
 def read_badges(user: CurrentUser, session: DbSession) -> dict:
     """勋章墙（原型 04·9）。恒返回全部 18 枚，未解锁的也带名称与条件。"""
     payload = badge_service.list_badges(session, user)
+    return ok(payload.model_dump(mode="json"))
+
+
+# -----------------------------------------------------------------------------
+# 历史卷轴（原型 04 的 5 / 6 屏）
+# -----------------------------------------------------------------------------
+#: 挑战记录 ID 的路径参数。`ge=1` 让 `0` / 负数在进入业务层之前就被挡成 4000 ——
+#: 否则它会被当成「一个不存在的 id」而报 4005，掩盖掉「参数写错了」这件事。
+AttemptId = Annotated[int, Path(ge=1)]
+
+
+@router.get("/me/scrolls")
+def read_scrolls(
+    user: CurrentUser,
+    session: DbSession,
+    domain: Annotated[str | None, Query(max_length=64)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=SCROLL_PAGE_SIZE_MAX)] = SCROLL_PAGE_SIZE,
+) -> dict:
+    """历史卷轴列表（原型 04·5）。
+
+    **一项 = 一次挑战**，不是一份卷轴（方案 §5.5）。所以同一份卷轴重做
+    几次就有几条记录，`attempt_no` 标出这是第几次重做。
+
+    `size` 超上限直接报 4000 而不是静默截断：「我要了 500 条却只拿到 50 条」
+    是个查不出来的现象，宁可当场说清。
+    """
+    payload = scroll_service.list_scrolls(
+        session, user, domain=domain, page=page, size=size
+    )
+    return ok(payload.model_dump(mode="json"))
+
+
+@router.get("/me/scrolls/{attempt_id}")
+def read_scroll_detail(
+    attempt_id: AttemptId,
+    user: CurrentUser,
+    session: DbSession,
+) -> dict:
+    """卷轴详情（原型 04·6）。
+
+    题干 / 选项 / 答案 / 讲解都取自 `questions` —— 那张表**本身就是快照**，
+    所以历史卷轴能无限期回看，不受后续重新出题影响。
+
+    别人的记录与不存在的记录都回 4005「内容不存在或已删除」，
+    不区分越权与不存在（否则错误码差异就成了探测数据是否存在的工具）。
+    """
+    payload = scroll_service.scroll_detail(session, user, attempt_id)
+    return ok(payload.model_dump(mode="json"))
+
+
+@router.delete("/me/scrolls/{attempt_id}")
+def delete_scroll(
+    attempt_id: AttemptId,
+    user: CurrentUser,
+    session: DbSession,
+) -> dict:
+    """删除一条历史记录（原型 04·5 的长按删除）。
+
+    **软删除**：只把 `attempts.deleted_at` 写上时间戳，累计 XP / 正确率 /
+    等级一概不变（需求 FR-B5）。硬删会连带 CASCADE 掉 `answers`，
+    用户看到的是自己的成绩被改写 —— 见 `sql/03_attempts_deleted_at.sql`。
+
+    重复删除报 4005：幂等由客户端忽略这个错误实现，服务端谎报成功
+    会让「删错了」这件事无法被发现。
+    """
+    payload = scroll_service.delete_scroll(session, user, attempt_id)
     return ok(payload.model_dump(mode="json"))
 
 

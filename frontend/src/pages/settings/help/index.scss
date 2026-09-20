@@ -1,0 +1,40 @@
+// 帮助与反馈（原型 07·8）。
+//
+// 原型只画了「收起态」：一张 `.card.plain` 装着「常见问题」标题、三条 `.li`、
+// 一张 `.card.bad`（举报）、一条 `.li`（联系开发者）与一行页脚。
+// 展开态是补的（原型没有这一屏的展开稿），所以这里只有两条规则属于「补」，
+// 其余都是把原型的内联样式翻成类名。
+
+@use "../../../styles/tokens" as *;
+
+// 展开出来的详细说明。
+//
+// 上下都留白：上面一点（与所属的行断开）、下面多一点（与下一行断开），
+// 这样「它属于上面那条」在版面上才成立 —— 间距一样多的话，读起来会像
+// 一条独立的、没有标题的卡片。
+.help__detail {
+  margin: $sp-2 0 $sp-4;
+}
+
+// 原型给 `.badge` 覆写成 32px（默认是 62px 的勋章尺寸）。
+// 选择器带 `.card` 前缀是为了**稳压全局 `.badge`** —— 页面样式与 `base.scss`
+// 的加载顺序在两端并不一致，只写 `.help__report-badge` 有可能输在顺序上。
+.card .help__report-badge {
+  width: rpx(32);
+  height: rpx(32);
+  font-size: rpx(13);
+}
+
+.help__report-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.help__report-title {
+  font-size: $fs-body;
+  font-weight: 600;
+}
+
+.help__footer {
+  text-align: center;
+}

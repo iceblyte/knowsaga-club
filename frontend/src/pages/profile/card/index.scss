@@ -1,0 +1,83 @@
+// 冒险者卡片 · 公会卡（原型 04·2）。
+//
+// 版面骨架（`.card` / `.grid3` / `.stat` / `.statlab` / `.pill` / `.spacer` /
+// `.btn`）全部来自全局类。这里只补原型用内联 `style` 表达的那几处间距，
+// 以及「保存公会卡」需要的离屏画布。
+//
+// ⚠️ 这些间距是**第二份版式**：导出的 PNG 由 `utils/guildCard.ts` 用 Canvas
+// 重画，两边的数字要一起改（见那个文件头的说明）。
+
+@use "../../../styles/tokens" as *;
+
+// 屏底换成纸色（原型 04·2 给这一屏的 `.screen` 写了 `bg="#FEFCF6"`）。
+//
+// 卡片本身就落在屏底上，屏底若是默认的板色（#F1E8D0），
+// 纸片色（`.card.parch` = #F5EDD8）与它只差一点点，卡面几乎看不出边界。
+// 这不是「顺手改配色」——原型的这几屏（公会卡 / 复习提醒 / 结算 / 召唤中）
+// 都刻意把屏底提亮到纸色，让居中那张卡成为唯一的物件。
+.guild-card {
+  background: $paper;
+}
+
+// 卡面内容整体居中。原型是内层 `text-align:center`，
+// 这里挂在块级容器上而不是用 `.row` —— 昵称与胶囊需要各自成行。
+.guild-card__inner {
+  text-align: center;
+}
+
+// 原型的两处 `<div style="height:16px">` / `<div style="height:18px">`。
+// 统一成 16px：二者只差 2px，在一张居中卡面上看不出来，
+// 分开写只会让「间距是不是漏了一处」这件事无从判断。
+.guild-card__gap-lg {
+  height: rpx(16);
+}
+
+// 头像单独一行：原型是 `display:flex;justify-content:center`。
+// `.row` 已经把子项横排，这里只负责居中。
+.row.guild-card__avatar {
+  justify-content: center;
+}
+
+// 原型 `<div style="font-size:17px;font-weight:700;margin-top:6px">`
+.guild-card__name {
+  margin-top: rpx(6);
+  font-size: rpx(17);
+  font-weight: 700;
+  color: $ink;
+}
+
+// 原型 `<div class="row" style="justify-content:center;margin-top:8px;gap:6px">`
+.row.guild-card__pills {
+  justify-content: center;
+  margin-top: rpx(8);
+  gap: rpx(6);
+}
+
+// 原型 `<div style="height:1px;background:#EADFC4">`，外面套了 16px 间距。
+// 这里用 border-top 而不是 height + background：
+// 1px 的 div 在 H5 与小程序上的实际渲染高度并不都是 1px（有半像素取整），
+// 一条边框线才是稳定的 1 物理像素。
+.guild-card__divider {
+  height: 0;
+  border-top: 1PX solid $paper3;
+}
+
+// 原型 `<div class="row" style="justify-content:space-between;margin-top:12px">`
+.row.guild-card__foot {
+  margin-top: rpx(12);
+}
+
+// 离屏画布：只为 `canvasToTempFilePath` 存在，不参与版面。
+//
+// 为什么不用 `display:none` / `width:0`：小程序的选择器查询要拿到节点的
+// 尺寸信息，尺寸为 0 的节点在部分基础库上查不到 layout size，
+// 表现为「点了保存没反应」。所以给它真实的 300×310（与 `CARD_W/H` 同值），
+// 再用绝对定位挪到屏幕外。
+.guild-card__canvas {
+  position: fixed;
+  left: -9999PX;
+  top: 0;
+  width: 300px;
+  height: 310px;
+  pointer-events: none;
+}

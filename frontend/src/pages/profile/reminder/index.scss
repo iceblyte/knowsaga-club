@@ -1,0 +1,48 @@
+// 复习提醒（原型 04·8）。
+//
+// 这一屏的版面几乎全是原型的**内联样式**，全局类只提供了 `.card.plain` /
+// `.stat` / `.statlab` / `.btn` / `.spacer`。所以这里的规则数量比别的页多 ——
+// 不是新设计，是把原型那段内联 flex 翻成类名。
+//
+// 两个 `.spacer` 把主视觉夹在垂直正中：上下各占一份剩余空间，
+// 中间那组（鸢鸢 + 文案 + 三宫格）自然居中。底部两颗按钮在最下面，
+// 因为它们在 `.spacer` 之后 —— 不要给它们 `flex:none` 之外的任何东西
+// （`.btn` 已全局 `flex:none`，见 `base.scss` 的说明：少了它会被压扁）。
+
+@use "../../../styles/tokens" as *;
+
+// 屏底提到纸色（原型这一屏的 `.screen` 带 `bg="#FEFCF6"`）。
+// 三宫格那张 `.card.plain` 是 #FFFDF6，落在板色 #F1E8D0 上会显得发灰，
+// 而这一屏的定位是「一张安静的提醒卡」，不是信息面板。
+.reminder {
+  background: $paper;
+}
+
+// 原型 `<div style="display:flex;flex-direction:column;align-items:center;gap:14px">`
+//
+// `align-items: center` 同时决定了三宫格那张卡的宽度 —— 它会**按内容收缩**
+// （原型就是这样：卡片不比三个数字宽多少）。这是刻意的，
+// 把卡片拉伸到满宽会让这一屏读起来像个仪表盘。
+.reminder__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: rpx(14);
+}
+
+// 原型 `<div style="text-align:center">`：鸢鸢居中，两行文案也随之居中
+.reminder__copy {
+  text-align: center;
+}
+
+// 原型 `<div class="body sm" style="margin-top:8px">`（「三天前你在…」那句）
+.reminder__hint {
+  margin-top: rpx(8);
+}
+
+// 原型 `<div class="row" style="justify-content:center;gap:16px">`
+.row.reminder__stats {
+  justify-content: center;
+  gap: rpx(16);
+  text-align: center;
+}

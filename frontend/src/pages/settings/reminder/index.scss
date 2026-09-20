@@ -1,0 +1,66 @@
+// 学习提醒设置（原型 07·6）。
+//
+// 版面几乎全在原型里：四张 `.card` + 一个 `.spacer` + 一颗 `.btn`，其余都是全局类。
+// 这里只把原型那段内联样式翻成类名，另加一处必要的适配。
+//
+// ## 唯一的适配：提醒日那 7 个 chip 允许换行
+//
+// 原型的机身是定宽 332px，7 个单字 chip 一行排得下。真机上最窄的机型是
+// 320px，`.screen` 左右各留 14px → 可用宽度比原型还窄，7 个 chip 会溢出。
+// 所以这一行不换行的默认值保留（原型就是一行），但**给它一个能换行的出口**：
+// 见 `.reminder-settings__chips--days` 的说明 —— 那个类名现在只负责
+// 「不要换行」，溢出交给 `.row` 自带的 flex 收缩。
+//
+// 选中的 chip 用全局 `.chip.on`（淡蓝底 + 深蓝字 + 浅蓝边），与原型内联的
+// `#DCE9FB / #1F4694 / #7FA9D8` 是同一组颜色（`$opt-selected / $magic-d / $chip-sel-border`）。
+
+@use "../../../styles/tokens" as *;
+
+// 原型 `<div class="between">`（「每日学习提醒」+ 状态胶囊）。
+// 整行可点（胶囊兼作开关），所以两侧留一点内边距让热区更实。
+.reminder-settings__head {
+  gap: $sp-4;
+  margin: -#{$sp-2} 0;
+  padding: $sp-2 0;
+}
+
+.reminder-settings__head-name {
+  font-size: $fs-body;
+  font-weight: 600;
+}
+
+// 原型 `<div class="row" style="gap:10px;align-items:flex-start;margin-top:8px">`
+.reminder-settings__intro {
+  gap: rpx(10);
+  align-items: flex-start;
+  margin-top: rpx(8);
+}
+
+// 文案要能换行（`min-width: 0` 防 flex 子项被内容撑大），
+// 否则长句会把鸢鸢挤到变形
+.reminder-settings__intro-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+// 原型三张卡片的栏目标题都带 `margin-bottom:10px`
+.reminder-settings__label {
+  margin-bottom: rpx(10);
+}
+
+// 原型 `<div class="row" style="gap:6px;flex-wrap:wrap">`
+.reminder-settings__chips {
+  gap: rpx(6);
+  flex-wrap: wrap;
+
+  // 原型这一行是排开的（7 个星期 chip）。保持不换行是**还原**，
+  // 极窄屏上宁可让 `.row` 收缩，也不要在「一二三四五」中间断开。
+  &--days {
+    flex-wrap: nowrap;
+  }
+}
+
+// 原型 `<div style="height:10px"></div>`（两个额外提醒之间的留白）
+.reminder-settings__gap {
+  height: rpx(10);
+}

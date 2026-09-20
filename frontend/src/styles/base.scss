@@ -339,6 +339,17 @@ scroll-view {
   color: $ink2;
   border: 1PX solid rgba(150, 120, 72, 0.32);
   white-space: nowrap;
+
+  // 选中态（原型 07·6 的提醒时间 / 提醒日）。
+  //
+  // 这是「表单里勾了这个」的淡蓝底 + 深蓝字，**不是** 04·5 筛选条的
+  // 「当前视图」实心蓝 —— 两处的语气不同，所以不能共用一个修饰符。
+  // 04·5 的实心态是页面自己的 `.scrolls__filter--on`（见该页 SCSS）。
+  &.on {
+    background: $opt-selected;
+    color: $magic-d;
+    border-color: $chip-sel-border;
+  }
 }
 
 // 并列项的标记：方块而不是编号。编号只用于真正的序列
@@ -386,6 +397,19 @@ scroll-view {
   &.rare {
     background: $paper-rare;
     color: $rare;
+  }
+
+  // 实心胶囊：给「点这里」用的，与其它几个**状态色**修饰符不是一类东西。
+  //
+  // 上面每种都是「淡底 + 同色深字」，铺在纸面上都有足够对比度；但一旦
+  // 「淡底」撞上同色的容器就整块消失 —— 页内复习提醒的底色正是 `$paper-blue`，
+  // 把 `.pill.blue` 放上去，实测胶囊底 `rgb(231,239,251)` 与容器一模一样，
+  // 只剩一行深色文字浮在那儿（截图里也不明显，属于静默失效）。
+  // 提醒条里的那一个是**动作**而不是状态，所以给它实心底色 ——
+  // 与 `.btn`、以及 04·5 筛选项选中态同一个用法（`$magic` + `$on-magic`）。
+  &.solid {
+    background: $magic;
+    color: $on-magic;
   }
 }
 

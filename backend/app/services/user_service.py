@@ -26,6 +26,8 @@ from app.core.constants import (
 from app.core.exceptions import invalid_input
 from app.db.tables import (
     Attempt,
+    QuestionRecord,
+    QuizRecord,
     User,
     UserBadge,
     UserKnowledgeStat,
@@ -36,6 +38,7 @@ from app.models.user import (
     ProfileResponse,
     ProfileStats,
     ProfileUpdateRequest,
+    ReminderHint,
     RemindersTodayResponse,
     UserPublic,
     UserSettingsPublic,
@@ -83,7 +86,13 @@ def build_profile(session: Session, user: User) -> ProfileResponse:
     """
     user_id = int(user.id)
 
-    attempt_count = _count(session, Attempt, Attempt.user_id == user_id)
+    # 「闯关副本」与「历史卷轴」是同一个数（原型 04·1 两处都写 12），
+    # 且必须等于历史卷轴列表的长度 —— 所以**排除已软删除的挑战**。
+    # 平均正确率则刻意不排除：FR-B5 验收标准点名「正确率不变」，
+    # 它与看板那条实时聚合是同一个口径（见 scroll_service 模块说明的对照表）。
+    attempt_count = _count(
+        session, Attempt, Attempt.user_id == user_id, Attempt.deleted_at.is_(None)
+    )
     avg = session.scalar(select(func.avg(Attempt.accuracy)).where(Attempt.user_id == user_id))
 
     return ProfileResponse(
@@ -225,15 +234,18 @@ def reminders_today(session: Session, user: User) -> RemindersTodayResponse:
 
     估算是**下限**：XP 按题型最低满分 20 计（判断题），实际结算只会更多。
     把预期说低、兑现时超出，比反过来让人失望要好。
+
+    `hint` 回答原型那句「为什么是今天」。有多个到期错题时取**等得最久**的
+    那一道：其它题只会更晚，而这一道超过自己的排期最久，它才是「现在就该
+    做」的那个理由。没有到期错题时是 `None` —— 理由必须对应事实。
     """
     user_id = int(user.id)
-    due_count = _count(
-        session,
-        WrongQuestion,
+    due_condition = (
         WrongQuestion.user_id == user_id,
         WrongQuestion.mastered.is_(False),
         WrongQuestion.next_review_at <= utcnow(),
     )
+    due_count = _count(session, WrongQuestion, *due_condition)
 
     row = ensure_settings_row(session, user)
     return RemindersTodayResponse(
@@ -241,7 +253,39 @@ def reminders_today(session: Session, user: User) -> RemindersTodayResponse:
         estimated_minutes=math.ceil(due_count * SECONDS_PER_REVIEW_QUESTION / 60),
         available_xp=due_count * XP_PER_REVIEW_QUESTION,
         snoozed_today=_is_snoozed(row),
+        hint=_reminder_hint(session, due_condition),
     )
+
+
+def _reminder_hint(session: Session, due_condition) -> ReminderHint | None:  # noqa: ANN001
+    """取「等得最久」的到期错题，拼出「N 天前在「X」上失手」的两个事实。
+
+    `ORDER BY last_wrong_at, id` 里的 `id` 只为**确定性**：同一秒入队的两道题
+    排序不该随数据库的执行计划变，否则同一次刷新可能换一句话。
+    """
+    row = session.execute(
+        select(
+            WrongQuestion.last_wrong_at,
+            QuestionRecord.knowledge_point,
+            QuizRecord.title,
+        )
+        .join(QuestionRecord, WrongQuestion.question_id == QuestionRecord.id)
+        .join(QuizRecord, QuestionRecord.quiz_id == QuizRecord.id)
+        .where(*due_condition)
+        .order_by(WrongQuestion.last_wrong_at, WrongQuestion.id)
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+
+    # 知识点缺失时退化为卷轴标题：宁可说得粗一点，也不要渲染出「你在「」上失手」
+    topic = str(row[1] or "").strip() or str(row[2] or "").strip()
+    if not topic:
+        return None
+
+    days_ago = (business_date() - business_date(row[0])).days
+    # 服务器间时钟偏差可能让刚写入的行落进「明天」；负数天数读不通，夹到 0
+    return ReminderHint(days_ago=max(0, days_ago), topic=topic)
 
 
 def snooze_today(session: Session, user: User) -> None:

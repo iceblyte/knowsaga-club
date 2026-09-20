@@ -1,0 +1,40 @@
+// 历史卷轴（原型 04·5）。
+//
+// 版面骨架全部来自全局类（`.chip` / `.li` / `.pill` / `.spacer` / `.btn`），
+// 这里只补三处原型用内联 `style` 表达、而全局类没有的东西：
+//   1. 筛选条的换行与 6px 间距（原型 `gap:6px;flex-wrap:wrap`）
+//   2. 选中态 chip 的实心蓝底白字（原型的内联 style）
+//   3. 页脚那行居中（原型 `text-align:center`）
+
+@use "../../../styles/tokens" as *;
+
+// 复合选择器压过 `.row` 的默认间距。领域数量随用户成长增加，
+// 一行放不下时必须换行 —— 原型在这一屏明确写了 `flex-wrap:wrap`。
+.row.scrolls__filters {
+  flex-wrap: wrap;
+  gap: rpx(6);
+}
+
+// 原型选中态是**实心蓝底白字**，不是看板那种浅蓝底深蓝字：
+// 这一屏的 chip 是唯一的导航控件，要一眼看出当前在哪一档。
+// 带上 `.chip` 提高优先级 —— 页面样式与 base 样式由 Taro 分别编译，先后顺序不稳。
+.chip.scrolls__filter--on {
+  background: $magic;
+  color: $on-magic;
+  border-color: $magic;
+}
+
+// 正在删除的那一条压暗：删除要过一次网络往返，
+// 不做视觉反馈的话用户会以为「长按没反应」而再长按一次。
+.li.scrolls__row--busy {
+  opacity: 0.45;
+}
+
+.scrolls__filter-empty-body {
+  margin-top: rpx(6);
+}
+
+// 原型页脚：`<div class="tiny" style="text-align:center">`
+.scrolls__footer {
+  text-align: center;
+}

@@ -1,0 +1,35 @@
+// 页内复习提醒（大厅 / 个人中心共用的那一条）。
+//
+// 它不是 `.card`：纸面是「阅读区域」，而这是一条**通知**。
+// 用淡蓝纸色 + 蓝描边（与 `.card.blue` 同一组值）把它与周围的纸面分开，
+// 同时不引入新的材质 —— 全站只有纸面 / 纸片 / 印章三种材质。
+
+@use "../../styles/tokens" as *;
+
+.reminder-prompt {
+  display: flex;
+  align-items: center;
+  gap: $sp-5;
+
+  // `flex: none` 与 `.btn` 同理：大厅是定高 flex 列，
+  // 少了它这条会被当成可压缩项，在小屏上被压成半行（而截图里看不出来）。
+  flex: none;
+
+  padding: $sp-4 $sp-6;
+  border-radius: $r-card;
+  background: $paper-blue;
+  box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.32);
+
+  &__tx {
+    // 与 `.li .tx` 同一个理由：flex 子项默认 `min-width:auto`，
+    // 长文案会把它撑破并把右侧胶囊挤出屏幕。
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: $fs-body; // 12.5
+    font-weight: 600;
+    color: $ink;
+  }
+}

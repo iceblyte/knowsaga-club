@@ -14,6 +14,13 @@
  * 三处各写一遍的结果是**某一天只改了两处** —— 而这类不一致表现出来是
  * 「设置页换过头像了，个人中心还是旧的」，很难被当成 bug 提上来。
  *
+ * ## 照片地址必须过一遍 `absoluteMediaUrl`（否则照片永远不显示）
+ *
+ * 后端给的是站内相对路径（`/static/avatars/x.png`），直接交给 `<image src>`
+ * 在小程序端会被当成包内路径、在 H5 端会打到预览服务上，**两端都是静默空白**
+ * （不报错、看不到 404）。这条拼接只做一次，就在这里与 `utils/guildCard` ——
+ * 调用方传服务端字段原样即可，不需要知道这件事。
+ *
  * ## 为什么不复用 `Sprite`
  *
  * `Sprite` 只管预置精灵，签名里没有「自定义图片」这一路。与其给它加两个
@@ -49,6 +56,7 @@
 import { Image, View } from '@tarojs/components'
 
 import { SPRITES, type SpriteName } from '../../assets/sprites'
+import { absoluteMediaUrl } from '../../utils/media'
 import { squareStyle } from '../../utils/style'
 
 import './index.scss'
@@ -75,10 +83,26 @@ const PRESET_AVATAR: Record<string, SpriteName> = {
 /** `avatar_key` 认不出来时的兜底（与后端 `DEFAULT_AVATAR_KEY` 一致） */
 const FALLBACK_AVATAR: SpriteName = 'scholar'
 
+/**
+ * 预置头像键 → 精灵名。
+ *
+ * 导出是给**公会卡导出**用的：那边要在 Canvas 上重画一遍头像，
+ * 需要同一个键到精灵的映射。若让它自己再写一份，
+ * 「后端加了键、两处只补了一处」就会变成两边画不同的人。
+ */
+export function spriteNameForAvatarKey(avatarKey?: string | null): SpriteName {
+  return PRESET_AVATAR[avatarKey ?? ''] ?? FALLBACK_AVATAR
+}
+
 export interface AvatarProps {
   /** 预置头像键；**不能叫 `key`**，那是 React 的保留 prop，读不到 */
   avatarKey?: string | null
-  /** 自定义头像地址；有值时优先 */
+  /**
+   * 自定义头像地址；有值时优先。
+   *
+   * 传服务端字段（`/static/...`）或本地临时路径（`wxfile:` / `blob:`）都行 ——
+   * 前者在这里拼成绝对地址，后者原样放行（见 `utils/media`）。
+   */
   avatarUrl?: string | null
   /** 尺寸，**直接写原型 px**（如原型 58×58 就传 58），内部换算 */
   size: number
@@ -89,15 +113,17 @@ export default function Avatar({ avatarKey, avatarUrl, size, className = '' }: A
   const style = squareStyle(Math.round(size * PX_RATIO))
   const cls = ['advatar', className].filter(Boolean).join(' ')
 
-  if (avatarUrl) {
+  const photo = absoluteMediaUrl(avatarUrl)
+
+  if (photo) {
     return (
       <View className={`${cls} advatar--photo`} style={style}>
-        <Image className='advatar__img' src={avatarUrl} mode='aspectFill' />
+        <Image className='advatar__img' src={photo} mode='aspectFill' />
       </View>
     )
   }
 
-  const name = PRESET_AVATAR[avatarKey ?? ''] ?? FALLBACK_AVATAR
+  const name = spriteNameForAvatarKey(avatarKey)
   return (
     <Image className={cls} style={style} src={SPRITES[name]} mode='aspectFit' aria-label='预置头像' />
   )

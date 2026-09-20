@@ -553,6 +553,114 @@ export interface BadgeListResponse {
 }
 
 // -----------------------------------------------------------------------------
+// 历史卷轴（backend/app/models/archive.py → ScrollListResponse / ScrollDetailResponse）
+// -----------------------------------------------------------------------------
+/**
+ * 历史卷轴列表里的一条。
+ *
+ * **一条 = 一次挑战（`attempts` 的一行），不是一份卷轴**（方案 §5.5）。
+ * 同一份卷轴重做三次就有三条记录，`attempt_no` 标出这是第几次 ——
+ * 原型 04·5 每条写「正确率 80% · 5 题」而详情页带「重做」按钮，
+ * 两者合起来只有「一局」这个粒度说得通。
+ */
+export interface ScrollItem {
+  /** 列表项的主键。详情 / 重做 / 删除都用它，**不是** `quiz_id` */
+  attempt_id: string
+  quiz_id: string
+  title: string
+  /** UTC ISO 串（带 `+00:00`） */
+  finished_at: string
+  /**
+   * 面向用户的时间说法（「今天 14:20」「昨天 21:05」「9 月 11 日」）。
+   * **由后端按业务时区派生** —— 客户端时区与业务时区不一致时，
+   * 前端自己算会得到不同的「今天」。
+   */
+  finished_label: string
+  /** 0–100 */
+  accuracy: number
+  correct_count: number
+  total_count: number
+  duration_ms: number
+  /** 这一局是该卷轴的第几次挑战 */
+  attempt_no: number
+}
+
+/**
+ * `GET /users/me/scrolls?domain=&page=&size=`。
+ *
+ * `total` 是**当前筛选下**的全部条数（不是 `items.length`）——
+ * 04·5 页脚的「已经到底了 · 共 N 份卷轴」要用它，翻页时不会越翻越少。
+ */
+export interface ScrollListResponse {
+  total: number
+  page: number
+  size: number
+  has_more: boolean
+  /**
+   * 可用的领域筛选项（不含「全部」）。
+   *
+   * **恒为全量、不随当前筛选变化** —— 否则切到一个空结果之后
+   * chips 一起消失，就再也切不回去了。
+   */
+  domains: string[]
+  items: ScrollItem[]
+}
+
+/**
+ * 详情页里的一道题（含用户**当时**的作答）。
+ *
+ * 题干 / 选项 / 答案 / 讲解都来自 `questions` —— 那张表本身就是快照，
+ * 所以历史卷轴能无限期回看，不受后续重新出题影响。
+ */
+export interface ScrollQuestionItem {
+  seq: number
+  type: QuestionType
+  stem: string
+  options: QuizOption[]
+  /** 正确答案（答错时要显示它） */
+  answer: string[]
+  /** 用户当时选中的键 */
+  selected: string[]
+  outcome: AttemptOutcome
+  explanation: string
+  earned_xp: number
+  max_xp: number
+}
+
+/** `GET /users/me/scrolls/{attempt_id}`。 */
+export interface ScrollDetailResponse {
+  attempt_id: string
+  quiz_id: string
+  title: string
+  /** 复习关卡是 `review` —— 详情页可据它换一个来源说法 */
+  source_type: SourceType
+  finished_at: string
+  finished_label: string
+  duration_ms: number
+  accuracy: number
+  correct_count: number
+  partial_count: number
+  wrong_count: number
+  total_count: number
+  xp_gained: number
+  max_xp: number
+  percentile: number
+  attempt_no: number
+  questions: ScrollQuestionItem[]
+}
+
+/**
+ * `DELETE /users/me/scrolls/{attempt_id}`。
+ *
+ * **软删除**：记录从列表与详情消失，但累计 XP / 正确率 / 等级一概不变
+ * （需求 FR-B5）。重复删除报 4005 —— 幂等由客户端忽略该错误实现。
+ */
+export interface ScrollDeleteResponse {
+  attempt_id: string
+  deleted: boolean
+}
+
+// -----------------------------------------------------------------------------
 // 复习关卡（backend/app/models/archive.py → ReviewStartResponse）
 // -----------------------------------------------------------------------------
 /**
@@ -594,10 +702,59 @@ export interface ProfileResponse {
   stats: ProfileStats
 }
 
+/**
+ * 「为什么是今天」的两个事实（原型 04·8 的第二句文案）。
+ *
+ * 服务端只给**事实**，不给整句 —— 「今天 / 昨天 / N 天前」三种说法属于
+ * 面向用户的措辞，统一放在 `copy.ts`。`days_ago` 已按业务时区的**自然日**
+ * 之差算好（0 = 今天，1 = 昨天），前端**不要**自己拿时间戳相减：
+ * 客户端时区不同的人会各算各的，出现「服务端说昨天、界面写今天」。
+ */
+export interface ReminderHint {
+  days_ago: number
+  /** 在哪个知识点上失手；题干没给知识点时退化为卷轴标题 */
+  topic: string
+}
+
 /** `GET /users/me/reminders/today`（原型 04·8 的三宫格）。 */
 export interface RemindersTodayResponse {
   due_count: number
   estimated_minutes: number
   available_xp: number
   snoozed_today: boolean
+  /** 没有到期错题时为 `null`，此时不要硬凑一句理由 */
+  hint: ReminderHint | null
 }
+
+/** `POST /users/me/reminders/snooze` 的返回。 */
+export interface SnoozeResponse {
+  snoozed_today: boolean
+}
+
+/**
+ * `GET /users/me/settings`（原型 07·5 / 07·6 的数据面）。
+ *
+ * `reminder_time` 是 `"HH:MM"` 字符串而不是时间戳：拿到就显示、改了就直接提交，
+ * 中间不需要任何时区换算。它代表**用户的本地时间**（业务时区），不是一个时间点。
+ */
+export interface UserSettingsPublic {
+  reminder_enabled: boolean
+  /** `"HH:MM"`，24 小时制 */
+  reminder_time: string
+  /** 星期集合，1 = 周一 … 7 = 周日；服务端保证非空、不重复、已排序 */
+  reminder_days: number[]
+  remind_streak_break: boolean
+  remind_review_due: boolean
+  sound_enabled: boolean
+  auto_load_images: boolean
+  eye_care: boolean
+}
+
+/**
+ * `PATCH /users/me/settings` 的入参：**全部可选**，只传要改的那个。
+ *
+ * 用 `Partial` 而不是把每个字段都写成 `?`，是为了「设置页改了什么就提交什么」
+ * 这件事在类型上就成立：只要 `UserSettingsPublic` 加了字段，这里自动跟上，
+ * 不会出现「服务端支持了、前端忘了加」的空洞。
+ */
+export type UserSettingsUpdateRequest = Partial<UserSettingsPublic>

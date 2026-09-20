@@ -214,6 +214,12 @@ class Attempt(Base):
         Numeric(6, 2), nullable=False, default=Decimal("0.00")
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="finished")
+    #: 历史卷轴里被删除的时刻（软删除）；`None` = 未删除。
+    #:
+    #: **只影响列表与详情，不影响任何聚合查询**。见 `sql/03_attempts_deleted_at.sql`：
+    #: 需求 FR-B5 要求「记录消失但正确率 / XP / 等级不变」，而正确率是实时聚合出来的，
+    #: 硬删会连带 `CASCADE` 掉 `answers` 与 `reports`，用户看到的是自己的正确率被改写。
+    deleted_at: Mapped[datetime | None] = mapped_column(DT3, nullable=True)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
