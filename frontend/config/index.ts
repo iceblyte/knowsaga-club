@@ -44,6 +44,13 @@ export default defineConfig<'webpack5'>(async (merge) => {
       enable: false // Webpack 持久化缓存配置，建议开启。默认配置请参考：https://docs.taro.zone/docs/config-detail#cache
     },
     mini: {
+      // 各页面引入共享组件（Sprite / PhoneShell / MagicStage）的先后不一致，被提升进
+      // common chunk 后只有一份 CSS 顺序，无法同时满足所有页面的期望顺序。而三者选择器
+      // 互不相交、也无 !important —— 顺序改变不了任何计算样式，故显式忽略该警告。
+      // 只关掉「顺序保证」，抽取/压缩行为不变（A/B 实测：产物 27/27 逐字节相同）。
+      miniCssExtractPluginOption: {
+        ignoreOrder: true
+      },
       postcss: {
         pxtransform: {
           enable: true,
