@@ -5,50 +5,73 @@
 
 ## 0. 前置探查：打通上游（最危险的假设先验）
 
-- [ ] 0.1 在 `backend/requirements.txt` 加 `langchain-tavily==0.2.18`（按文件头既有风格注明实测日期与选它的理由），
+- [x] 0.1 在 `backend/requirements.txt` 加 `langchain-tavily==0.2.18`（按文件头既有风格注明实测日期与选它的理由），
   在 `backend/.venv` 内安装；验证：① `pip check` 干净；② `python -c "import langchain_tavily"` 通过；
   ③ **`langchain` 与 `langchain-core` 的版本没有被改动**（本次唯一的依赖风险，改了就回退）
-- [ ] 0.2 写一次性探查脚本 `backend/scripts/probe_tavily_tools.py`（不接进出题链），在真实 key 下验证六件事：
+  → **已完成**：`pip check` 无破损、import OK；`langchain` 1.4.0 / `langchain-core` 1.6.3 /
+  `langgraph` 1.2.11 / `requests` 2.34.2 **全部未被改动**（新增 9 个包都是 `aiohttp` 支的传递依赖）
+- [x] 0.2 写一次性探查脚本 `backend/scripts/probe_tavily_tools.py`（不接进出题链），在真实 key 下验证六件事：
   ① DeepSeek `build_chat_model("quiz").bind_tools([TavilySearch, TavilyExtract])` 能返回带 `tool_calls` 的
   `AIMessage`（思考模式已关，不受影响）；② `tavily_search` 真实命中并打印**单条 `content` 的字符数与是否含
   `<chunk n>` 标记**；③ `tavily_extract` 对真实 URL 返回 `raw_content`，打印**单页字符数**与
   **返回体里到底有没有 `title`**；④ 0 命中时的返回形态（是抛异常还是空数组）；⑤ HTTP 错误时的返回形态
   （确认是 `{"error": ...}` 还是异常）；⑥ 同一中文主题在 `country="china"` 与不设 country 下的命中差异。
   **把六条结论原样记进 `docs/MVP开发计划.md`** —— ②③⑤ 三条会直接决定第 5 组的截断常量与错误判定
-- [ ] 0.3 验证 D12 的前提：读 `_utilities.py` 确认 `requests.post` 未设 timeout 的结论仍然成立
+  → **已完成**：六条结论全部实测拿到，已记进 `docs/MVP开发计划.md` 与 `design.md` 的
+  「前置探查结论」。脚本支持 `--only N,M` 补测与 `--out` 自写 UTF-8 报告
+  （**不要用 PowerShell 的 `*>`**，会让中文标题产生不可逆乱码）
+- [x] 0.3 验证 D12 的前提：读 `_utilities.py` 确认 `requests.post` 未设 timeout 的结论仍然成立
   （已在 design 里记录，此处只需确认版本没变）；验证方式：`git grep -n "requests.post" backend/.venv/Lib/site-packages/langchain_tavily/_utilities.py`
   ⚠️ 若 0.2 与 0.3 的结论与 `design.md` 的 Context 表有任何出入，**先改 design 再继续**
+  → **已完成**：`requests.post(f"{base_url}/search", json=params, headers=headers)` 确实无 `timeout`
+  （异步路径更显式：`ClientTimeout(total=None)`）。**0.2 有三处与 design 出入，已按本条要求先改 design**：
+  extract **有** `title`、`content` 无 `<chunk n>` 只有 `[...]`、单页可达 **74,801** 字符（新增 D14）
 
 ## 1. 配置
 
 - [ ] 1.1 在 `backend/tests/test_config_search.py` 写测试：断言 `Settings()` 的
   `search_tool_timeout_seconds == 8`、`search_max_results == 5`、`search_snippet_max_chars`、
+  **`search_page_max_chars`**（D14 新增：单页正文上限，实测单页可达 7.5 万字符）、
   `search_agent_max_rounds == 3`、`search_agent_max_tool_calls == 4`、`search_agent_budget_seconds == 20`、
   `search_country_default == "china"`、`search_country_default_en is None`，
   且都能被环境变量覆盖（`monkeypatch.setenv` + `get_settings.cache_clear()`）。跑该文件必须**红**
 - [ ] 1.2 在 `backend/app/core/config.py` 的「联网检索」段补上以上配置项（含注释：超时独立于出题 30s 的理由、
-  三个上限为什么必须有、`search_country_default` 设 `None` 即完全关掉地区偏好）。跑 1.1 转**绿**
+  三个上限为什么必须有、`search_page_max_chars` 为什么必须远小于 `quiz_max_tokens`、
+  `search_country_default` 设 `None` 即完全关掉地区偏好）。跑 1.1 转**绿**
 - [ ] 1.3 在 `.env.example` 的 `TAVILY_API_KEY` 行补申请地址与用途说明，并补上 1.2 新增的可调项占位
   （**只写占位，不写任何真实密钥**）；验证：`git diff .env.example` 里不含形如 `tvly-` 的串
 
 ## 2. Provider 契约演进
 
-- [ ] 2.1 在 `backend/tests/test_search_provider.py` 写测试：① `SearchRequest` 的字段与默认值；
+- [x] 2.1 在 `backend/tests/test_search_provider.py` 写测试：① `SearchRequest` 的字段与默认值；
   ② `initial_step(request)` 三态 —— 有链接 → 「读取你给的网页」；无链接 + 意愿开 → 「联网检索知识」；
   无链接 + 意愿关 → 「理解你的输入」；③ `NoopSearchProvider.gather()` → `degraded=True` 且 `results=()`
   且**不发出任何外部请求**；④ `NoopSearchProvider` 的 `initial_step` 同样遵守三态。跑必须**红**
-- [ ] 2.2 改 `backend/app/llm/search/base.py`：加 `SearchRequest`；`SearchProvider` 协议由
+  → **已完成，但 ④ 按 design 冲突点 14 改写**：④ 的原始要求会让 Noop 显示「联网检索知识」
+  而它一次网络都不碰（文案与实现冲突 + 会打破已交付的 `test_quiz_api` 用例）。
+  改为：三态由 `build_initial_step(request, can_search_web=…, can_read_pages=…)` 判定，
+  **能力算在内**；Noop 无能力 ⇒ 恒为「理解你的输入」。文件共 28 个用例，含
+  「`step_name` 已废弃」「`degraded` 是派生属性」「`first_step` 不报「命中 0 条」」等契约断言
+- [x] 2.2 改 `backend/app/llm/search/base.py`：加 `SearchRequest`；`SearchProvider` 协议由
   `step_name` 属性 + `search()` 改为 `initial_step()` + `gather()`；`SearchOutcome` 加追溯字段
   （已用轮次 / 工具调用次数 / 是否触顶 / 结束原因）；`SearchResult` 加 `kind`（`snippet`/`page`）与
   `source`（`user`/`web`），并把资料注入上限常量集中在这里。改 `noop.py` 适配新契约。
   跑 2.1 转**绿**
-- [ ] 2.3 改 `backend/app/services/quiz_service.py` 对 Provider 的两处调用（`_initial_steps` 改用
+  → **已完成**：新增 `ReferenceCaps`（`from_settings` 单一取值入口）+ `truncate()`；
+  追溯字段为 `rounds_used` / `tool_calls_used` / `end_reason`（`limit_hit` 直接从
+  `end_reason` 派生，上限名就在字符串里）；`degraded` 改为派生属性
+- [x] 2.3 改 `backend/app/services/quiz_service.py` 对 Provider 的两处调用（`_initial_steps` 改用
   `initial_step(request)`，`provider.search(...)` 改用 `provider.gather(request)`），
   先让现有测试全绿（这一步只换契约不改行为）；跑 `pytest backend/tests/test_quiz_service.py` 必须**绿**
+  → **已完成**：⚠️ `tests/test_quiz_service.py` **不存在**（原任务写错了路径），实际看护这些行为的是
+  `tests/test_quiz_api.py`。新增 `_build_search_request()` 作为第 7 组要接管的接缝
+  （当前 `urls=()`、`use_search` 用默认值）。另修一处隐患：原来在出题后把第一步 detail
+  硬改成「已提炼 N 个核心概念」，会把「命中 N 条资料」盖掉 → 改用 `outcome.first_step()` 的 detail
+
 
 ## 3. 官方工具的装配（实例级参数）
 
-- [ ] 3.1 在 `backend/tests/test_search_tools.py`（新建）写测试，**全部 mock 不联网**：
+- [x] 3.1 在 `backend/tests/test_search_tools.py`（新建）写测试，**全部 mock 不联网**：
   ① 未配 key 时工厂拒绝构造且抛明确错误（上游无 key 会在**构造期**抛，必须在我们的工厂里先拦）；
   ② `country` 判定：输入中文 → `"china"`；输入英文 → `settings.search_country_default_en`；
   两处配置都设 `None` → 构造出的工具 `country` 为 `None`；③ `max_results` 来自
@@ -56,9 +79,17 @@
   `auto_parameters` / `exact_match` 一律为假或 `None`；⑤ extract 工具 `format="markdown"`、
   `chunks_per_source` 有值；⑥ 工具实例名分别是 `tavily_search` / `tavily_extract`；
   ⑦ **两个工具实例不跨请求共享**（连续两次不同语种的请求拿到不同的 `country`）。跑必须**红**
-- [ ] 3.2 新建 `backend/app/llm/search/tavily_tools.py`：`build_tavily_tools(request, settings)` 返回
+  → **已完成**：另加两条 —— ⑧ `handle_tool_error is False`（否则 0 命中会变成一段像正文的字符串，
+  见 design D6 第 2 条）；⑨ `looks_chinese` 的中英混排边界（阈值故意定得低，理由写在
+  `app/utils/lang.py`）。共 10 个用例
+- [x] 3.2 新建 `backend/app/llm/search/tavily_tools.py`：`build_tavily_tools(request, settings)` 返回
   `(search_tool, extract_tool)`；key 显式从 `Settings` 传入（**不依赖环境变量**，与项目「Settings 注入」风格一致）。
   跑 3.1 转**绿**
+  → **已完成**。新增 `app/utils/lang.py`（`cjk_ratio` / `looks_chinese`，纯函数）。
+  两个上游事实在此处落地：extract 的 `forbidden_params` 只含
+  `include_usage / include_favicon / format`，`extract_depth / include_images / query` 是调用级；
+  `chunks_per_source` 只存在于 `TavilyExtract`（`TavilySearch` **没有**这个字段，design D2 表格已核）
+
 
 ## 4. 模型自主取材的有界循环
 
@@ -85,21 +116,32 @@
 
 - [ ] 5.1 在 `backend/tests/test_search_collector.py`（新建）写测试，用**真实的上游返回形状**（0.2 的结论）：
   ① search 结果映射到 `SearchResult(title, url, snippet, kind="snippet", source=...)`；
-  ② extract 结果映射且 `kind="page"`，**标题取值顺序** —— `raw_content` 的 markdown 标题行 →
-  URL 的 host → 空字符串（三种输入各一例）；
-  ③ 含 `error` 键的返回**不算命中**且记日志；
-  ④ `ToolException` 的错误文本**不算命中**，不做任何解析；
-  ⑤ `content` 含 `<chunk 1> [...] <chunk 2>` → snippet 里不含 `<chunk` 与 `[...]`；
+  ② extract 结果映射且 `kind="page"`，**标题取值顺序（D6 第 3 条的四级链）** —— 响应里的 `title` →
+  `raw_content` 的 markdown 标题行 → URL 的 host → 空字符串（**四种输入各一例**）；
+  ③ 含 `error` 键的返回（值是**异常对象**）**不算命中**且记日志；
+  ④ `str` 形态的返回（0 命中时 `ToolException` 被 `handle_tool_error` 转成的错误文本）**不算命中**，
+  不做任何解析；另需覆盖 `handle_tool_error=False` 时**抛出的 `ToolException` 同样不算命中**；
+  ⑤ `content` 含 `[...]`（真实形态）与 `<chunk 1> [...] <chunk 2>`（防御性形态）→ snippet 里两者都不留；
   ⑥ 同 URL 先 search 后 extract → 只保留一条且 `kind="page"`；
-  ⑦ 单条 snippet 超上限被截断、总量超上限被截断；
+  ⑦ 单条 snippet 超 `search_snippet_max_chars` 被截断、**整页超 `search_page_max_chars` 被截断**、
+  总量超上限被截断；
   ⑧ **未知返回形状**（缺 `results` 键、`results` 不是列表）→ 只 warning 不抛异常。跑必须**红**
 - [ ] 5.2 新建 `backend/app/llm/search/collector.py` 实现采集与清洗，截断常量**复用 2.2 的同一组常量**。
   跑 5.1 转**绿**
-- [ ] 5.3 在 `backend/tests/test_search_provider.py` 追加 `first_step()` 判定测试：
+- [x] 5.3 在 `backend/tests/test_search_provider.py` 追加 `first_step()` 判定测试：
   `degraded=True` → 「理解你的输入」；`degraded=False` 且命中 ≥1 → 名称与 `initial_step` 一致、
   详情含命中条数与整页数量；**`degraded=False` 但 `results=()` → 必须按降级呈现**
   （与现有实现冲突的一条，见 `design.md` 冲突点 6）。跑必须**红**
-- [ ] 5.4 改 `base.py` 的 `first_step()`：把「0 命中」并入降级分支，并补整页数量。跑 5.3 转**绿**
+  → **已在第 2 组提前完成**（契约改动必然连带改它，拆开写只会改两遍）。
+  按冲突点 14 落地为：**名称不变、只改详情**。0 命中时详情分两种 ——
+  `end_reason == "disabled"`（压根没去取）→「已提炼 N 个核心概念」；
+  去取了但没取到 →「未取到可用资料，已提炼 N 个核心概念」。**任何分支都不出现「命中 0 条」**。
+  用例：`test_first_step_reports_page_count_and_never_claims_zero_hits`、
+  `test_first_step_says_so_when_external_access_failed`
+- [x] 5.4 改 `base.py` 的 `first_step()`：把「0 命中」并入降级分支，并补整页数量。跑 5.3 转**绿**
+  → **已在第 2 组完成**（同上）。另外「0 命中即降级」现在由 `degraded` 派生属性保证 ——
+  它不再是能被人为设错的独立字段
+
 - [ ] 5.5 在 `backend/tests/test_search_agent.py` 追加 `get_search_provider` 分支测试：开关关 →
   `NoopSearchProvider`；开关开 + `provider='tavily'` + 有 key → 真实 Provider；
   开关开 + `provider='bocha'` → 抛 5000 且 message 含「尚未接入」；开关开 + 未知名字 → 抛 5000 且含「未知」；

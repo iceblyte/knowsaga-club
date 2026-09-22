@@ -34,8 +34,21 @@ tzdata==2026.4
 langchain==1.4.0
 langchain-core==1.6.3
 langchain-openai==1.6.2
+# 联网取材（关键词检索 + 按 URL 抓整页）。2026-09-22 实测最新稳定版 0.2.18。
+# 为什么用它而不是自己拼 HTTP：官方把工具名、工具描述、参数 args_schema 与错误语义
+# 都做好了，而模型正是靠 description 与参数说明决定怎么用工具的 —— 手抄一份只会与上游漂移。
+# 为什么不用 tavily-python 官方 SDK：它是纯 HTTP 客户端，没有 LangChain 工具契约，
+# args_schema 与 description 仍要自己写，等于少了一半好处还多一层依赖。
+# 版本约束核对（升级前必须重跑 pytest）：
+#   langchain-tavily 0.2.18 要求 langchain-core>=1.2.11,<2.0.0 与 langchain>=1.0.0,<2.0.0，
+#   与本文件的 1.6.3 / 1.4.0 兼容 —— 安装时**不会**改动这两个既有版本。
+#   它还会带入 requests 与 aiohttp 两个传递依赖（上游包的既定选择，我们不改写）。
+# ⚠️ 该包内部 `_utilities.py` 的 requests.post **没有传 timeout**，网络黑洞会无限等待；
+#    调用侧必须自己外包超时（见 app/llm/search/agent.py 的 D12 说明）。
+langchain-tavily==0.2.18
 
-# --- HTTP 客户端（搜索 Provider / 微信接口 / 测试用）---
+# --- HTTP 客户端（微信接口 / 测试用）---
+# 联网取材不走它：Tavily 侧由 langchain-tavily 自带的 requests / aiohttp 负责。
 httpx==0.28.1
 
 # --- 测试 ---

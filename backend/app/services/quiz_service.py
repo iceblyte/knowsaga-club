@@ -34,7 +34,7 @@ from app.core.exceptions import AppError, ErrorCode, DEFAULT_MESSAGES
 from app.core.logging import get_logger
 from app.db.session import session_scope
 from app.llm import quiz_chain
-from app.llm.search import SearchProvider, get_search_provider
+from app.llm.search import SearchProvider, SearchRequest, get_search_provider
 from app.models.quiz import Quiz
 from app.services import quiz_repository, task_service
 from app.services.task_service import TaskRecord, TaskStep
@@ -102,14 +102,23 @@ class QuizSubmission:
 # -----------------------------------------------------------------------------
 # 进度推进
 # -----------------------------------------------------------------------------
-def _initial_steps(provider: SearchProvider, question_count: int) -> list[TaskStep]:
+def _initial_steps(
+    provider: SearchProvider, request: SearchRequest, question_count: int
+) -> list[TaskStep]:
     """三步状态卡的初始状态。
 
-    第一步的名字来自 Provider：不联网是「理解你的输入」，联网时是「联网检索知识」。
-    前端不做这个判断（§7.3），所以它必须在这里就定下来。
+    第一步的名字来自 Provider：``「理解你的输入」/「联网检索知识」/「读取你给的网页」``。
+    前端不做这个判断（§7.3），所以它必须在**建任务时**就定下来 ——
+    而它的三态同时取决于「输入里有没有链接」「用户想不想搜」「这个 Provider 有没有这个能力」，
+    因此必须把 `request` 传进来（只看 Provider 是判断不出来的）。
     """
     return [
-        TaskStep(key=STEP_RETRIEVE, name=provider.step_name, status="pending", detail="准备中"),
+        TaskStep(
+            key=STEP_RETRIEVE,
+            name=provider.initial_step(request).name,
+            status="pending",
+            detail="准备中",
+        ),
         TaskStep(
             key=STEP_GENERATE,
             name="生成闯关题目",
@@ -118,6 +127,17 @@ def _initial_steps(provider: SearchProvider, question_count: int) -> list[TaskSt
         ),
         TaskStep(key=STEP_VALIDATE, name="校验题目结构", status="pending", detail="等待中"),
     ]
+
+
+def _build_search_request(user_input: str, settings: Settings) -> SearchRequest:
+    """把已清洗的输入组装成取材请求。
+
+    ⚠️ 这是第 7 组要接管的接缝：那时会在这里补上「从输入里抽链接」与用户的
+    `use_search` 意愿。**当前只保证契约切换不改行为** —— 因此 `urls` 为空、
+    `use_search` 沿用默认（`True`），而 `use_search` 对 `NoopSearchProvider`
+    不产生任何影响（它没有联网能力，文案恒为「理解你的输入」）。
+    """
+    return SearchRequest(query=user_input, max_results=settings.search_max_results)
 
 
 def _advance(
@@ -190,6 +210,7 @@ def run_quiz_generation(
     settings: Settings | None = None,
     generate: Callable[..., Quiz] | None = None,
     search_provider: SearchProvider | None = None,
+    search_request: SearchRequest | None = None,
 ) -> None:
     """后台出题主流程。**这个函数不抛异常** —— 任何失败都落到任务的 `failed` 状态上。
 
@@ -199,9 +220,12 @@ def run_quiz_generation(
         user_input: 已清洗的输入。
         generate: 注入出题函数（测试用）；不传则用 `quiz_chain.generate_quiz`。
         search_provider: 注入检索 Provider（测试用）；不传则按配置取。
+        search_request: 取材请求（链接 + 意愿）。不传则按 `user_input` 兜底组装 ——
+            传进来才能保证「建任务时展示的第一步」与「真正取材时用的请求」是同一份。
     """
     s = settings or get_settings()
     provider = search_provider or get_search_provider(s)
+    request = search_request or _build_search_request(user_input, s)
     # 用 module 属性现取，这样测试 monkeypatch `quiz_chain.generate_quiz` 才会生效
     generate_quiz = generate or quiz_chain.generate_quiz
 
@@ -216,7 +240,7 @@ def run_quiz_generation(
 
         # ---- 第一步：检索 / 理解输入 ----
         _advance(task_id, STEP_RETRIEVE, status="running", detail="正在解析你的学习需求", progress=8)
-        outcome = provider.search(user_input)
+        outcome = provider.gather(request)
         # 走到这里之前还不知道会提炼出几个概念，先用计划题量给一个即时反馈
         descriptor = outcome.first_step(concept_count=question_count)
         _advance(
@@ -249,9 +273,16 @@ def run_quiz_generation(
             logger.info("出题任务 %s 已被取消，丢弃生成结果", task_id)
             return
 
-        # 概念数现在才真正知道，把第一步的文案修正为真值
+        # 概念数现在才真正知道，把第一步的详情修正为真值。
+        # ⚠️ 用 `first_step()` 而不是自己拼字符串：它是「这一步的结果怎么说」的唯一出口 ——
+        # 自己拼会把「取到了资料」这件事盖掉，只留下一句「已提炼 N 个核心概念」。
         concept_count = len(quiz.knowledge_points) or question_count
-        _advance(task_id, STEP_RETRIEVE, status="done", detail=f"已提炼 {concept_count} 个核心概念")
+        _advance(
+            task_id,
+            STEP_RETRIEVE,
+            status="done",
+            detail=outcome.first_step(concept_count=concept_count).detail,
+        )
         _advance(
             task_id,
             STEP_GENERATE,
@@ -361,8 +392,9 @@ def submit_quiz_request(
     check_content(cleaned)
 
     provider = search_provider or get_search_provider(s)
+    request = _build_search_request(cleaned, s)
     record = task_service.create_task(
-        "quiz", user_id=user_id, steps=_initial_steps(provider, question_count)
+        "quiz", user_id=user_id, steps=_initial_steps(provider, request, question_count)
     )
 
     _submit(
@@ -374,6 +406,7 @@ def submit_quiz_request(
             difficulty=difficulty,
             settings=s,
             search_provider=provider,
+            search_request=request,
         )
     )
 

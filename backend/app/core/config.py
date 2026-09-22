@@ -91,11 +91,42 @@ class Settings(BaseSettings):
     structured_output_primary: Literal["function_calling", "json_mode"] = "json_mode"
     structured_output_fallback: Literal["function_calling", "json_mode"] = "function_calling"
 
-    # ---------- 联网检索（MVP 关闭，仅保留抽象层）----------
+    # ---------- 联网检索 ----------
+    # 抽象层见 app/llm/search/。开关关 → NoopSearchProvider；开关开但 Provider 未实现、
+    # 名字拼错、或 key 为空 → 直接报 5000（**不静默降级成不联网**）。
+    # 理由见 docs/MVP开发计划.md §12.1 第 11 条：静默降级最糟 —— 配置明明打开，用户却以为在联网。
     knowledge_search_enabled: bool = False
     knowledge_search_provider: str = "none"
     bocha_api_key: str = ""
     tavily_api_key: str = ""
+
+    # 取材的硬上限（design D5）：多轮工具调用必须有界，否则一次慢请求就能吃掉出题预算。
+    search_agent_max_rounds: int = 3
+    search_agent_max_tool_calls: int = 4
+    search_agent_budget_seconds: int = 20
+    # 单次工具调用的超时（design D12）：上游 `langchain-tavily` 的 `requests.post`
+    # **没有** timeout（0.2.18 已核源码），网络黑洞会让线程无限等。
+    # 独立于 `quiz_timeout_seconds`：那是「整条出题链」的粒度，这里是「一次工具调用」。
+    search_tool_timeout_seconds: int = 8
+    # 每次 search 的结果条数。上游把它列为**实例级**参数（调用时传会抛
+    # `forbidden_params`），所以只能由服务端定，模型改不了 —— 见 design D2。
+    search_max_results: int = 5
+
+    # 资料注入 Prompt 的截断上限（design D14）。实测单页 `raw_content` 可达
+    # **74,801** 字符（Wikipedia 词条），而 `quiz_max_tokens` 只有 4096 ——
+    # 不截断就会把 Prompt 挤爆，表现是「模型答非所问」而不是报错。
+    # 三者关系必须满足 snippet < page < reference（有单测钉住）。
+    search_snippet_max_chars: int = 600
+    search_page_max_chars: int = 6000
+    search_reference_max_chars: int = 12000
+
+    # `country` 的地域偏好（design D3）。官方说明「只在 topic=general 时生效」。
+    # 中文输入 → `search_country_default`；英文输入 → `search_country_default_en`。
+    # 两者都设 `None` 即完全关掉地区偏好。
+    # ⚠️ 空字符串会被解析成 `None`（见 `_blank_country_is_none`），否则 `country=""`
+    # 会被原样传给上游 —— 不报错、也不生效，只表现为「地区偏好神秘失效」。
+    search_country_default: str | None = "china"
+    search_country_default_en: str | None = None
 
     # ---------- 异步任务 ----------
     quiz_task_ttl_seconds: int = 600
@@ -149,6 +180,19 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_origins(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("search_country_default", "search_country_default_en", mode="before")
+    @classmethod
+    def _blank_country_is_none(cls, v: object) -> object:
+        """空字符串 → `None`（= 关掉地区偏好）。
+
+        pydantic 对 `str | None` 会把 `""` 校验成 `""` 而不是 `None`，于是 `country=""`
+        会被原样交给上游：不报错、也不生效，只表现为「地区偏好神秘失效」。
+        而 `.env.example` 里留空占位是最自然的写法，所以这个兜底必须有。
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -31,14 +31,50 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
 | **`country` / `max_results` 只能实例化时设** | `TavilySearch._run` 的 `forbidden_params` 把它们列入禁用，调用时传会抛 `ValueError` |
 | search 的调用级参数 | `TavilySearchInput`：`query`、`search_depth`(basic/advanced/fast/ultra-fast)、`topic`(general/news/finance)、`time_range`(day/week/month/year)、`start_date`、`end_date`、`include_domains`、`exclude_domains`、`include_images` |
 | extract 的调用级参数 | `TavilyExtractInput`：`urls`、`extract_depth`(basic/advanced)、`query`、`include_images`；`chunks_per_source` / `format` 是实例级 |
-| **0 命中会抛 `ToolException`** | `TavilySearch._run` 在 `results` 为空时 `raise ToolException(...)`，并附官方给的放宽建议；`TavilyExtract._run` 在「无结果或全部 URL 失败」时同样抛 |
-| 工具的错误会伪装成正常返回 | 除 `ToolException` 外的一切异常（HTTP 非 200、参数被拦）都被 `except Exception` 吞成 `return {"error": e}` |
-| extract **不返回标题** | extract 响应是 `{results:[{url, raw_content, images}], failed_results:[...], response_time}`，没有 `title` |
-| 底层 HTTP 客户端 | `requests.post`（同步）/ `aiohttp`（异步），**不是 httpx**；且 `requests.post` **未设 timeout** |
-| `content` 的分块标记 | `chunks_per_source` 默认 3（上限 3），`content` 形如 `<chunk 1> [...] <chunk 2> [...] <chunk 3>` |
+| **0 命中会抛 `ToolException`** | `TavilySearch._run` 在 `results` 为空时 `raise ToolException(...)`，并附官方给的放宽建议；`TavilyExtract._run` 在「无结果或全部 URL 失败」时同样抛。**已实测确认**（见下「前置探查结论」④） |
+| 工具的错误会伪装成正常返回 | 除 `ToolException` 外的一切异常（HTTP 非 200、参数被拦）都被 `except Exception` 吞成 `return {"error": e}`，且 `e` 是**异常对象**（不是字符串）。**已实测确认**（⑤） |
+| extract 响应**含 `title`** | ~~原写「不返回标题」，**实测推翻**~~：`_run` 返回 `{results:[{url, title, raw_content, images}], failed_results, response_time, request_id}`，`title` 在（实测 `'What Is Harness Engineering for AI Agents? - Milvus'`） |
+| 底层 HTTP 客户端 | `requests.post`（同步）/ `aiohttp`（异步），**不是 httpx**；且 `requests.post` **未设 timeout**（`_utilities.py` 已复核，见下 0.3） |
+| `content` 的上游省略标记是 `[...]` | ~~原写形如 `<chunk 1> [...] <chunk 2>`，**实测部分推翻**~~：`search_depth=advanced` 下实测 `content` ≈ 1070–1283 字符，**没有 `<chunk n>` 标记**，只有字面 `[...]` 作为省略符（出现在句子中间）。清洗目标因此是 `[...]`，`<chunk` 只是防御性一并处理 |
+| **单页 `raw_content` 体积可达 7 万字符** | 实测：技术博客 22,916 字符；Wikipedia 词条 **74,801** 字符。⇒ 整页正文必须有自己的单页上限，否则一次 extract 就能挤爆 `quiz_max_tokens=4096`（见 D14） |
 | `language` 不可用 | Tavily API 有 `language` / `filter_by_language`，但 `TavilySearch` 既没做成实例参数、也没放进 `args_schema` |
 | `country` 只在 `topic=general` 生效 | 官方参数说明原文「Available only if topic is general」 |
+| `country` 实测确有偏向性 | 同一中文主题：`country="china"` → 5/5 命中标题为中文、域名为国内站（`hub.baai.ac.cn` / `zhihu` / `baike.baidu` / `csdn`）；不设 → 命中里混进英文站（`assets.kpmg.com`）。条数都是 5，差异在**来源语种**（见 D3） |
+| 部分站点**无法** extract | Tavily 自己的文档站回 `ToolException: No extracted results found for '[...]'`（该站不允许抓取）⇒「链接必读」必须有**诚实的降级**，不能假装读过（见 D4） |
 | 无 key 时构造即失败 | 不传 key 时 `api_wrapper` 走 `default_factory` → `validate_environment` 从环境变量取 `TAVILY_API_KEY`，取不到就抛（**构造期** ValidationError，不是调用期） |
+
+
+### 前置探查结论（第 0 组，真实 key + 真实网络实测）
+
+脚本：`backend/scripts/probe_tavily_tools.py`（`--only 3,4` 可只补测某几项；`--out` 由脚本自己
+按 UTF-8 写报告，**不要用 PowerShell 的 `*>`** —— PS 用 GBK 解子进程的 UTF-8 字节流会产生
+不可逆乱码）。以下为实测值，不是文档转述：
+
+| # | 问题 | 实测结论 |
+|---|---|---|
+| ① | DeepSeek `bind_tools` 能否返回 `tool_calls` | **能。** 一次返回 2 个调用，且模型**自发**选了 `search_depth='advanced'` 与中英双语 query ⇒ 调用级参数确实由模型现场决定 |
+| ② | 单条 `content` 体积与分段标记 | 5 条命中；单条 **1070 / 1166 / 1283** 字符；**无 `<chunk n>`**，只有字面 `[...]` 省略符；`include_raw_content=False` 时 `raw_content` 为 `None`。顶层键 `query / follow_up_questions / answer / images / results / response_time / request_id`，每条 `title / url / content / score / raw_content` |
+| ③ | `raw_content` 单页体积 / 有无 `title` | `_run()` 返回 `{results, failed_results, response_time, request_id}`，每条 `{url, **title**, raw_content, images}` ⇒ **`title` 是有的**。单页 **22,916** 字符（技术博客）/ **74,801** 字符（Wikipedia）。⚠️ 对被禁止抓取的站点（如 Tavily 自己的文档站）会抛 `ToolException: No extracted results found` |
+| ④ | 0 命中形态 | **抛 `ToolException`**；因 `handle_tool_error=True`，`invoke()` 把它转成 **`str`**（`No search results found for '"..."'. Suggestions: ...`）。对照组（有命中）返回 `dict`。⇒ **三种返回形态必须都认**：`dict`(带 results) / `dict`(带 error) / `str` |
+| ⑤ | HTTP/参数错误形态 | **不抛异常**，返回 `{'error': ValueError('Error 401: Unauthorized...')}` —— 值是**异常对象**。⇒ 不显式判 `error` 键就会把报错当命中 |
+| ⑥ | `country` 中英差异 | 条数相同（各 5 条）；`country='china'` → 5/5 中文标题、域名全为国内站；不设 → 混入 `assets.kpmg.com` 等英文站 ⇒ `country` 有效但是**语种偏好**而非命中率开关（见 D3） |
+
+**另记四个无效用例**（都是我自己第一轮踩的，别再犯）：
+
+1. `include_domains=[".invalid 域名"]` → 上游 400（验到的是 HTTP 失败，**不是** 0 命中）。
+2. `include_domains=["arxiv.org"]` + 乱码关键词 → 仍回 5 条，域名限定**没起过滤作用**。
+3. `start_date=未来` → 400 `start_date cannot be in the future`。
+4. `exact_match=True` + 不带引号的短语 → 400 `exact_match=true requires a quoted phrase`。
+
+**对 design 的修正**（按 tasks 0.3 的要求，先改 design 再继续）：
+
+- **D6 的第 3、4 条按上面 ④⑤ 重写**；`error` 的值是异常对象，判据要用 `"error" in res` 而非比较字符串。
+- **标题取值链改成四级**：`title`（响应里有）→ `raw_content` 首个 markdown 标题行 → URL host → 空串。
+  原写「上游不返回 title」是错的，`title` 优先级最高。
+- **新增 D14**：整页正文必须有独立的单页上限（实测单页可达 7.5 万字符）。
+- **D2 补一句成本事实**：模型自选的 `search_depth='advanced'` 按官方计费是 basic 的两倍额度。
+
+
 
 **技术约束：**
 
@@ -139,7 +175,26 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
     备注：本次 12 条 Requirement **没有一条属于「纯背景说明」**（全是约束），所以「不写成 Requirement」
     这条本次无适用对象，仅作为规则留下。
 
-## Decisions
+14. **⚠️ 实施期发现（第 2 组）：`tasks.md` 2.1 ④ 的「Noop 也遵守三态」与文案红线直接冲突，
+    已按「不改坏已交付行为 + 不许文案说谎」改写。**
+
+    - **冲突**：测试环境 `KNOWLEDGE_SEARCH_ENABLED=false` → `NoopSearchProvider`；
+      而接口层对不带 `use_search` 的请求按「开启」处理（`tasks.md` 7.1 ①）。
+      两者相遇时，若第一步名字只看 request，就会显示**「联网检索知识」**——
+      而 Noop 一次网络都不会碰。这正是红线上明令禁止的「文案与实现冲突」。
+      并且会打破已交付且在看护中的 `test_quiz_api.test_first_step_name_comes_from_search_provider`
+      （它断言此时第一步是「理解你的输入」）。
+    - **改法**：三态判定把**能力**一并算进去 —— `build_initial_step(request, can_search_web=…,
+      can_read_pages=…)`。`NoopSearchProvider` 两个能力都是 `False` ⇒ 恒为「理解你的输入」；
+      真正能联网的 Provider 才拿得到「联网检索知识」「读取你给的网页」。
+      这也让「用户意愿」与「后端能力」这两件事在代码里分开表达（前者在 `SearchRequest`，
+      后者是 Provider 的属性），不会再被混成一个布尔值。
+    - **顺带修正 D8/D7 的一处不自洽**：名字回答「在做什么」、不回答「做成了没有」，
+      所以 `first_step()` **不再改名字**（原实现在降级时会把名字改回「理解你的输入」），
+      只改 detail；`degraded` 也改成由「有没有资料」派生的属性，避免出现
+      「标着降级却带着 3 条资料」这种没人会发现的不一致。
+      用 `end_reason == "disabled"` 区分「压根没去取」与「去取了但没取到」，
+      后者的 detail 会如实写「未取到可用资料」。
 
 ### D1. 用官方 `langchain-tavily` 的两个工具，不用 httpx 直连（推翻原 D1）
 
@@ -157,8 +212,13 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
 
 | 层级 | search | extract | 谁决定 |
 |---|---|---|---|
-| **实例级**（构造时） | `country`、`max_results`、`include_answer`、`include_raw_content`、`include_images`、`include_image_descriptions`、`include_favicon`、`include_usage`、`auto_parameters`、`exact_match` | `chunks_per_source`、`format`、`include_favicon`、`include_usage` | **服务端**，按每次请求动态组装 |
+| **实例级**（构造时） | `country`、`max_results`、`include_answer`、`include_raw_content`、`include_image_descriptions`、`include_favicon`、`include_usage`、`auto_parameters`、`exact_match` | `chunks_per_source`、`format`、`include_favicon`、`include_usage` | **服务端**，按每次请求动态组装 |
 | **调用级**（模型现场可改） | `query`、`search_depth`、`topic`、`time_range`、`start_date`、`end_date`、`include_domains`、`exclude_domains`、`include_images` | `urls`、`extract_depth`、`query`、`include_images` | **模型**，由它按主题自行权衡 |
+
+> 实例级那一列的完整名单就是 `TavilySearch._run` 里的 `forbidden_params`
+> （已反射核对：`max_results` / `country` / `exact_match` / `auto_parameters` / `include_answer` /
+> `include_raw_content` / `include_image_descriptions` / `include_favicon` / `include_usage`）。
+> 注意 `include_images` **不在**其中，它是调用级的。
 
 对应到用户提的四条「动态」诉求：
 
@@ -168,6 +228,13 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
 | 简单的知识只要搜索摘要 | 模型只调 `tavily_search`，用默认 `basic` 深度取片段，不读整页 |
 | 动态调整结果条数 | **服务端**按计划题量决定 `max_results`（实例级）；模型想扩大覆盖就多调几次 |
 | 动态调整城市范围 | **服务端**按输入语种决定 `country`（实例级），见 D3 |
+
+**成本事实（实测得出，写进来是为了让「让模型自己选」不变成无人看管）**：模型在 ① 里**自发**
+选了 `search_depth='advanced'`。官方计费上 `basic` 是 1 个额度、`advanced` 是 2 个，
+所以「让模型自己决定深度」等于把额度消耗放进模型手里。可以接受的理由是它有硬上限
+（`search_agent_max_tool_calls` + `search_agent_budget_seconds`），但**必须让模型知道成本**——
+所以 Prompt 里对 `search_depth` 给一句默认指引（简单事实用 `basic`），而不是完全放任。
+
 
 - **为什么不打开 `include_raw_content`**：它是实例级开关，一旦打开就**无条件**给每条搜索结果
   附上整页正文（5 条结果可能就是几十万字符），既不可按需、又必然挤爆 `quiz_max_tokens=4096`。
@@ -187,6 +254,11 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
     `**kwargs`，其实能塞进去）—— 那不是公开契约，上游随时可以收紧，而失败形态是静默改变检索语言。
   - 替代手段：在 System Prompt 里要求模型**用与用户输入相同的语种**构造 `query`，并明确
     `topic` 除财经/重大新闻外保持 `general`（否则 `country` 失效）。
+- **实测效果（第 0 组 ⑥）**：同一中文主题下 `country="china"` 与不设 country 都命中 5 条，
+  差别只在**来源语种** —— 设了 china 时 5/5 是国内中文站（`hub.baai.ac.cn` / `zhihu` /
+  `baike.baidu` / `csdn`），不设时混进 `assets.kpmg.com` 这类英文站。
+  ⇒ `country` 是**语种/来源偏好**，不是命中率开关；对「中文主题拿到中文资料」确有帮助，
+  但不要指望它解决命中率问题。
 - **中文主题的命中率是本次最大的未知数**，端到端验证里必须专门跑一个中文新概念主题（见 `tasks.md` 第 11 组）。
 
 ### D4. 两条取材路径，用户给的链接必定被读
@@ -222,25 +294,37 @@ wheel 源码（`tavily_search.py` / `tavily_extract.py` / `_utilities.py`）与 
 - 每个上限触顶都要 **`logger.warning` 记一条**，并进 `SearchOutcome` 的追溯字段，这样「这次为什么只搜到 1 条」
   在日志里能直接看出来。
 
-### D6. 采集与清洗：四个必须显式处理的形态
+### D6. 采集与清洗：三种返回形态都必须显式处理（实测确定）
 
-从 `messages` 里收集所有 `ToolMessage` 并按工具名解析。**四种形态都必须显式处理，其中前两条会静默出错：**
+从 `messages` 里收集所有 `ToolMessage` 并按工具名解析。第 0 组实测出**三种返回形态**，
+其中前两条会静默出错（都长得像"成功的工具返回"）：
 
-1. **`{"error": ...}` 是"成功的工具返回"。** 上游把 HTTP 非 200、参数被拦等异常吞成了这个 dict，
-   它长得像一个正常的工具输出。采集器必须显式判 `error` 键 → 丢弃 + 记日志。不判就会把报错当命中。
-2. **`TavilyExtract` 不返回 `title`。** 标题取值顺序：`raw_content` 里第一个 markdown 标题行（`# ` / `## `）
-   → 该 URL 的 host → 空字符串。**不编造标题**。
-3. **`ToolException` 不是结果。** 它是官方在「0 命中」时抛的，`handle_tool_error=True` 让 LangChain 把它
-   变成一段给模型看的错误文本（含官方给的放宽建议），模型据此自己决定要不要重试。采集器把整段文本当
-   「无结果」处理，不做任何解析。
-4. **`<chunk n> [...]` 分隔标记必须清洗。** `chunks_per_source` 默认 3，`content` 会带这些标记，不清洗就原样进 Prompt。
+1. **`dict` + `{"error": <异常对象>}` = 调用失败，但它是"正常返回"。**
+   上游 `except Exception` 把 HTTP 非 200、参数被拦等吞成这个 dict（实测 401/400 都是这个形态，
+   值是 `ValueError` **对象**而不是字符串）。采集器必须用 `"error" in res` 判 → 丢弃 + 记日志。
+   不判就会把报错当命中。
+2. **`str` = 0 命中。** `_run` 在 `results` 为空时抛 `ToolException`，而
+   `handle_tool_error=True` 让 LangChain 把它转成**一段字符串**（`No search results found for '...'.`
+   外加官方给的放宽建议）。**整段当「无结果」处理，不做任何解析**；绝不能当正文。
+   ⇒ 因为「字符串」这个形态本身就有歧义，实现时把工具的 `handle_tool_error` **显式设为 `False`**，
+   让 0 命中以 `ToolException` 抛出、由循环自己捕获 —— 严格来说更干净。但**两种都要按同一语义处理**，
+   以免上游改默认值后行为漂移（`handle_tool_error` 的上游默认值恰好就是 `True`）。
+3. **标题取值链是四级**（~~原写「extract 不返回 title」是错的~~）：
+   `title`（extract 响应里**有**，实测 `'What Is Harness Engineering for AI Agents? - Milvus'`）
+   → `raw_content` 里第一个 markdown 标题行（`# ` / `## `）→ 该 URL 的 host → 空字符串。
+   **不编造标题。**
+4. **`[...]` 省略符必须清洗。** 实测 `content` **没有** `<chunk n>` 标记（`search_depth=advanced`
+   下也只有字面 `[...]` 出现在句子中间）。清洗目标是 `[...]`；`<chunk` 只是**防御性**一并处理
+   （上游改了 `chunks_per_source` 的呈现方式时不会漏）。不清洗就原样进 Prompt。
 
 另有三条收尾规则：
 
 - 按 URL 去重（同一 URL 先 search 命中、后 extract 整页时，**保留更完整的那个**并标记为 `page`）。
-- 单条与总量都截断：单条 `snippet` 上限 `search_snippet_max_chars`，注入 Prompt 的总量上限沿用同一组常量 ——
+- 单条与总量都截断：单条 `snippet` 上限 `search_snippet_max_chars`，**整页正文上限
+  `search_page_max_chars`**（见 D14），注入 Prompt 的总量上限沿用同一组常量 ——
   **两处必须共用一个常量**，各写一个数字就会变成两个事实。
 - 未知返回形状（上游改版）→ 记 `logger.warning` 并跳过该条，**不抛异常**。
+
 
 ### D7. `degraded` 的含义统一为「本轮取材结束后，没有任何可用资料」
 
@@ -369,6 +453,21 @@ class SearchProvider(Protocol):
   key 为空之所以算配置错误而不是降级：这时的表现是「开关显示开着、配置写着开着，实际一次都没联网」，
   是最难发现的一类谎报。
 - 不新增 `ErrorCode` 成员：本次没有新的用户可见失败态，出题失败仍是 5001。
+
+### D14. 整页正文必须有独立的单页上限（第 0 组实测新增）
+
+**为什么必须有**：实测单页 `raw_content` 是 **22,916** 字符（技术博客）与 **74,801** 字符
+（Wikipedia 词条）。而 `quiz_max_tokens=4096`、出题 Prompt 里还要放题干要求与 JSON 示例 ——
+**一次 extract 就能把 Prompt 挤爆**，而挤爆的表象是「模型答非所问」而不是报错。
+
+- 新增配置 `search_page_max_chars`（默认取一个远小于 `quiz_max_tokens` 能容纳的量级）。
+  它与 `search_snippet_max_chars` 一起集中在 `base.py` 的注入上限常量里（`tasks.md` 2.2），
+  **采集器与 Prompt 注入共用同一组常量**。
+- 截断位置取**开头**（正文开头通常是定义与背景，对出题最有用），截断处加显式省略标记。
+- 一个页面被截断这件事**不进用户可见文案**（用户不需要知道），但进 `logger.info`，
+  便于排查「为什么这题的讲解比页面浅」。
+- **不做**「按 query 相似度选段落」这类召回增强：那需要 embedding 与额外调用，
+  是另一个变更的规模（列入 `## Open Questions`）。
 
 ## 与项目硬约束的对应
 

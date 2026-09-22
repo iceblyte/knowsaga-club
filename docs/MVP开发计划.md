@@ -792,6 +792,41 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
   `node_modules` 里存在大量本就没有 JS 入口的包（纯二进制 `@esbuild/win32-x64`、
   纯数据 `node-releases`、纯类型 `@types/*`），替它们假设入口只会制造噪音。
 
+### 12.3 联网检索前置探查（2026-09-22 实测，`add-web-search-grounding` 第 0 组）
+
+> 脚本 `backend/scripts/probe_tavily_tools.py`（**不进 pytest** —— 必须联网且必须花真实额度）。
+> 用法：`cd backend && ./.venv/Scripts/python.exe scripts/probe_tavily_tools.py [--only 3,4] [--out report.txt]`。
+> ⚠️ 落盘**必须用 `--out`**，不要用 PowerShell 的 `*>`：PS 会用控制台编码（GBK）去解本进程的
+> UTF-8 字节流，中文标题会变成**不可逆**乱码（部分字节落进 PUA，回解失败）。
+>
+> 依赖：`langchain-tavily==0.2.18`（要求 `langchain-core>=1.2.11`、`langchain>=1.0.0`，
+> 本机 1.6.3 / 1.4.0 **兼容**，`pip check` 干净，**既有包一个都没被升级**）。
+
+| # | 问题 | 实测结论 |
+|---|---|---|
+| ① | DeepSeek `bind_tools` 能否返回 `tool_calls` | **能。** 一次返回 2 个调用，且模型**自发**选了 `search_depth='advanced'` 与中英双语 query ⇒ 调用级参数确实由模型现场决定 |
+| ② | `tavily_search` 单条 `content` 体积与分段标记 | 命中 5 条；单条 **1070 / 1166 / 1283** 字符；**没有 `<chunk n>` 标记**，只有字面 `[...]` 省略符（出现在句子中间）；`include_raw_content=False` 时 `raw_content` 为 `None`。顶层键 `query / follow_up_questions / answer / images / results / response_time / request_id`，每条 `title / url / content / score / raw_content` |
+| ③ | `tavily_extract` 单页体积与有无 `title` | `_run()` 返回 `{results, failed_results, response_time, request_id}`，每条 `{url, **title**, raw_content, images}` ⇒ **`title` 是有的**。单页 **22,916** 字符（技术博客）/ **74,801** 字符（Wikipedia 词条）。⚠️ 对被禁止抓取的站点（含 Tavily 自己的文档站）会抛 `ToolException: No extracted results found` |
+| ④ | 0 命中的返回形态 | **抛 `ToolException`**；因上游 `handle_tool_error=True`，`invoke()` 把它转成 **`str`**（`No search results found for '"..."'. Suggestions: ...`）。有命中的对照组返回 `dict` ⇒ **三种返回形态必须都认** |
+| ⑤ | HTTP / 参数错误的返回形态 | **不抛异常**，返回 `{'error': ValueError('Error 401: Unauthorized...')}` —— 值是**异常对象**，不是字符串 ⇒ 不显式判 `error` 键就会把报错当命中 |
+| ⑥ | 同一中文主题的 `country` 差异 | 条数相同（各 5 条）。`country='china'` → 5/5 中文标题、域名全为国内站（`hub.baai.ac.cn` / `zhihu` / `baike.baidu` / `csdn`）；不设 → 混进 `assets.kpmg.com` 等英文站 ⇒ `country` 是**来源语种偏好**，不是命中率开关 |
+
+**四个无效用例（第一轮踩过的，别再犯）**：① `include_domains` 给非法域名 → 上游 400，
+验到的是 HTTP 失败而**不是** 0 命中；② `include_domains=["arxiv.org"]` + 乱码关键词 → 仍回 5 条，
+域名限定**没起过滤作用**；③ `start_date` 给未来日期 → 400 `start_date cannot be in the future`；
+④ `exact_match=True` 不带引号短语 → 400 `exact_match=true requires a quoted phrase`。
+**真正能搜空的姿势**：`exact_match=True` + **带引号**的必然不存在的短语（这才是 ④ 的用例）。
+
+**由此产生的设计修正**（已同步进 `design.md`）：
+
+- extract **有** `title` ⇒ 标题取值链改为**四级**：`title` → `raw_content` 首个 markdown 标题行 →
+  URL 的 host → 空串。
+- 省略标记是 `[...]`、**不是** `<chunk n>` ⇒ 清洗目标随之改（`<chunk` 只作防御性处理）。
+- 单页可达 **7.5 万字符**，而 `quiz_max_tokens=4096` ⇒ **新增 `search_page_max_chars`**，
+  整页正文必须有独立单页上限（`design.md` D14）。
+- 模型会自发选 `search_depth='advanced'`（官方计费是 `basic` 的 **2 倍**）⇒ Prompt 里要给一句
+  默认深度指引，不能完全放任。
+
 ---
 
 **当前状态：Phase 0 已完成；Phase 1（后端）已完成 —— 1.1–1.14，170 个测试全绿、总覆盖率 90%，真实 API 抽验 10/10 可渲染。

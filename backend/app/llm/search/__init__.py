@@ -1,12 +1,10 @@
 """检索 Provider 的选择入口。
 
-`docs/方案设计文档.md` 的目录结构里列了 `search/{base,noop,bocha,tavily}.py`，
-但已确认的范围是 **MVP 只启用 noop**。所以这里只落地了 `base` 与 `noop`，
-`bocha` / `tavily` 没有写成空文件 —— 一个从不被调用的空壳既无法测试，
-也会让人误以为已经支持。
+当前已落地的实现只有 `noop`（`NoopSearchProvider`）—— 真实检索见下方 `_PROVIDERS` 的登记情况。
+`bocha` 仍是「规划中但未接入」，命中它会报「尚未接入」而不是静默降级。
 
-真要接入时，按 `base.SearchProvider` 实现两个属性 + 一个方法，再在下面的
-`_PROVIDERS` 里登记即可；`get_search_provider` 会立刻开始返回它，
+要接入一个新 Provider：按 `base.SearchProvider` 实现两个能力开关 + `initial_step()` + `gather()`，
+再在下面的 `_PROVIDERS` 里登记即可；`get_search_provider` 会立刻开始返回它，
 其余代码（进度文案、Prompt 参考资料段落）都不用改。
 """
 
@@ -15,7 +13,14 @@ from __future__ import annotations
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError, ErrorCode
 from app.core.logging import get_logger
-from app.llm.search.base import SearchOutcome, SearchProvider, SearchResult, StepDescriptor
+from app.llm.search.base import (
+    ReferenceCaps,
+    SearchOutcome,
+    SearchProvider,
+    SearchRequest,
+    SearchResult,
+    StepDescriptor,
+)
 from app.llm.search.noop import NoopSearchProvider
 
 logger = get_logger(__name__)
@@ -64,8 +69,10 @@ def get_search_provider(settings: Settings | None = None) -> SearchProvider:
 
 __all__ = [
     "NoopSearchProvider",
+    "ReferenceCaps",
     "SearchOutcome",
     "SearchProvider",
+    "SearchRequest",
     "SearchResult",
     "StepDescriptor",
     "get_search_provider",
