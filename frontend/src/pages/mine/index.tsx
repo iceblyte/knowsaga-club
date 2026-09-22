@@ -17,9 +17,9 @@
  * 全部列入要去掉的名单），所以这里连占位都不给 —— 标题居中由
  * `PhoneShell` 自己保留等宽空白来维持。
  *
- * ## 入口行从三行变成了六行
+ * ## 入口行从三行变成了五行
  *
- * 原型 04·1 只有三个入口行。另外三行都不是「顺手加的」，每一行都补掉了
+ * 原型 04·1 只有三个入口行。另外两行都不是「顺手加的」，每一行都补掉了
  * 一个**在原型里无处安放**的页面：
  *
  * - **错题本（04·7）**：原型的标签栏把 04·7 划给「我的」，但它不在
@@ -32,8 +32,15 @@
  *   去掉 —— 于是它在原型里唯一的位置没有了。设置是 Phase E 的页面，
  *   必须有一个**看得见**的入口，所以按其它入口行的做法落在这里。
  *
- * 历史卷轴（04·5 / 04·6）那一行也不再是占位：它已随 Phase E 落地，
- * 与知识树、勋章墙一样直接跳转。
+ * 知识树与勋章墙仍按原型直接跳转。
+ *
+ * ## 「历史卷轴」那一行已被移除（本轮修复第 7 条）
+ *
+ * 原型这里有一行「历史卷轴」（04·5）。它与标签页「冒险日志」是同一件东西的
+ * 两个入口 —— 两处都列同一份 `attempts`、都跳 `profile/scroll-detail`。
+ * 现在「冒险日志」标签页自己在顶部列出全部日志供选择，这一行就成了同一个
+ * 列表的第二个副本，所以去掉。`pages/profile/scrolls/index` 这个路由**没有删**：
+ * 报告页的断网态与全局断网页的「查看历史日志」仍然指向它，它依旧可达。
  *
  * ## 数字不在这里算
  *
@@ -51,9 +58,24 @@
  *
  * 在设置页换过头像或昵称之后回到这一屏，也靠它刷新 ——
  * 「设置里改完、个人中心还是旧的」是这类页面最典型的一种不一致。
+ *
+ * ## 身份卡现在可以点（本轮修复）
+ *
+ * 原来改头像/昵称只有一条路：往下滚到入口列 → 设置 → 头像与昵称，两跳。
+ * 用户看到自己的头像与昵称，第一反应是**点它** —— 点了没反应，就以为
+ * 这个功能没做。现在整行可点，直接进 07·4；右上角补一颗「编辑」胶囊
+ * 把「可点」这件事说出来（可点本身没有视觉暗示）。
+ *
+ * ## 入口行为什么走 `navigate` 而不是 `redirect`（本轮修复）
+ *
+ * 这一页是**标签页**，也就是页面栈的根。原来这些入口用的是默认的
+ * `redirectTo` —— 它会把当前页关掉，于是栈里只剩子页面一页。
+ * 子页面的返回键 `navigateBack` 找不到上一页，兜底逻辑就把用户
+ * **送回了社团大厅**（看起来像「返回按钮坏了」）。
+ * 改 `navigate` 后栈是「我的 → 子页面」，返回就是回到这一屏。
  */
 
-import { Text, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import { useDidShow } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 
@@ -61,14 +83,37 @@ import ArchiveState from '../../components/ArchiveState'
 import Avatar from '../../components/Avatar'
 import PhoneShell from '../../components/PhoneShell'
 import ReminderPrompt from '../../components/ReminderPrompt'
+import { PROFILE_ICONS, type ProfileIconName } from '../../assets/profile-icons'
 import { ARCHIVE_COMMON, PROFILE_COPY } from '../../constants/copy'
 import { useAsyncData } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
 import { fetchProfile } from '../../services/archive'
 import { goPage } from '../../utils/navigation'
-import { styleOf } from '../../utils/style'
+import { squareStyle, styleOf } from '../../utils/style'
 
 import './index.scss'
+
+/**
+ * 入口行图标在 28px 方块里的实际绘制尺寸（原型 px）。
+ *
+ * 方块是 `$size-li-ico`（28 × 2.259 ≈ 63rpx），图标留一圈内边距 ——
+ * 顶满会让六个图标在视觉上比原来的汉字重得多。18 × 2.259 ≈ 41rpx。
+ */
+const ROW_ICON_RPX = 41
+
+/** 入口行左侧的图标方块。底色与尺寸都仍由全局 `.ico` 给，这里只换里面的孩子。 */
+function RowIcon({ name }: { name: ProfileIconName }) {
+  return (
+    <View className='ico'>
+      <Image
+        className='profile__row-ico'
+        src={PROFILE_ICONS[name]}
+        mode='aspectFit'
+        style={squareStyle(ROW_ICON_RPX)}
+      />
+    </View>
+  )
+}
 
 export default function MinePage() {
   useTabPage('mine')
@@ -105,6 +150,15 @@ export default function MinePage() {
   const { user, stats } = data
   const maxed = user.xp_to_next_level <= 0
 
+  /**
+   * 身份卡 → 07·4「头像与昵称」。
+   *
+   * 用 `navigate`（不是默认的 `redirect`）：这一页是标签页、是页面栈的根，
+   * `redirectTo` 会把它一起关掉，子页面的返回键就没有上一页可回 ——
+   * 表现就是「点左上角返回，直接回到了社团大厅」。
+   */
+  const goEditIdentity = () => goPage('/pages/settings/profile/index', 'navigate')
+
   return (
     <PhoneShell navTitle={PROFILE_COPY.navTitle} showBack={false} reserveTabBar>
       {/* ---- 今日有到期错题的页内提示（方案 §8.5）----
@@ -113,7 +167,10 @@ export default function MinePage() {
 
       {/* ---- 身份卡 ---- */}
       <View className='card gold'>
-        <View className='row profile__who'>
+        {/* 整行可点：点头像或昵称就能改（见文件头「身份卡现在可以点」）。
+            右侧的「编辑」胶囊把「可点」这件事说出来 —— 只给热区不给暗示，
+            用户仍然不会去点。 */}
+        <View className='row profile__who' onClick={goEditIdentity}>
           <Avatar avatarKey={user.avatar_key} avatarUrl={user.avatar_url} size={58} />
 
           <View className='profile__who-body'>
@@ -124,6 +181,10 @@ export default function MinePage() {
               <Text className='pill blue'>{user.level_title}</Text>
             </View>
           </View>
+
+          {/* 这一颗是**动作**不是状态（同页其它 `.pill` 都是状态：Lv.3 / 见习冒险者），
+              所以走 `.pill.solid` 的实心蓝，与「查看」那几行的淡底胶囊区分开 */}
+          <Text className='pill solid profile__edit'>{PROFILE_COPY.editIdentity}</Text>
         </View>
 
         <View className='profile__gap-lg' />
@@ -166,8 +227,11 @@ export default function MinePage() {
           直接铺在纸板上、不套卡片：原型里这几行就是「账本横格行」
           （`.li` 自带虚线分隔），套一层卡片反而会变成几张一模一样的圆角卡。 */}
       <View className='profile__rows'>
-        <View className='li' onClick={() => goPage('/pages/profile/knowledge-tree/index')}>
-          <View className='ico'>{PROFILE_COPY.iconTree}</View>
+        <View
+          className='li'
+          onClick={() => goPage('/pages/profile/knowledge-tree/index', 'navigate')}
+        >
+          <RowIcon name='knowledgeTree' />
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowKnowledgeTree}</View>
             <View className='d'>{PROFILE_COPY.rowKnowledgeTreeDesc(stats.lit_kp_count)}</View>
@@ -177,8 +241,8 @@ export default function MinePage() {
 
         {/* 错题本（04·7）。原型把这一屏划给「我的」却没有给它入口行，
             于是没有到期错题的时期它整页不可达 —— 理由见 `PROFILE_COPY.rowReview`。 */}
-        <View className='li' onClick={() => goPage('/pages/profile/review/index')}>
-          <View className='ico'>{PROFILE_COPY.iconReview}</View>
+        <View className='li' onClick={() => goPage('/pages/profile/review/index', 'navigate')}>
+          <RowIcon name='review' />
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowReview}</View>
             <View className='d'>{PROFILE_COPY.rowReviewDesc}</View>
@@ -186,18 +250,15 @@ export default function MinePage() {
           <Text className='pill'>{PROFILE_COPY.rowView}</Text>
         </View>
 
-        {/* 历史卷轴（04·5 / 04·6）已随 Phase E 落地，不再是「点了没反应」的占位 */}
-        <View className='li' onClick={() => goPage('/pages/profile/scrolls/index')}>
-          <View className='ico'>{PROFILE_COPY.iconScroll}</View>
-          <View className='tx'>
-            <View className='n'>{PROFILE_COPY.rowScrolls}</View>
-            <View className='d'>{PROFILE_COPY.rowScrollsDesc(stats.scroll_count)}</View>
-          </View>
-          <Text className='pill'>{stats.scroll_count}</Text>
-        </View>
+        {/* ⚠️ 原型的「历史卷轴」（04·5）这一行**已被移除**（本轮修复第 7 条）。
+            它与标签页「冒险日志」是同一件东西的两个入口：两处都列同一个
+            `attempts` 列表、都跳 `profile/scroll-detail`。现在「冒险日志」标签页
+            自己在顶部列出全部日志供选择，这里再放一行就是同一个列表的第二个副本。
+            `pages/profile/scrolls/index` 这个路由**没有删** —— 报告页的断网态
+            与全局断网页的「查看历史日志」仍然指向它，它依旧可达。 */}
 
-        <View className='li' onClick={() => goPage('/pages/profile/badges/index')}>
-          <View className='ico'>{PROFILE_COPY.iconBadge}</View>
+        <View className='li' onClick={() => goPage('/pages/profile/badges/index', 'navigate')}>
+          <RowIcon name='badges' />
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowBadges}</View>
             <View className='d'>
@@ -210,8 +271,8 @@ export default function MinePage() {
         {/* 公会卡（04·2）。原型只有上面三行，这一行是 Phase E 新增的入口 ——
             04·2 需要一个入口，而把身份卡做成隐式按钮（原型没有任何可点的暗示）
             是另一种形式的不可发现。理由见 `PROFILE_COPY.rowCard` 的说明。 */}
-        <View className='li' onClick={() => goPage('/pages/profile/card/index')}>
-          <View className='ico'>{PROFILE_COPY.iconCard}</View>
+        <View className='li' onClick={() => goPage('/pages/profile/card/index', 'navigate')}>
+          <RowIcon name='card' />
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowCard}</View>
             <View className='d'>{PROFILE_COPY.rowCardDesc}</View>
@@ -221,8 +282,8 @@ export default function MinePage() {
 
         {/* 设置（07·5）。原型的「设置」长在导览栏右侧，而那一处全站不放文字，
             所以它按其它入口行的做法落进这一列。理由见 `PROFILE_COPY.rowSettings`。 */}
-        <View className='li' onClick={() => goPage('/pages/settings/index')}>
-          <View className='ico'>{PROFILE_COPY.iconSettings}</View>
+        <View className='li' onClick={() => goPage('/pages/settings/index', 'navigate')}>
+          <RowIcon name='settings' />
           <View className='tx'>
             <View className='n'>{PROFILE_COPY.rowSettings}</View>
             <View className='d'>{PROFILE_COPY.rowSettingsDesc}</View>

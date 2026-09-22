@@ -3,7 +3,7 @@
  *
  * 全屏只有一个目标：让用户把想学的东西写下来。所以：
  * - 输入区占满剩余高度（`.scrollbox{flex:1}`），视觉上就是页面的主角
- * - 空态给推荐 chip 减少键盘输入（能显著提升首题生成率）
+ * - 空态给预设热门问题 chip，**点一下直接召唤**（见下）
  * - 已输入态把 chip 换成「追加资料」类动作
  *
  * 与原型的两处说明：
@@ -15,11 +15,22 @@
  * 3. 底部那张冒险者档案卡（等级 / 累计 XP / 连续天数）原本是写死的演示数据，
  *    现在读 `GET /users/me`。它是这一屏唯一需要联网的东西，所以它自己
  *    承担加载态 —— 读不到时只出占位符，整屏不因此变成空页面。见 `HALL_PROFILE_COPY`。
+ *
+ * ## 预设问题从「填入输入框」改成了「直接召唤」（本轮修复第 4 条）
+ *
+ * 原来点 chip 只是把它填进输入框，用户还得自己再点一次「召唤副本」。
+ * 空态放 chip 的全部意义是「少打字、快点出题」，只填不发等于把省下的
+ * 那一步又还回去 —— 用户的反馈正是「点了没反应、发不出去」。
+ * 现在点击即走，并且同一句话也写进 `useAppStore.userInput`：召唤页点返回时
+ * 输入框里仍是这一条，可以改几个字再发。
+ *
+ * ⚠️ 换文案时要守住「每一条 ≥ 8 字」（`INPUT_MIN_LEN`，真源在后端
+ * `text_cleaner`）—— 短于 8 字的一键发送会被服务端判 4001。
  */
 
 import { Button, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import PhoneShell from '../../components/PhoneShell'
 import ReminderPrompt from '../../components/ReminderPrompt'
@@ -97,20 +108,26 @@ export default function HallPage() {
   const canSubmit = trimmedLen >= INPUT_MIN_LEN
   const hasInput = trimmedLen > 0
 
-  /** 空态用推荐 chip，已输入态换成追加资料类动作 */
-  const chips = useMemo(
-    () => (hasInput ? [...MOCK_ATTACH_CHIPS] : [...MOCK_SUGGESTIONS]),
-    [hasInput]
-  )
+  /**
+   * 点预设问题 = **直接召唤**（本轮修复第 4 条）。
+   *
+   * 原来这里只把问题填进输入框，用户还得自己再点一次「召唤副本」——
+   * 而空态放 chip 的全部意义就是「少打字、快点出题」，只填不发等于
+   * 把省下的那一步又还回去了（用户的反馈正是「点了一直没反应」）。
+   *
+   * 同时写进 store，而不是只传参：召唤页读的是 `useAppStore.userInput`，
+   * 而输入框里也留着同一句话 —— 用户在召唤页点返回，看到的仍是他点的那一条，
+   * 可以直接改几个字再发（而不是回到一个空输入框）。
+   */
+  const summonWithPreset = (question: string) => {
+    setDraft(question)
+    setUserInput(question)
+    goPage('/pages/summon/index', 'navigate')
+  }
 
-  const handleChipTap = (chip: string) => {
-    if (hasInput) {
-      // P1 能力，明确告知而不是静默失败
-      Taro.showToast({ title: COMMON_COPY.comingSoon, icon: 'none' })
-      return
-    }
-    const next = draft ? `${draft}${draft.endsWith(' ') ? '' : ' '}${chip}` : chip
-    setDraft(next.slice(0, INPUT_MAX_LEN))
+  const handleAttachTap = () => {
+    // P1 能力，明确告知而不是静默失败
+    Taro.showToast({ title: COMMON_COPY.comingSoon, icon: 'none' })
   }
 
   const handleSubmit = () => {
@@ -176,14 +193,33 @@ export default function HallPage() {
         </View>
       </View>
 
-      {/* 推荐 / 追加资料 chip */}
-      <View className='row hall__chips'>
-        {chips.map((chip) => (
-          <Text key={chip} className='chip' onClick={() => handleChipTap(chip)}>
-            {chip}
-          </Text>
-        ))}
-      </View>
+      {/* 空态：预设热门问题 / 已输入态：追加资料 chip。
+          两种状态的 chip **动作完全不同**（一个是「立刻出题」，
+          一个是「本期还没做的多源输入」），所以不再共用一个 handler。 */}
+      {hasInput ? (
+        <View className='row hall__chips'>
+          {MOCK_ATTACH_CHIPS.map((chip) => (
+            <Text key={chip} className='chip' onClick={handleAttachTap}>
+              {chip}
+            </Text>
+          ))}
+        </View>
+      ) : (
+        <>
+          {/* 一句说明不能省：chip 上没有任何「点一下会直接开始出题」的暗示，
+              不写出来用户会以为它和原来一样只负责填空 */}
+          <View className='tiny hall__chips-label'>
+            热门问题 · 点一下直接召唤副本
+          </View>
+          <View className='row hall__chips'>
+            {MOCK_SUGGESTIONS.map((question) => (
+              <Text key={question} className='chip' onClick={() => summonWithPreset(question)}>
+                {question}
+              </Text>
+            ))}
+          </View>
+        </>
+      )}
 
       <Button className={`btn${canSubmit ? '' : ' dis'}`} disabled={!canSubmit} onClick={handleSubmit}>
         召唤副本

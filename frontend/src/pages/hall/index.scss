@@ -64,6 +64,13 @@
   gap: rpx(6);
 }
 
+// 预设问题那一行前面的说明（见页面里 `summonWithPreset` 的注释）。
+// 它只在空态出现，位置正是原来那行 chip 的地方 —— 所以要自己补
+// 一点下边距，否则会与紧接着的 chip 贴在一起。
+.hall__chips-label {
+  margin-bottom: rpx(6);
+}
+
 // 冒险者档案行：原型内联 gap:9px（比基座 .row 的 8px 稍宽，因为要托住 32px 的头像）
 .hall__adventurer {
   gap: rpx(9);

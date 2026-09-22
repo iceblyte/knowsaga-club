@@ -71,7 +71,10 @@ export default function ReminderPrompt({ refreshKey }: ReminderPromptProps) {
   if (!summary) return null
 
   return (
-    <View className='reminder-prompt' onClick={() => goPage('/pages/profile/reminder/index')}>
+    // `navigate`（不是默认的 `redirect`）：这个组件挂在大厅与个人中心上，
+    // 两处都是标签页、都在页面栈的根。`redirect` 会把当前页关掉，
+    // 复习提醒页的返回键就没有上一页可回 —— 表现是「点返回直接回社团大厅」。
+    <View className='reminder-prompt' onClick={() => goPage('/pages/profile/reminder/index', 'navigate')}>
       {/* 鸢鸢负责「传递 / 提醒」这一语义域（00-设计规范） */}
       <Sprite name='yuanyuan' size={28} />
 

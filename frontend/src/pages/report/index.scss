@@ -91,4 +91,31 @@
   &__step-gap {
     height: $sp-6;
   }
+
+  // ---- 全部日志的选择器（本轮修复第 7 条）----
+  &__logs-label {
+    display: block;
+    // 它是这一列的第一块，原型里 `.screen` 的 10px 间距在这里够用，
+    // 但要与下面的 chip 行贴得更近一些，读起来才是一组
+    margin-bottom: rpx(6);
+  }
+
+  &__logs {
+    flex-wrap: wrap;
+    gap: rpx(6);
+  }
+
+  // 选中态：与 04·5 的筛选 chip 同一套「实心蓝底白字」。
+  // 这一行是唯一的导航控件，必须一眼看出当前在看哪一份。
+  // 带上 `.chip` 提高优先级 —— 页面样式与 base 样式由 Taro 分别编译，先后顺序不稳。
+  .chip.report__log--on {
+    background: $magic;
+    color: $on-magic;
+    border-color: $magic;
+  }
+
+  &__logs-more {
+    margin-top: rpx(6);
+    text-align: center;
+  }
 }

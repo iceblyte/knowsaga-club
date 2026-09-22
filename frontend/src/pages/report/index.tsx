@@ -29,25 +29,46 @@
  * 「连不上服务器」与「服务器说这次生成失败了」的下一步动作不同：
  * 前者要检查网络重连，后者要重新生成报告。合成一个「出错了」的提示，
  * 用户就不知道该做什么（而原型的图注明确要求给出具体原因与动作）。
+ *
+ * ## 这一栏现在能看到**全部**日志（本轮修复第 7 条）
+ *
+ * 原来它只呈现 store 里那**一局**：刚打完就走这一局，重开小程序就是空态
+ * 「日志本还是空的」—— 可用户的记录明明都还在服务端。想看上一次的成绩，
+ * 唯一的路是绕到「我的 → 历史卷轴」，而那是同一个 `attempts` 列表的
+ * 第二个副本（同一个后端接口、同一个详情页）。
+ *
+ * 所以现在：
+ *
+ * 1. 顶部列出最近 20 份日志，点哪一条就复盘哪一条（`pickLog`）；
+ * 2. 没有「刚打完的一局」时**默认选中最新的一份**，不再是空态；
+ * 3. 「我的」页里的「历史卷轴」入口行随之删除（去重），
+ *    但 `pages/profile/scrolls/index` 这个路由保留 ——
+ *    筛选、翻页、长按删除仍在那边，这一栏只放一个「查看全部日志」指过去。
+ *
+ * ⚠️ 列表取不到时**不能说「日志本还是空的」**：那是在冤枉用户。
+ * 所以 `!attemptId` 那一支分三态（加载中 / 取不到 / 真的没有）。
  */
 
 import { Button, Text, View } from '@tarojs/components'
 import Taro, { useDidShow, useShareAppMessage } from '@tarojs/taro'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import AccuracyRing from '../../components/AccuracyRing'
+import ArchiveState from '../../components/ArchiveState'
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
 import Sprite from '../../components/Sprite'
 import { CLIENT_ERROR_CODE } from '../../constants/api'
-import { REPORT_COPY, REPORT_ERROR_TEXT } from '../../constants/copy'
+import { ARCHIVE_COMMON, REPORT_COPY, REPORT_ERROR_TEXT } from '../../constants/copy'
+import type { AsyncStatus } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
+import { fetchScrolls } from '../../services/archive'
 import { createReportTask } from '../../services/report'
 import { pollTask } from '../../services/quiz'
 import { ApiError } from '../../services/request'
 import { useReportStore } from '../../store/useReportStore'
 import { useQuizStore } from '../../store/useQuizStore'
-import type { StepStatus, TaskRecord, TaskStep } from '../../types/api'
+import type { ScrollItem, StepStatus, TaskRecord, TaskStep } from '../../types/api'
 import { formatDate, formatDuration, formatSeconds } from '../../utils/datetime'
 import { goPage, goTab } from '../../utils/navigation'
 import { isH5 } from '../../utils/platform'
@@ -60,6 +81,21 @@ const FALLBACK_STEPS: TaskStep[] = [
   { key: 'review', name: '回看这次作答', status: 'pending', detail: '准备中' },
   { key: 'compose', name: '撰写复盘报告', status: 'pending', detail: '等待中' }
 ]
+
+/**
+ * 页内日志列表取几条。
+ *
+ * 取 20（服务端一页的默认值）而不是「全部」：这一栏是**切换查看**用的，
+ * 不是完整的历史管理页（筛选、翻页、删除在 04·5）。超出的部分由
+ * 「查看全部日志」指过去，而不是在这里无限拉。
+ */
+const LOG_PICKER_SIZE = 20
+
+/** 胶囊里放不下整个标题，与召唤页的副标题同一个做法 */
+function shortenTitle(text: string, limit = 8): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat
+}
 
 const STEP_PILL: Record<StepStatus, { text: string; cls: string } | null> = {
   done: { text: '完成', cls: '' },
@@ -91,6 +127,81 @@ export default function ReportPage() {
   /** 页面是否还活着 */
   const aliveRef = useRef(true)
 
+  // ---------------------------------------------------------------------------
+  // 日志列表（本轮修复第 7 条，见文件头）
+  // ---------------------------------------------------------------------------
+  const [logs, setLogs] = useState<ScrollItem[]>([])
+  const [logsTotal, setLogsTotal] = useState(0)
+  const [logsStatus, setLogsStatus] = useState<AsyncStatus>('loading')
+  /** 请求序号：连续切换时旧响应不许覆盖新的 */
+  const logsSeqRef = useRef(0)
+  /** 列表请求自己的存活标记（与轮询那个 `aliveRef` 分开，两件事的生命周期不同） */
+  const logsAliveRef = useRef(true)
+
+  useEffect(() => {
+    logsAliveRef.current = true
+    return () => {
+      logsAliveRef.current = false
+    }
+  }, [])
+
+  const loadLogs = useCallback(() => {
+    const seq = (logsSeqRef.current += 1)
+    setLogsStatus('loading')
+
+    fetchScrolls('', 1, LOG_PICKER_SIZE).then(
+      (result) => {
+        if (!logsAliveRef.current || seq !== logsSeqRef.current) return
+        setLogs(result.items)
+        setLogsTotal(result.total)
+        setLogsStatus('ready')
+      },
+      () => {
+        if (!logsAliveRef.current || seq !== logsSeqRef.current) return
+        // 列表取不到**不打断这一页**：当前这一份报告照常显示或生成，
+        // 只是没有可切换的列表。空态那一路会把失败如实说出来（见下）。
+        setLogsStatus('error')
+      }
+    )
+  }, [])
+
+  useEffect(() => {
+    loadLogs()
+  }, [loadLogs])
+
+  /**
+   * 没有「刚打完的那一局」时，默认选中列表里最新的一份。
+   *
+   * 冷启动（小程序重开、或用户从标签栏直接进来）时 store 里没有 `attemptId`，
+   * 原来的表现是空态「日志本还是空的」—— 可他的历史明明还在服务端。
+   * 这一栏叫「冒险日志」，默认就该展示**最近的一次冒险**。
+   */
+  useEffect(() => {
+    if (logs.length === 0) return
+    const store = useReportStore.getState()
+    if (store.attemptId) return
+
+    const target = useQuizStore.getState().attempt?.attempt_id || logs[0].attempt_id
+    if (!target) return
+
+    store.begin(target)
+    setRunToken((value) => value + 1)
+  }, [logs])
+
+  /**
+   * 点另一条日志 → 复盘它。
+   *
+   * `begin` 会清掉上一份报告（见 `useReportStore` 的说明），所以绝不能
+   * 在「已经是它、而且已经拿到了」时重复调用 —— 那会把刚显示的报告清空。
+   */
+  const pickLog = useCallback((id: string) => {
+    const store = useReportStore.getState()
+    if (id === store.attemptId && store.status === 'ready') return
+
+    store.begin(id)
+    setRunToken((value) => value + 1)
+  }, [])
+
   /**
    * 每次页面显示时决定「要不要开跑」。
    *
@@ -98,7 +209,17 @@ export default function ReportPage() {
    * 放在 `useDidShow` 而不是 `useEffect` 里，是因为**从总结页返回时也走这里** ——
    * 用 `useEffect([])` 只能覆盖首次挂载，返回时不会再跑。
    */
+  /** 首次显示跳过列表刷新 —— 挂载时那次已经由 `loadLogs` 的 effect 发起了 */
+  const firstShowRef = useRef(true)
+
   useDidShow(() => {
+    // 列表每次重新显示都重取：刚打完一局回来，那一局必须出现在可切换的列表里
+    if (firstShowRef.current) {
+      firstShowRef.current = false
+    } else {
+      loadLogs()
+    }
+
     const store = useReportStore.getState()
     // 结算页会把这一局的 id 写进 store；直接进标签页时退回「本局」——它们通常是同一局
     const target = store.attemptId || useQuizStore.getState().attempt?.attempt_id || ''
@@ -198,6 +319,43 @@ export default function ReportPage() {
 
   const topic = report?.quiz_title || ''
 
+  /**
+   * 全部日志的选择器（本轮修复第 7 条）。
+   *
+   * 这一栏原来只呈现「刚打完的那一局」：用户想看上一次的成绩，唯一的入口是
+   * 绕到「我的 → 历史卷轴」—— 而那正是同一个 `attempts` 列表的第二个副本。
+   * 现在列表直接长在这一页顶部，点哪一条就复盘哪一条。
+   *
+   * 只有一条时不渲染：一个只有自己一项的切换器，点与不点都没有区别。
+   */
+  const logPicker =
+    logs.length > 1 ? (
+      <>
+        <View className='tiny report__logs-label'>{REPORT_COPY.logsLabel(logsTotal)}</View>
+        <View className='row report__logs'>
+          {logs.map((item) => (
+            <Text
+              key={item.attempt_id}
+              className={`chip${item.attempt_id === attemptId ? ' report__log--on' : ''}`}
+              onClick={() => pickLog(item.attempt_id)}
+            >
+              {shortenTitle(item.title)}
+            </Text>
+          ))}
+        </View>
+        {/* 一页只有 20 条。还有更多时把用户交给完整的历史卷轴（04·5）——
+            筛选、翻页、长按删除都在那边，这一栏不重复实现一遍 */}
+        {logsTotal > logs.length && (
+          <View
+            className='tiny report__logs-more'
+            onClick={() => goPage('/pages/profile/scrolls/index', 'navigate')}
+          >
+            {REPORT_COPY.logsMore}
+          </View>
+        )}
+      </>
+    ) : null
+
   // ---------------------------------------------------------------------------
   // 交互
   // ---------------------------------------------------------------------------
@@ -232,6 +390,41 @@ export default function ReportPage() {
   // 空态：本地没有可复盘的一局
   // ---------------------------------------------------------------------------
   if (!attemptId) {
+    // 列表还在路上、或者刚取回列表还没来得及选中（选中的自动发生见上面的 effect）
+    // → 先出加载态。少了这一层判断，冷启动会先闪一下「日志本还是空的」再跳到内容上。
+    if (logsStatus === 'loading' || logs.length > 0) {
+      return (
+        <PhoneShell
+          navTitle={REPORT_COPY.navTitle}
+          showBack={false}
+          reserveTabBar
+          screenClassName='report report--center'
+        >
+          <ArchiveState kind='loading' />
+        </PhoneShell>
+      )
+    }
+
+    // 列表没取到就直说「取不到」，并且给一个能重试的按钮 ——
+    // 摆「日志本还是空的」是在冤枉用户：他的记录可能好好地躺在服务端
+    if (logsStatus === 'error') {
+      return (
+        <PhoneShell
+          navTitle={REPORT_COPY.navTitle}
+          showBack={false}
+          reserveTabBar
+          screenClassName='report report--center'
+        >
+          <ArchiveState
+            kind='error'
+            title={REPORT_COPY.logsFailed}
+            actionText={ARCHIVE_COMMON.retry}
+            onAction={loadLogs}
+          />
+        </PhoneShell>
+      )
+    }
+
     return (
       <PhoneShell
         navTitle={REPORT_COPY.navTitle}
@@ -354,6 +547,8 @@ export default function ReportPage() {
         reserveTabBar
         screenClassName='report report--center'
       >
+        {/* 报告失败时也要能切走：否则用户被钉死在一局永远生成不出报告的记录上 */}
+        {logPicker}
         <View className='spacer' />
         <View className='report__center'>
           <Sprite name='shishi' size={96} />
@@ -395,6 +590,10 @@ export default function ReportPage() {
       reserveTabBar
       screenClassName='report'
     >
+      {/* 全部日志的选择器（本轮修复第 7 条）：这一栏默认展示最新的一份，
+          想看哪次冒险就点哪一条，不必绕到「我的 → 历史卷轴」 */}
+      {logPicker}
+
       <View className='card'>
         <View className='row report__hero'>
           <AccuracyRing percent={report.accuracy} size={88} labelLarge />
@@ -457,10 +656,12 @@ export default function ReportPage() {
 
       {/* 进入下一段的入口。
           原型的「知识总结」「复习建议」是两张独立的样机屏，没有画出它们
-          从主视图怎么进 —— 这里用一颗次级按钮补上，文案直接取第 2 屏的卡片标题。 */}
+          从主视图怎么进 —— 这里用一颗次级按钮补上，文案直接取第 2 屏的卡片标题。
+          用 `navigate`：这是**下钻**（总结页有「回到冒险日志」），默认的
+          `redirect` 会把本页从栈里换掉，返回键就没有上一页可回。 */}
       <Button
         className='btn ghost report__next'
-        onClick={() => goPage('/pages/report/summary/index')}
+        onClick={() => goPage('/pages/report/summary/index', 'navigate')}
       >
         {REPORT_COPY.summaryLabel}
       </Button>

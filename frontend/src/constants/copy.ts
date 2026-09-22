@@ -51,7 +51,24 @@ export const SUMMON_COPY = {
   retry: '重新生成',
   /** 兜底的等待说明。不描述内部步骤，只说明「要多久、能做什么」 */
   waitingHint: '生成一本副本通常需要十几秒，请稍候',
-  cancelled: '已放弃本次召唤'
+  cancelled: '已放弃本次召唤',
+
+  /**
+   * 副标题里的「还要多久」（本轮修复第 5 条）。
+   *
+   * 原来是 `预计 12 秒` —— 一个**静态**字段，从进页面到出结果一动不动，
+   * 用户会以为那一屏卡住了。现在由本地秒表按服务端的 `estimated_seconds`
+   * 递减（见 `utils/task-progress`）。
+   *
+   * 三句话对应三种状态，不能合并：
+   * - `preparing`：还没拿到服务端的预计时长；
+   * - `estimatedRemaining`：正常倒计时；
+   * - `overEstimate`：**已经超过预计时长**。这一句必须有 —— 显示「预计 0 秒」
+   *   会被读成「马上就好」，而事实正相反。
+   */
+  preparing: '正在准备…',
+  estimatedRemaining: (seconds: number) => `预计还剩 ${seconds} 秒`,
+  overEstimate: '比预计多花了一会儿，仍在生成'
 } as const
 
 /** 副本确认页（原型 01 第 5 屏） */
@@ -207,7 +224,18 @@ export const REPORT_COPY = {
 
   // ---- 空态：本地没有可复盘的一局 ----
   emptyTitle: '日志本还是空的',
-  emptyBody: '完成一次副本挑战，这里就会出现你的正确率、答对题数与复习建议。'
+  emptyBody: '完成一次副本挑战，这里就会出现你的正确率、答对题数与复习建议。',
+
+  // ---- 全部日志的选择器（本轮修复第 7 条）----
+  /**
+   * 这一栏原来只展示「刚打完的那一局」：想看上一次的成绩，唯一的路是
+   * 绕到「我的 → 历史卷轴」—— 而那是同一个列表的第二个副本。
+   * 现在列表长在这一页顶部（见 `pages/report`）。
+   */
+  logsLabel: (total: number) => `已经写下的冒险日志 · 共 ${total} 份`,
+  logsMore: '查看全部日志（筛选与删除）',
+  /** 列表本身取不到。此时**不能**说「日志本还是空的」——那是在冤枉用户 */
+  logsFailed: '日志列表暂时取不出来'
 } as const
 
 /**
@@ -433,11 +461,20 @@ export const PROFILE_COPY = {
   statXp: '累计 XP',
   statAccuracy: '平均正确率',
 
-  iconTree: '树',
-  iconReview: '题',
-  iconScroll: '账',
-  iconBadge: '印',
-  iconCard: '卡',
+  /**
+   * 身份卡右上角的小入口。
+   *
+   * 「点头像或昵称就能改」是我改这轮之前**不存在**的能力：身份卡整块不可点，
+   * 换头像/昵称只能绕到「设置 → 头像与昵称」两跳。现在整行都可点，
+   * 但「可点」本身没有任何视觉暗示，所以补一颗小胶囊把它说出来。
+   *
+   * 文案取「编辑」而不是「修改」：它是按钮词，与底部那颗「保存」不冲突
+   * （保存是提交，编辑是进入）。
+   */
+  editIdentity: '编辑',
+
+  // 入口行的图标不再是单字（原为「树 / 题 / 账 / 印 / 卡 / 设」六个汉字），
+  // 改为 `assets/profile-icons` 里的矢量线条图标，见 `scripts/generate_profile_icons.py`。
 
   rowKnowledgeTree: '知识树',
   rowKnowledgeTreeDesc: (count: number) => `已点亮 ${count} 个知识领域`,
@@ -462,8 +499,19 @@ export const PROFILE_COPY = {
   rowReview: '错题本',
   rowReviewDesc: '答错的题会按遗忘曲线回来找你',
 
-  rowScrolls: '历史卷轴',
-  rowScrollsDesc: (count: number) => `共 ${count} 份冒险日志`,
+  /**
+   * ⚠️ 原来的「历史卷轴」入口行（`rowScrolls` / `rowScrollsDesc`）已删除
+   * （本轮修复第 7 条）。
+   *
+   * 它和标签页「冒险日志」是同一件东西的两个入口：同一个 `attempts` 列表、
+   * 同一个 `profile/scroll-detail`。现在「冒险日志」自己在顶部列出全部日志
+   * 供选择，这一行就成了同一个列表的第二个副本，于是连同文案一起删掉 ——
+   * 留着一个没有使用点的键，只会让人以为界面上某处应该有它
+   * （同本常量开头对 `settings` 的说明）。
+   *
+   * `pages/profile/scrolls/index`（04·5，含筛选 / 翻页 / 长按删除）**路由保留**：
+   * 报告页的断网态与全局断网页的「查看历史日志」仍然指向它。
+   */
   rowBadges: '勋章墙',
   rowBadgesDesc: (unlocked: number, total: number) => `已解锁 ${unlocked} / ${total} 枚`,
   rowView: '查看',
@@ -487,7 +535,6 @@ export const PROFILE_COPY = {
    * 唯一的位置没有了。设置页是 Phase E 的页面，需要一个**看得见**的入口，
    * 所以按其它四个入口行的做法加在这里。
    */
-  iconSettings: '设',
   rowSettings: '设置',
   rowSettingsDesc: '提醒、缓存与账号'
 } as const
@@ -1084,8 +1131,18 @@ export const SETTINGS_PROFILE_COPY = {
   saving: '正在保存…',
   saved: '已保存',
   saveFailed: '没保存成功，稍后再试',
-  /** 一个字符都没改就点保存：说清楚，而不是静默什么都不做 */
+  /**
+   * 弹一句「还没有任何改动」曾经是个 bug。
+   *
+   * 场景：点「使用微信头像」换完头像（头像当场就生效），再顺手点一下「保存」——
+   * 屏幕上弹的却是「还没有任何改动」。站在用户角度那句话是错的：他刚改过东西。
+   * 所以现在改成**按钮自己按「有没有昵称要保存」置灰**，下面两句话解释它为什么灰。
+   */
   unchanged: '还没有改动',
+  /** 昵称没改 → 按钮置灰时显示。说清「头像不需要保存」这件事 */
+  saveIdleHint: '头像选好就会立刻生效；这里只用来保存昵称',
+  /** 昵称改过 → 按钮可点时显示 */
+  saveDirtyHint: '改完昵称记得点上面的「保存」',
   /**
    * 清空昵称之后点保存。
    *

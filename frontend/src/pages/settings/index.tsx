@@ -184,8 +184,11 @@ export default function SettingsPage() {
 
   return (
     <PhoneShell navTitle={SETTINGS_COPY.navTitle} screenClassName='settings'>
-      {/* ---- 1. 头像与昵称（方案 §7.4 新增，排在最上）---- */}
-      <View className='li' onClick={() => goPage('/pages/settings/profile/index')}>
+      {/* ---- 1. 头像与昵称（方案 §7.4 新增，排在最上）----
+          三个子页都用 `navigate`：这一页是从「我的」下钻进来的，
+          `redirect` 会把它自己从页面栈里换掉，子页面的返回键就没有上一页
+          可回，兜底逻辑会把用户直接送回社团大厅（「返回键坏了」）。 */}
+      <View className='li' onClick={() => goPage('/pages/settings/profile/index', 'navigate')}>
         <View className='ico'>{SETTINGS_COPY.iconProfile}</View>
         <View className='tx'>
           <View className='n'>{SETTINGS_COPY.rowProfile}</View>
@@ -195,7 +198,7 @@ export default function SettingsPage() {
       </View>
 
       {/* ---- 2. 学习提醒：这一行显示的是当前设置，不是开关 ---- */}
-      <View className='li' onClick={() => goPage('/pages/settings/reminder/index')}>
+      <View className='li' onClick={() => goPage('/pages/settings/reminder/index', 'navigate')}>
         <View className='ico'>{SETTINGS_COPY.iconReminder}</View>
         <View className='tx'>
           <View className='n'>{SETTINGS_COPY.rowReminder}</View>
@@ -252,7 +255,7 @@ export default function SettingsPage() {
       </View>
 
       {/* ---- 8. 帮助与反馈 ---- */}
-      <View className='li' onClick={() => goPage('/pages/settings/help/index')}>
+      <View className='li' onClick={() => goPage('/pages/settings/help/index', 'navigate')}>
         <View className='ico'>{SETTINGS_COPY.iconHelp}</View>
         <View className='tx'>
           <View className='n'>{SETTINGS_COPY.rowHelp}</View>

@@ -1,0 +1,14 @@
+// 勋章图案（组件见 index.tsx）。
+//
+// 图案本身带着自己的圆盘与缎带，所以这里只负责「别被 flex 压扁」这一件事 ——
+// 它和 `.badge` 一样是固定尺寸的陈列物。
+
+.badge-icon {
+  display: block;
+  flex: none;
+}
+
+// 退回单字的那条路沿用 `.badge` 的圆底，这里补一个 flex 不收缩
+.badge-icon--fallback {
+  flex: none;
+}

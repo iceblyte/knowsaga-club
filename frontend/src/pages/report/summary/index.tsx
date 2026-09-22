@@ -86,7 +86,7 @@ export default function ReportSummaryPage() {
       </Button>
       <Button
         className='btn ghost report-summary__secondary'
-        onClick={() => goPage('/pages/report/suggestions/index')}
+        onClick={() => goPage('/pages/report/suggestions/index', 'navigate')}
       >
         {REPORT_COPY.suggestionsNavTitle}
       </Button>

@@ -123,6 +123,17 @@ export default function SettingsProfilePage() {
   /** 未同意隐私协议时不放编辑控件（见文件头） */
   const editorReady = !privacy.need
 
+  /**
+   * 昵称有没有真的改过 —— 决定底部那颗「保存」是否可点。
+   *
+   * 为什么不用「点了再弹一句『还没有任何改动』」：这是本轮修掉的一个 bug。
+   * 用户点「使用微信头像」换完头像（**头像当场就生效了**，见文件头），
+   * 然后顺手点一下「保存」，屏幕上却弹「还没有任何改动」——
+   * 站在用户角度那句话是错的：他刚刚明明改过东西，而且头像那一改已经生效。
+   * 把按钮按「有没有昵称要保存」置灰，比事后解释准确得多。
+   */
+  const nicknameDirty = nickname.trim() !== user.nickname
+
   /** 同意之后重查一次；`need` 变成 `false` 时编辑控件自然出现 */
   const acceptPrivacy = (): void => {
     queryPrivacyAuthorization().then(setPrivacy)
@@ -179,6 +190,9 @@ export default function SettingsProfilePage() {
       return
     }
     if (next === user.nickname) {
+      // 兜底：按钮在昵称没改时已经置灰（见 `nicknameDirty`），所以正常路径
+      // 走不到这里。留着是为了「点下去与状态变化撞在一起」的那一瞬
+      // 仍然给一句准确的说明，而不是静默什么都不做。
       Taro.showToast({ title: SETTINGS_PROFILE_COPY.unchanged, icon: 'none' })
       return
     }
@@ -277,9 +291,20 @@ export default function SettingsProfilePage() {
       {/* 未同意协议时这里没有按钮 —— `PrivacyGate` 已经把「来 / 不来」两条路
           都摆在面板里了，再在页脚留一颗孤零零的按钮只会让人以为还有别的动作 */}
       {editorReady && (
-        <Button className='btn' disabled={saving} onClick={() => void saveNickname()}>
-          {saving ? SETTINGS_PROFILE_COPY.saving : SETTINGS_PROFILE_COPY.save}
-        </Button>
+        <>
+          <Button
+            className={`btn${nicknameDirty ? '' : ' dis'}`}
+            disabled={!nicknameDirty || saving}
+            onClick={() => void saveNickname()}
+          >
+            {saving ? SETTINGS_PROFILE_COPY.saving : SETTINGS_PROFILE_COPY.save}
+          </Button>
+          {/* 按钮为什么是灰的：头像与昵称的提交时机不同（见文件头）。
+              不写这一句，刚换完头像、看到保存点不动的用户会以为头像没生效。 */}
+          <View className='tiny settings-profile__save-hint'>
+            {nicknameDirty ? SETTINGS_PROFILE_COPY.saveDirtyHint : SETTINGS_PROFILE_COPY.saveIdleHint}
+          </View>
+        </>
       )}
     </PhoneShell>
   )

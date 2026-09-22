@@ -52,3 +52,10 @@
 .settings-profile__hint {
   margin-top: $sp-3;
 }
+
+// 「保存」下面那句说明（见 `SETTINGS_PROFILE_COPY.saveIdleHint`）。
+// 居中：按钮是通栏的，说明文字左对齐会像是另一块的标题。
+.settings-profile__save-hint {
+  margin-top: $sp-4;
+  text-align: center;
+}

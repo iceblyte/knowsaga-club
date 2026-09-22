@@ -13,6 +13,17 @@
  * 前端**一个都不自己编**。原因很实际：假进度在失败时会显得格外不可信 ——
  * 进度条走到 90% 然后告诉你出题失败，用户只会觉得整个功能都在骗他。
  *
+ * ## 但「还要多久」必须由前端铺平到每一秒（本轮修复第 5 条）
+ *
+ * 后端只在两个时刻更新「生成闯关题目」这一步：开始（`正在生成第 1 / 5 题`）
+ * 与结束（`已生成 5 道题`）—— 5 道题是**一次** LLM 调用出来的，服务端不存在
+ * 「第 2 题开始了」这种时刻。于是那二三十秒里界面一动不动，用户以为卡死了。
+ *
+ * 所以这一页有一秒一次的时钟：把服务端给的 `estimated_seconds` 走成倒计时、
+ * 把题号按时间比例推进。**它不是另编一套进度**：措辞仍然逐字来自服务端
+ * （`advanceQuestionDetail` 只替换一个数字），边界写在 `utils/task-progress.ts`
+ * 的文件头里 —— 只增不减、题号停在 `N-1`、超时后换一句话、进度条不到 100%。
+ *
  * ## 用户看不到「内部机制」
  *
  * 这一页只出现了三类文案：正在做什么（来自后端）、大概还要多久、
@@ -41,6 +52,12 @@ import { useQuizStore } from '../../store/useQuizStore'
 import type { StepStatus, TaskRecord, TaskStep } from '../../types/api'
 import { goPage, goTab } from '../../utils/navigation'
 import { styleOf } from '../../utils/style'
+import {
+  advanceQuestionDetail,
+  remainingSeconds,
+  smoothProgress,
+  smoothQuestionIndex
+} from '../../utils/task-progress'
 
 import './index.scss'
 
@@ -90,11 +107,24 @@ export default function SummonPage() {
   /** 递增即重开一轮（「重新生成」按钮） */
   const [attempt, setAttempt] = useState(0)
 
+  /**
+   * 每秒走一次的时钟（本轮修复第 5 条）。
+   *
+   * 它只做一件事：让「还要多久」与题号真的在变化。取值用 `Date.now()`
+   * 而不是累加，是为了让标签页被切到后台再回来时**一次对齐**，
+   * 而不是先补上错过的那些秒。
+   */
+  const [clock, setClock] = useState(() => Date.now())
+
   /** 页面是否还活着。轮询与状态更新都以它为准，避免已离开的页面继续写入 */
   const aliveRef = useRef(true)
   /** 用户是否已经主动放弃本次召唤 */
   const abandonedRef = useRef(false)
   const taskIdRef = useRef('')
+  /** 拿到 `estimated_seconds` 的时刻：倒计时与进度条的起点 */
+  const startedAtRef = useRef(0)
+  /** 「生成闯关题目」这一步**开始跑**的时刻（不是整个任务的起点） */
+  const generateStartedAtRef = useRef(0)
 
   // 「取消」按原型是 8 秒后才出现的：一开始就摆一个取消按钮，
   // 会让用户以为「这东西很慢」，实际大多数召唤十几秒就完事。
@@ -103,6 +133,14 @@ export default function SummonPage() {
     const timer = setTimeout(() => setShowCancelEntry(true), CANCEL_APPEAR_MS)
     return () => clearTimeout(timer)
   }, [attempt])
+
+  // 秒表：只在**等待期间**跑。拿到结果或失败之后立刻停 ——
+  // 一个已经结束的页面不该继续每秒 setState。
+  useEffect(() => {
+    if (failure || ready) return
+    const timer = setInterval(() => setClock(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [failure, ready, attempt])
 
   useEffect(() => {
     aliveRef.current = true
@@ -123,6 +161,10 @@ export default function SummonPage() {
     setTask(null)
     setFailure('')
     setReady(false)
+    // 重开一轮（「重新生成」）时，上一轮的起点必须清掉 ——
+    // 留着它会让新任务的倒计时一开局就显示「已超出预计时间」
+    startedAtRef.current = 0
+    generateStartedAtRef.current = 0
 
     const run = async () => {
       try {
@@ -135,12 +177,23 @@ export default function SummonPage() {
 
         taskIdRef.current = submission.task_id
         setEstimatedSeconds(submission.estimated_seconds)
+        // 秒表从这一刻起算，并立刻对齐一次 —— 等下一次 tick 才走
+        // 会让第一秒显示成「还没开始」
+        startedAtRef.current = Date.now()
+        setClock(Date.now())
 
         const final = await pollTask({
           taskId: submission.task_id,
           intervalMs: submission.poll_interval_ms,
           onUpdate: (next) => {
-            if (aliveRef.current) setTask(next)
+            if (!aliveRef.current) return
+            // 记下「生成」这一步**真正开始跑**的时刻：题号按它之后的耗时推进，
+            // 用整个任务的起点算会让题号在检索阶段就冲到第 2 题
+            if (!generateStartedAtRef.current) {
+              const step = next.steps?.find((item) => item.key === 'generate')
+              if (step?.status === 'running') generateStartedAtRef.current = Date.now()
+            }
+            setTask(next)
           },
           shouldContinue: () => aliveRef.current && !abandonedRef.current
         })
@@ -222,7 +275,38 @@ export default function SummonPage() {
 
   const topic = useAppStore((s) => s.userInput).trim()
   const steps = task?.steps?.length ? task.steps : fallbackSteps(searchEnabled, QUIZ_QUESTION_COUNT)
-  const progress = task?.progress ?? 0
+
+  // ---------------------------------------------------------------------------
+  // 平滑进度（见文件头与 `utils/task-progress`）
+  // ---------------------------------------------------------------------------
+  const waiting = !failure && !ready
+  const elapsed = startedAtRef.current > 0 ? (clock - startedAtRef.current) / 1000 : 0
+  const remaining = remainingSeconds(estimatedSeconds, elapsed)
+  const progress = smoothProgress(
+    task?.progress ?? 0,
+    elapsed,
+    estimatedSeconds,
+    !waiting
+  )
+
+  /**
+   * 副标题里「还要多久」那一句。
+   *
+   * 三态必须分开，因为它们的含义完全不同：还没拿到服务端的预计时长（`0`）
+   * 时不能显示「已超出预计时间」—— 那是冤枉它。
+   */
+  const waitingLabel =
+    estimatedSeconds <= 0
+      ? SUMMON_COPY.preparing
+      : remaining > 0
+        ? SUMMON_COPY.estimatedRemaining(remaining)
+        : SUMMON_COPY.overEstimate
+
+  /** 进入「生成」这一步之后的秒数；这一步还没开始时为 `null`（不插值） */
+  const elapsedInGenerate =
+    generateStartedAtRef.current > 0
+      ? (clock - generateStartedAtRef.current) / 1000
+      : null
 
   return (
     <PhoneShell
@@ -255,7 +339,7 @@ export default function SummonPage() {
               ? failure
               : ready
                 ? `${shortenTopic(topic)} · 副本已就绪`
-                : `${shortenTopic(topic)} · 预计 ${estimatedSeconds || 10} 秒`}
+                : `${shortenTopic(topic)} · ${waitingLabel}`}
           </View>
         </View>
 
@@ -268,10 +352,20 @@ export default function SummonPage() {
 
       <View className='summon__spacer' />
 
-      {/* 三步状态卡：名字 / 详情 / 状态全部来自后端，前端只负责排版 */}
+      {/* 三步状态卡：名字 / 详情 / 状态全部来自后端，前端只负责排版。
+          ⚠️ 唯一的例外是「生成」这一步的**题号**：后端只报「开始生成」
+          与「已生成 N 道题」两个端点，中间没有事件可报，所以由
+          `smoothQuestionIndex` 按时间比例推进 —— 措辞仍逐字来自服务端，
+          只替换第一个数字，边界见 `utils/task-progress`。 */}
       <View className='card plain'>
         {steps.map((step, index) => {
           const pill = STEP_PILL[step.status]
+          const shown = smoothQuestionIndex(
+            step.detail,
+            step.status,
+            elapsedInGenerate,
+            estimatedSeconds
+          )
           return (
             <View key={step.key}>
               {index > 0 && <View className='summon__step-gap' />}
@@ -279,7 +373,9 @@ export default function SummonPage() {
                 <View className='ico'>{index + 1}</View>
                 <View className='tx'>
                   <View className='n'>{step.name}</View>
-                  <View className='d'>{step.detail}</View>
+                  <View className='d'>
+                    {shown === null ? step.detail : advanceQuestionDetail(step.detail, shown)}
+                  </View>
                 </View>
                 {pill && <Text className={`pill${pill.cls ? ` ${pill.cls}` : ''}`}>{pill.text}</Text>}
               </View>
