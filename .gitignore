@@ -40,6 +40,8 @@ package-lock.corrupt.json
 skills-lock.json
 .workbuddy-ai
 .workbuddy
+# OpenSpec 生成的 AI 客户端命令/技能文件（openspec update 会重写，属本地产物）
+.codebuddy
 
 # 原型：截图与临时渲染产物（可由 _gen/*.py 重新生成）
 prototype/_shots/

@@ -1,0 +1,76 @@
+schema: spec-driven
+
+# ============================================================================
+# OpenSpec 配置
+#   context : AI 生成 proposal / specs / design / tasks 时会读这段，当成硬约束
+#   rules   : 针对单个工件的额外要求
+# 完整红线见 .workbuddy/memory/MEMORY.md（该目录不入库，仅本机可见）
+#
+# 如果某次改动只动文档 / 纯重构、不涉及任何接口与行为，就在
+#   openspec/changes/<名字>/.openspec.yaml
+# 里加一行 `skip_specs: true`，跳过 specs 工件（否则 validate 会报
+# "Change must have at least one delta"）。
+# ============================================================================
+
+context: |
+  ## 知拾冒险社（knowsaga-club）
+
+  微信小程序 / H5 双端的知识冒险应用：导入资料 = 领卷轴，AI 出题 = 知识副本，
+  答题 = 挑战副本，成绩 = 冒险日志。
+
+  ### 技术栈（版本已锁定，不要升级）
+  - 前端：Taro 4.2.1 + React 18.3.1（禁用 React 19）+ TypeScript + Zustand 5.x
+  - 后端：Python 3.12.4 + FastAPI + Pydantic v2 + SQLAlchemy 2.0 + MySQL
+  - 出题：DeepSeek（模型名只能是 deepseek-flash，且必须显式关闭思考模式）
+  - 测试：pytest + pytest-cov（后端）、tsc --noEmit（前端）
+
+  ### 目录
+  - frontend/src/pages/**            页面（Taro 页面 = 同名目录 + 4 个文件）
+  - frontend/src/styles/tokens.scss  设计令牌的唯一真源（页面里不许写死色值 / 字号）
+  - frontend/src/services/**         接口层（统一信封只在这里解包）
+  - backend/app/**                   路由 / 服务 / 模型
+  - backend/tests/**                 后端测试
+  - backend/sql/**                   DDL（无迁移工具，用 scripts/apply_sql.py 执行）
+  - shared/scoring-cases.json        评分用例（前后端共用，双向锁定）
+  - docs/**                          需求 / 方案 / 计划文档
+  - prototype/**                     原型（HTML + 渲染截图），是 UI 的最终裁决依据
+
+  ### 硬约束（写 design / tasks 时必须遵守）
+  1. 后端走 TDD：先写测试跑红，再写实现跑绿。tasks 里必须体现「先测试、后实现」。
+  2. 前端改动要零视觉漂移：改样式必须能给出实测证据（浏览器实跑 / 逐字段对照）。
+  3. 这是公开仓库，任何密钥绝不入库：提交前跑 `python tools/scan_secrets.py`。
+     `.env` 不入库（`.env.example` 入库）；appid 可入库，AppSecret 只进根 `.env`。
+  4. 接口统一 `{code, message, data}` 信封，且只在前端 `services/request.ts` 里解包。
+  5. 接口改动必须同步更新 docs 与 shared 下的共享用例。
+  6. 文案若与实现能力冲突，改文案而不是假装兑现（见 frontend/src/constants/copy.ts）。
+  7. 交付一个页面要连「入口」一起交，别只交页面本体。
+
+  ### 已知坑（别重新踩）
+  - 前端禁 `style={{}}` 内联对象；长度用 `designLength()`，不写死 rpx。
+  - 栅格写 `repeat(N, minmax(0, 1fr))`，否则定尺寸图案会把最后一列挤出卡片。
+  - Taro 页面不能依赖自动修复，必须在真机 / 浏览器实测 DOM 尺寸。
+  - 测试里禁用 `get_session_factory()`，一律用 `db_session`；别写死 `user_id=1`。
+  - 跑后端测试必须带环境变量 `CODEBUDDY_SAFE_DELETE_ENABLED=0`。
+
+rules:
+  proposal:
+    - 用中文写，600 字以内，必须包含「不做什么（Non-goals）」一节。
+    - 写清影响面：哪些页面 / 接口 / 数据表 / 文档会被改动。
+  design:
+    - 必须逐条回应上面「硬约束」里相关条目，并说明如何满足。
+    - 与现有实现或原型冲突时，先列出冲突点，不要自行拍板。
+  specs:
+    - 每个 Requirement 至少配一个 `#### Scenario:`，用 WHEN / THEN 描述可观测行为。
+  tasks:
+    - 每条任务不超过 30 分钟，标注要改的具体文件路径。
+    - 后端相关任务必须拆成「写测试」和「写实现」两步。
+    - 最后必须有一步是全量闸门：pytest + tsc --noEmit + scan_secrets。
+
+operations:
+  apply:
+    guidance:
+      - 每完成一条任务就勾掉，并顺手跑对应测试。
+      - 不做计划外重构；发现有新问题写进「后续」，不要顺手改。
+  archive:
+    guidance:
+      - 归档前先跑一遍完整闸门，并把结果摘要贴出来。
