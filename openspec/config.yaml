@@ -61,6 +61,17 @@ rules:
     - 与现有实现或原型冲突时，先列出冲突点，不要自行拍板。
   specs:
     - 每个 Requirement 至少配一个 `#### Scenario:`，用 WHEN / THEN 描述可观测行为。
+    - 强度逐条判定，不许一律标 MUST。判据：不满足即联调失败 / 接口契约被破坏 / 安全红线 → `（MUST）`；
+      硬性禁止 → `（MUST NOT）`；有理由可例外的实践建议 → `（SHOULD）`。同一条内可分层标注
+      （例如主体是 MUST、加强项是 SHOULD），但每条只能在该条**真正强制**的位置标。
+    - '强度词必须落在 Requirement 正文行里。写成 `**强度**: MUST` 这类「加粗标签 + 半角冒号」的
+      元数据行会被 OpenSpec 的正文读取器跳过（仅在正文为空时才回退取它），等于没标。'
+    - 纯背景说明不要写成 `### Requirement:`，否则会被当成需求约束去校验；写进 `## Purpose`
+      或作为约束的解释段落。
+    - 已知工具局限：`openspec validate --strict` 把「正文无 SHALL/MUST」判为失败，而 CLI 没有忽略
+      该警告的开关，且它只认 SHALL/MUST、**不认 SHOULD**。所以整条纯 SHOULD 的 Requirement 在
+      `--strict` 下必然报错 —— 不要为了消警告把它改写成 MUST（那会把建议伪装成强制）。
+      平时跑 `openspec validate --all`（非 strict）即可。
   tasks:
     - 每条任务不超过 30 分钟，标注要改的具体文件路径。
     - 后端相关任务必须拆成「写测试」和「写实现」两步。
