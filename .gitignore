@@ -42,6 +42,8 @@ skills-lock.json
 .workbuddy
 # OpenSpec 生成的 AI 客户端命令/技能文件（openspec update 会重写，属本地产物）
 .codebuddy
+# OpenSpec 使用教程：只留本机，不入库
+docs/OpenSpec使用教程.md
 
 # 原型：截图与临时渲染产物（可由 _gen/*.py 重新生成）
 prototype/_shots/
