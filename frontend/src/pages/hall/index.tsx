@@ -3,7 +3,7 @@
  *
  * 全屏只有一个目标：让用户把想学的东西写下来。所以：
  * - 输入区占满剩余高度（`.scrollbox{flex:1}`），视觉上就是页面的主角
- * - 空态给预设热门问题 chip，**点一下直接召唤**（见下）
+ * - 空态给预设热门问题 chip，**点一下填进输入框**（见下）
  * - 已输入态把 chip 换成「追加资料」类动作
  *
  * 与原型的两处说明：
@@ -20,16 +20,35 @@
  *    现在读 `GET /users/me`。它是这一屏唯一需要联网的东西，所以它自己
  *    承担加载态 —— 读不到时只出占位符，整屏不因此变成空页面。见 `HALL_PROFILE_COPY`。
  *
- * ## 预设问题从「填入输入框」改成了「直接召唤」（本轮修复第 4 条）
+ * ## 预设问题 = 只填进输入框，不直接召唤（2026-09-23 按用户要求改回）
  *
- * 原来点 chip 只是把它填进输入框，用户还得自己再点一次「召唤副本」。
- * 空态放 chip 的全部意义是「少打字、快点出题」，只填不发等于把省下的
- * 那一步又还回去 —— 用户的反馈正是「点了没反应、发不出去」。
- * 现在点击即走，并且同一句话也写进 `useAppStore.userInput`：召唤页点返回时
- * 输入框里仍是这一条，可以改几个字再发。
+ * ⚠️ **这条行为来回改过两次，别再凭直觉「修」回去。**
  *
- * ⚠️ 换文案时要守住「每一条 ≥ 8 字」（`INPUT_MIN_LEN`，真源在后端
- * `text_cleaner`）—— 短于 8 字的一键发送会被服务端判 4001。
+ * | 时间 | 行为 | 起因 |
+ * |---|---|---|
+ * | 2026-09-22 之前 | 只填不发 | 初版 |
+ * | 2026-09-22 | **改为点击即召唤** | 用户报「点了没反应、发不出去」 |
+ * | 2026-09-23 | **改回只填不发** | 用户要求「点一下出现在搜索框中，用户自行点击召唤」 |
+ *
+ * 两次都不是谁写错了，而是**对同一个取舍选了不同答案**：
+ * 自动召唤省一步，但替用户做了决定；只填不发把决定权还给用户，代价是多点一次。
+ * 后者更稳，因为**召唤是一个要花钱的动作**（一次 LLM 出题 + 可能的联网检索），
+ * 让它必须经过用户那一次明确的点击。
+ *
+ * 但「多点一次」不能变成新的困惑：09-22 那次报「点了没反应」的根因
+ * **不是「没有自动发送」，而是填完之后界面上没有任何东西提示他还要再点一次**
+ * （chip 行当场换成了「追加资料」，输入框里那行字也不显眼）。
+ *
+ * ⇒ 09-23 先加了一句说明 `热门问题 · 点一下填进输入框`；
+ * **同一天又按用户要求删掉后半句，只留 `热门问题`**（用户明确不要这行提示）。
+ * 所以现在这一处是「只填不发 ＋ 纯标题」，那点「点了没反应」的观感风险是
+ * **知情接受**的（见渲染处注释）—— 别自作主张加回提示，
+ * 更别因为「少了提示」就把它改回「点击即召唤」。
+ *
+ * ⚠️ 换文案时守住「每一条 ≥ 8 字」（`INPUT_MIN_LEN`，真源在后端 `text_cleaner`）。
+ * 只填不发之后这条比原来更关键：字数不达标时用户点「召唤副本」会被拦下
+ * （按钮是灰的，或服务端判 4001），而那是**用户自己按的**，
+ * 所以必须保证预设的每一条都能直接过闸。
  */
 
 import { Button, Text, Textarea, View } from '@tarojs/components'
@@ -171,20 +190,25 @@ export default function HallPage() {
   }
 
   /**
-   * 点预设问题 = **直接召唤**（本轮修复第 4 条）。
+   * 点预设问题 = **填进输入框**（2026-09-23 按用户要求改回；两次改动的取舍见文件头）。
    *
-   * 原来这里只把问题填进输入框，用户还得自己再点一次「召唤副本」——
-   * 而空态放 chip 的全部意义就是「少打字、快点出题」，只填不发等于
-   * 把省下的那一步又还回去了（用户的反馈正是「点了一直没反应」）。
+   * 只做两件事，**不跳转**：把问题写进输入框，等用户自己点「召唤副本」。
+   * 于是下面「召唤副本」按钮的 `canSubmit` 与字数校验照旧生效 ——
+   * 用户还有机会改几个字再发，而不是被 chip 直接替他决定一次付费的召唤。
    *
-   * 同时写进 store，而不是只传参：召唤页读的是 `useAppStore.userInput`，
-   * 而输入框里也留着同一句话 —— 用户在召唤页点返回，看到的仍是他点的那一条，
-   * 可以直接改几个字再发（而不是回到一个空输入框）。
+   * ## 为什么也写 store，而不只 `setDraft`
+   *
+   * 大厅是**标签页**：切走再切回来组件不卸载，`useDidShow` 会执行
+   * `setDraft(store.userInput)` 把输入框**重置回 store 里的值**。
+   * 只写本地 draft 的话，用户点完 chip、顺手切一下标签页再回来，
+   * 刚填进去的那句话就被这个重置擦掉了 —— 表现和「点了没反应」一模一样。
+   *
+   * 同理 `onInput` 也镜像进 store（见下），这样 draft 与 store 永远一致，
+   * 那次重置就成了一步无副作用的空操作，用户**手打的**内容也不会被擦掉。
    */
-  const summonWithPreset = (question: string) => {
+  const fillPreset = (question: string) => {
     setDraft(question)
     setUserInput(question)
-    goPage('/pages/summon/index', 'navigate')
   }
 
   const handleAttachTap = () => {
@@ -238,7 +262,15 @@ export default function HallPage() {
             maxlength={INPUT_MAX_LEN}
             autoHeight={false}
             cursorSpacing={24}
-            onInput={(e) => setDraft(e.detail.value.slice(0, INPUT_MAX_LEN))}
+            // 手打的字也镜像进 store —— 与 `fillPreset` 同一个理由：
+            // 大厅是标签页，`useDidShow` 会拿 store 的值重置输入框，
+            // 两边不一致时用户切个标签页回来，刚打的字就被擦掉了。
+            // 镜像之后 draft 与 store 永远相等，那次重置就成了空操作。
+            onInput={(e) => {
+              const next = e.detail.value.slice(0, INPUT_MAX_LEN)
+              setDraft(next)
+              setUserInput(next)
+            }}
           />
           <View className='between'>
             {hasInput ? (
@@ -259,8 +291,8 @@ export default function HallPage() {
       </View>
 
       {/* 空态：预设热门问题 / 已输入态：追加资料 chip。
-          两种状态的 chip **动作完全不同**（一个是「立刻出题」，
-          一个是「本期还没做的多源输入」），所以不再共用一个 handler。 */}
+          两种状态的 chip **动作完全不同**（一个是「填进输入框」，
+          一个是「本期还没做的多源输入」），所以不共用一个 handler。 */}
       {hasInput ? (
         <View className='row hall__chips'>
           {MOCK_ATTACH_CHIPS.map((chip) => (
@@ -271,14 +303,17 @@ export default function HallPage() {
         </View>
       ) : (
         <>
-          {/* 一句说明不能省：chip 上没有任何「点一下会直接开始出题」的暗示，
-              不写出来用户会以为它和原来一样只负责填空 */}
+          {/* 标题只留「热门问题」——后半句「· 点一下填进输入框」是 09-23 加的，
+              当天又按用户要求删掉。09-22 那次「点了没反应」曾靠这半句来消解，
+              现在改为**知情接受**：chip 只填不发，界面上不再解释点击后果。
+              **这是用户明确的选择，不是漏写** —— 别加回提示，
+              也别拿「少了提示」当理由把它改回「点击即召唤」。 */}
           <View className='tiny hall__chips-label'>
-            热门问题 · 点一下直接召唤副本
+            热门问题
           </View>
           <View className='row hall__chips'>
             {MOCK_SUGGESTIONS.map((question) => (
-              <Text key={question} className='chip' onClick={() => summonWithPreset(question)}>
+              <Text key={question} className='chip' onClick={() => fillPreset(question)}>
                 {question}
               </Text>
             ))}

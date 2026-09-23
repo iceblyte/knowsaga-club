@@ -104,9 +104,8 @@ for (const item of cases.coins_cases || []) {
   record('coins_cases', item.name, scoring.coinsOf(item.xp), item.expected)
 }
 
-for (const item of cases.percentile_cases || []) {
-  record('percentile_cases', item.name, scoring.percentileOf(item.accuracy), item.expected)
-}
+// 百分位**不在这里比对**：它已经是真实用户池的分位（依赖库里的其他冒险者），
+// 前端算不出来、也不该算。判据与用例都在后端（`pool_percentile`）。
 
 // -----------------------------------------------------------------------------
 // 输出

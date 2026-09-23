@@ -632,21 +632,39 @@ export default function ReportPage() {
         </View>
       </View>
 
+      {/* 百分位：**真实社团分位**（2026-09-23 起，替换掉 `accuracy × 0.9` 的演示值）。
+          池子为空时（`percentile === null`）整块换成一句实话，**不显示任何百分数** ——
+          显示 0% 会被读成「谁也没超过」，而真相是「还没有人可比」。
+          这也是本次修改要修掉的东西本身：分数单上印「（演示数据）」等于承认数字是编的。 */}
       <View className='card plain'>
         <View className='row report__percentile'>
           <Sprite name='momo' size={52} />
           <View className='report__percentile-body'>
-            <View className='between'>
-              <Text className='report__percentile-title'>
-                {REPORT_COPY.percentilePrefix} {report.percentile}% {REPORT_COPY.percentileSuffix}
-              </Text>
-              <Text className='pill ok'>{report.percentile_label}</Text>
-            </View>
-            <View className='report__percentile-gap' />
-            <View className='bar ok'>
-              <View style={styleOf({ width: `${report.percentile}%` })} />
-            </View>
-            <View className='tiny report__percentile-note'>{REPORT_COPY.percentileNote}</View>
+            {report.percentile === null ? (
+              <View className='tiny report__percentile-note'>{REPORT_COPY.percentileNoPool}</View>
+            ) : (
+              <View>
+                <View className='between'>
+                  <Text className='report__percentile-title'>
+                    {REPORT_COPY.percentilePrefix} {report.percentile}% {REPORT_COPY.percentileSuffix}
+                  </Text>
+                  {/* 档位胶囊与分位是同一次计算的两半，由服务端一起给；
+                      没有分位就没有胶囊（服务端回 `None`），这里不编一个档位名 */}
+                  {report.percentile_label !== null && (
+                    <Text className='pill ok'>{report.percentile_label}</Text>
+                  )}
+                </View>
+                <View className='report__percentile-gap' />
+                <View className='bar ok'>
+                  <View style={styleOf({ width: `${report.percentile}%` })} />
+                </View>
+                {/* 说明里必须写出**人数**：只说「超过 43%」时，用户没法判断
+                    这个 43% 是在 3 个人里排的还是 300 个人里排的 */}
+                <View className='tiny report__percentile-note'>
+                  {REPORT_COPY.percentileNote(report.percentile_pool)}
+                </View>
+              </View>
+            )}
           </View>
         </View>
       </View>

@@ -6,17 +6,28 @@
  * 已确认的决策：**挑战副本是本地即时判题**（开发计划 Phase 2 · 2.8）。
  * 每答一题就发一次请求会让「答对后立刻变绿」这件事被网络延迟绑架 ——
  * 而正确答案本来就在题库里（`Quiz.question` 是随题库一起下发的），
- * 前端手里有全部判题所需信息。后端只在 Phase 3 接收**汇总后的结果**用于生成报告。
+ * 前端手里有全部判题所需信息。后端在交卷时接收**逐题选择**并重判一遍
+ * 作为权威分数（方案 §6.5）。
  *
  * ## 规则来源
  *
  * 全部照抄 `docs/MVP开发计划.md` §9，不在这里重新发明：
  * 单题满分 单选 40 / 多选 60 / 判断 20；答错一律 +0 不扣分；
- * `coins = floor(XP × 0.18)`；`percentile = clamp(round(accuracy × 0.9), 5, 95)`。
+ * `coins = floor(XP × 0.18)`。
  *
  * 这些数字与原型逐处对齐过：5 题全对 = 200 XP；答对 4 题 = 180 XP；
- * 180 XP → 32 金币；正确率 80% → 超过 72% 的冒险者。
- * **改动任何一个数之前先回去看原型那三处是否还吻合。**
+ * 180 XP → 32 金币。**改动任何一个数之前先回去看原型那几处是否还吻合。**
+ *
+ * ## ⚠️ 这里**没有**百分位（2026-09-23 移除）
+ *
+ * 原先这里有一个 `percentileOf(accuracy) = clamp(round(accuracy × 0.9), 5, 95)`
+ * 的镜像实现，因为当时百分位只是「正确率的单调映射」。现在它是**真实社团分位**：
+ * 「正确率严格高于其他冒险者最佳正确率的人数占比」—— 拿本地数据算不出来，
+ * 算出来也是错的。所以：
+ *
+ * - 本地 `QuizSummary` 不含 `percentile`（不再有一个「先显示个大概值」的字段）；
+ * - 结算页那一格**只认服务端**，服务端没回话就先不显示（见 `pages/settle`）；
+ * - 判据在 `backend/app/services/scoring.py::pool_percentile`。
  */
 
 import type { QuestionType, Quiz, QuizQuestion } from '../types/api'
@@ -36,10 +47,6 @@ const MULTIPLE_PARTIAL_RATIO = 0.5
 
 /** 金币换算率：`coins = floor(XP × 0.18)` */
 const COIN_RATE = 0.18
-
-/** 演示用百分位的天花板与地板（§9.4） */
-const PERCENTILE_FLOOR = 5
-const PERCENTILE_CEIL = 95
 
 export interface QuestionResult {
   questionId: string
@@ -79,17 +86,6 @@ export function accuracyOf(correctCount: number, totalCount: number): number {
  */
 export function coinsOf(xp: number): number {
   return Math.floor(Math.max(0, xp) * COIN_RATE)
-}
-
-/**
- * 演示用百分位：`clamp(round(accuracy × 0.9), 5, 95)`。
- *
- * 没有真实用户池，这是正确率的单调映射（§9.4），**界面必须标注是演示值**。
- * 与后端 `percentile_for` 对应。
- */
-export function percentileOf(accuracy: number): number {
-  const clamped = Math.max(0, Math.min(100, accuracy))
-  return Math.min(PERCENTILE_CEIL, Math.max(PERCENTILE_FLOOR, Math.round(clamped * 0.9)))
 }
 
 /**
@@ -168,8 +164,6 @@ export interface QuizSummary {
   maxXp: number
   /** 冒险金币 */
   coins: number
-  /** 演示用的百分位（§9.4） */
-  percentile: number
 }
 
 /**
@@ -216,8 +210,6 @@ export function summarizeQuiz(
     totalXp,
     maxXp,
     coins: coinsOf(totalXp),
-    // 无真实用户池，用正确率做单调映射（§9.4）。界面必须标注这是演示值。
-    percentile: percentileOf(accuracy),
     startedAt,
     finishedAt,
     durationSeconds:

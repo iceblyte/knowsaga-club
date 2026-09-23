@@ -66,6 +66,22 @@ def current_user_id(db_client, auth_headers) -> int:  # noqa: ANN001
 
 
 @pytest.fixture
+def other_submitted_quiz(db_session, other_user_id, sample_quiz_payload: dict):  # noqa: ANN201
+    """落库一份**归第二个用户**的卷轴（口径与 `submitted_quiz` 相同）。
+
+    专供「真实社团分位」用例：分位要跟**其他冒险者**比，就得真有第二个人的
+    成绩；而交卷接口不允许拿别人的卷轴答题（4005），所以必须另造一份。
+    """
+
+    def _make() -> tuple[Quiz, int]:
+        quiz = Quiz.model_validate(sample_quiz_payload)
+        stored = quiz_repository.persist_quiz(db_session, user_id=other_user_id, quiz=quiz)
+        return stored, int(stored.quiz_id)
+
+    return _make
+
+
+@pytest.fixture
 def other_user_id(db_client, other_auth_headers) -> int:  # noqa: ANN001
     """第二个登录用户的数据库 id，供越权用例使用。"""
     resp = db_client.get("/api/v1/users/me", headers=other_auth_headers)
@@ -142,7 +158,13 @@ def test_grading_is_authoritative_not_client_reported(
 
 
 def test_all_wrong_gives_zero(db_client, auth_headers, submitted_quiz) -> None:
-    """全错：0 XP / 0 金币 / 正确率 0 / 百分位落到下限 5。"""
+    """全错：0 XP / 0 金币 / 正确率 0。
+
+    百分位在**池子为空**时是 `None`（2026-09-23 起改为真实社团分位）：
+    本用例的社团里只有自己，没有任何可比的人。**不要**断言成 0 或 5 ——
+    0 会被读成「谁也没超过」，5 是已被删掉的演示下限。见
+    `app/services/scoring.py::pool_percentile` 与 `percentile_service`。
+    """
     quiz, _ = submitted_quiz()
     wrong = [_answer(q.id, ["Z"]) for q in quiz.questions]
 
@@ -153,8 +175,101 @@ def test_all_wrong_gives_zero(db_client, auth_headers, submitted_quiz) -> None:
     assert data["summary"]["xp_gained"] == 0
     assert data["summary"]["coins_gained"] == 0
     assert data["summary"]["accuracy"] == 0
-    assert data["summary"]["percentile"] == 5
+    assert data["summary"]["percentile"] is None
+    assert data["summary"]["percentile_pool"] == 0
     assert data["summary"]["wrong_count"] == 5
+
+
+# -----------------------------------------------------------------------------
+# 真实社团分位（Bug3 的端到端判据）
+# -----------------------------------------------------------------------------
+def test_percentile_comes_from_real_club_pool(
+    db_client,
+    auth_headers,
+    other_auth_headers,
+    submitted_quiz,
+    other_submitted_quiz,
+) -> None:
+    """百分位真的在跟**社团里其他人**比，而不是 `accuracy × 0.9` 的演示值。
+
+    这条用例是 Bug3（「百分位为演示数据」）的端到端判据，必须造出第二个真实
+    用户才成立，所以走完整接口而不是直接摆弄那一列：
+
+      1. 另一位冒险者先交一局 **全错**（正确率 0）
+      2. 本用例用户交一局 **全对** → 池子 1 人、超过 100%
+         （旧实现里这一步是 90，与「社团里只有两个人」毫无关系）
+      3. 另一位再交一局 **80 分**（4 对 + 1 多选部分），刷新他自己的**最佳**
+      4. 本用例用户再交一局全错 → 池子仍是 **1 人**，分位变成 **0**
+
+    第 3–4 步同时锁住两件事：池子取的是每人**最佳**（不是最近一局），
+    且分母是**人**不是记录数（对方已交两局，`percentile_pool` 依然是 1）。
+    """
+    quiz, _ = submitted_quiz()
+    other_quiz, _ = other_submitted_quiz()
+
+    # 1) 另一位：全错 → 他的最佳正确率是 0
+    other_wrong = [_answer(q.id, ["Z"]) for q in other_quiz.questions]
+    db_client.post(
+        ATTEMPT_URL, json=_submit_body(other_quiz, other_wrong), headers=other_auth_headers
+    )
+
+    # 2) 本用户：全对 → 唯一可比的对手是 0 分，所以超过 100%
+    first = db_client.post(
+        ATTEMPT_URL, json=_submit_body(quiz, _all_correct(quiz)), headers=auth_headers
+    ).json()["data"]
+    assert first["summary"]["accuracy"] == 100
+    assert first["summary"]["percentile_pool"] == 1
+    assert first["summary"]["percentile"] == 100
+
+    # 3) 另一位：4 对 + 1 多选少选（正确率 80）→ 刷新他的最佳
+    partial = [
+        _answer(q.id, list(q.answer)[:1]) if q.type == "multiple" else _answer(q.id, list(q.answer))
+        for q in other_quiz.questions
+    ]
+    refreshed = db_client.post(
+        ATTEMPT_URL, json=_submit_body(other_quiz, partial), headers=other_auth_headers
+    ).json()["data"]
+    assert refreshed["summary"]["accuracy"] == 80
+
+    # 4) 本用户再交一局全错 → 池子**还是 1 人**（人，不是记录数），分位 0
+    again = db_client.post(
+        ATTEMPT_URL,
+        json=_submit_body(quiz, [_answer(q.id, ["Z"]) for q in quiz.questions]),
+        headers=auth_headers,
+    ).json()["data"]
+    assert again["summary"]["accuracy"] == 0
+    assert again["summary"]["percentile_pool"] == 1
+    assert again["summary"]["percentile"] == 0
+
+
+def test_percentile_pool_counts_people_not_attempts(
+    db_client, auth_headers, other_auth_headers, submitted_quiz, other_submitted_quiz
+) -> None:
+    """同一个人刷 3 局，池子仍然只算 1 个样本。
+
+    否则一个爱刷分的用户能一个人把整个社团的分位拖动 —— 界面那句
+    是「超过 X% 的**冒险者**」，分母必须是**人**。
+    """
+    quiz, _ = submitted_quiz()
+    other_quiz, _ = other_submitted_quiz()
+
+    # 另一位连着交 3 局（正确率 0 / 80 / 100）
+    other_wrong = [_answer(q.id, ["Z"]) for q in other_quiz.questions]
+    partial = [
+        _answer(q.id, list(q.answer)[:1]) if q.type == "multiple" else _answer(q.id, list(q.answer))
+        for q in other_quiz.questions
+    ]
+    for answers in (other_wrong, partial, _all_correct(other_quiz)):
+        db_client.post(
+            ATTEMPT_URL, json=_submit_body(other_quiz, answers), headers=other_auth_headers
+        )
+
+    data = db_client.post(
+        ATTEMPT_URL, json=_submit_body(quiz, _all_correct(quiz)), headers=auth_headers
+    ).json()["data"]
+
+    # 3 局记录，但只有 1 个人
+    assert data["summary"]["percentile_pool"] == 1
 
 
 def test_multiple_choice_partial_is_counted_as_partial_not_correct(
@@ -752,7 +867,12 @@ def test_answers_are_persisted_per_question(
 
 
 def test_attempt_row_matches_summary(db_client, auth_headers, submitted_quiz, db_session) -> None:
-    """落库的汇总与响应里的汇总必须一致 —— 否则看板与结算页会各说各话。"""
+    """落库的汇总与响应里的汇总必须一致 —— 否则看板与结算页会各说各话。
+
+    百分位这一列有个**刻意的口径差**：列是 `NOT NULL`，池子为空时落 `0`；
+    而接口回 `None`（「还没有人可比」）。两者是同一事实的两种表达，
+    映射对不上才是 bug —— 所以这里比的是映射后的值，不是裸值。
+    """
     quiz, _ = submitted_quiz()
 
     data = db_client.post(
@@ -764,6 +884,9 @@ def test_attempt_row_matches_summary(db_client, auth_headers, submitted_quiz, db
     assert int(row.xp_gained) == summary["xp_gained"]
     assert int(row.coins_gained) == summary["coins_gained"]
     assert int(row.accuracy) == summary["accuracy"]
-    assert int(row.percentile) == summary["percentile"]
+    # 池子为空 → 列上 0、接口回 None，是同一事实的两种表达
+    expected_percentile = 0 if summary["percentile"] is None else summary["percentile"]
+    assert int(row.percentile) == expected_percentile
+    assert int(row.percentile_pool) == summary["percentile_pool"]
     assert int(row.total_count) == summary["total_count"]
     assert row.status == "finished"

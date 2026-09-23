@@ -250,7 +250,10 @@ class ScrollDetailResponse(BaseModel):
     total_count: int
     xp_gained: int
     max_xp: int
-    percentile: int
+    #: 真实口径的社团分位；`None` = 社团里还没有其他冒险者（见 `percentile_service`）。
+    percentile: int | None = None
+    #: 算这个分位时可比的冒险者人数；界面上的说明文案用它，0 时不显示分位。
+    percentile_pool: int = 0
     attempt_no: int
     questions: list[ScrollQuestionItem] = Field(default_factory=list)
 

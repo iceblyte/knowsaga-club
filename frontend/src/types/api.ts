@@ -259,8 +259,13 @@ export interface AttemptSummary {
   xp_gained: number
   max_xp: number
   coins_gained: number
-  /** 演示口径：clamp(round(accuracy × 0.9), 5, 95) */
-  percentile: number
+  /**
+   * 真实社团分位：正确率**严格高于**其他冒险者最佳正确率的人数占比（0–100）。
+   * `null` = 这局结算时社团里还没有别的冒险者 —— 界面不许显示这一格。
+   */
+  percentile: number | null
+  /** 算这个分位时可比的冒险者人数；0 与 `percentile: null` 成对出现 */
+  percentile_pool: number
   duration_ms: number
   avg_seconds_per_question: number
 }
@@ -364,9 +369,12 @@ export interface AttemptReport {
   xp_gained: number
   max_xp: number
   coins_gained: number
-  percentile: number
-  /** 原型第 1 屏的档位胶囊，如「中上」 */
-  percentile_label: string
+  /** 真实社团分位；`null` = 这一局结算时社团里还没有其他冒险者，界面整块不渲染 */
+  percentile: number | null
+  /** 算这个分位时可比的冒险者人数（说明文案要用） */
+  percentile_pool: number
+  /** 原型第 1 屏的档位胶囊，如「中上」；没有分位时为 `null` */
+  percentile_label: string | null
 
   // ---- 叙述内容 ----
   mastered_points: string[]
@@ -651,7 +659,10 @@ export interface ScrollDetailResponse {
   total_count: number
   xp_gained: number
   max_xp: number
-  percentile: number
+  /** 真实社团分位；`null` = 该局结算时社团里还没有其他冒险者 */
+  percentile: number | null
+  /** 算这个分位时可比的冒险者人数 */
+  percentile_pool: number
   attempt_no: number
   questions: ScrollQuestionItem[]
 }

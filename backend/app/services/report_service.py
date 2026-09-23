@@ -157,7 +157,11 @@ def merge_draft(
         max_xp=snapshot.max_xp,
         coins_gained=snapshot.coins_gained,
         percentile=snapshot.percentile,
-        percentile_label=scoring.percentile_label_for(snapshot.percentile),
+        # 池子为空时没有档位 —— 「起步」这种标签配着一个不存在的位置会像嘲讽。
+        percentile_label=(
+            None if snapshot.percentile is None else scoring.percentile_label_for(snapshot.percentile)
+        ),
+        percentile_pool=snapshot.percentile_pool,
         mastered_points=list(draft.mastered_points),
         weak_points=list(draft.weak_points),
         three_line_summary=list(draft.three_line_summary),
@@ -191,7 +195,11 @@ class _Snapshot:
     xp_gained: int
     max_xp: int
     coins_gained: int
-    percentile: int
+    #: 真实社团分位；`None` = 这一局结算时社团里还没有其他冒险者。
+    #: 判据是同一行的 `percentile_pool`（见 `percentile_service`），
+    #: 而不是「percentile 是不是 0」—— 0% 是一个合法的真实结果。
+    percentile: int | None
+    percentile_pool: int
     #: 喂给模型的三段文本
     quiz_json: str
     answer_records: str
@@ -306,7 +314,8 @@ def _load_snapshot(session: Session, *, attempt_id: int, user_id: int) -> _Snaps
         xp_gained=int(attempt.xp_gained),
         max_xp=int(attempt.max_xp),
         coins_gained=int(attempt.coins_gained),
-        percentile=int(attempt.percentile),
+        percentile=(None if int(attempt.percentile_pool) <= 0 else int(attempt.percentile)),
+        percentile_pool=int(attempt.percentile_pool),
         quiz_json=json.dumps(quiz.model_dump(mode="json"), ensure_ascii=False),
         answer_records="\n".join(lines),
         score_summary=(

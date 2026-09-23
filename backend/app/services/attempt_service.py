@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +50,7 @@ from app.models.attempt import (
 from app.services import (
     badge_service,
     growth_service,
+    percentile_service,
     quiz_repository,
     scoring,
     user_service,
@@ -107,7 +109,17 @@ def submit_attempt(
 
     # ---- 判题 ----
     graded = _grade_all(questions, payload.answers)
-    summary = _summarize(graded, duration_ms=duration_ms)
+
+    # ---- 百分位（真实用户池，见 `percentile_service`） ----
+    # 必须**在落库之前**查：这一局还没写进去，所以「其他人」天然不含本次；
+    # 也不含这位用户自己的历史最佳 —— 那句话说的是「超过社团里的冒险者」。
+    others_best = percentile_service.others_best_accuracy(
+        session, exclude_user_id=int(user.id)
+    )
+
+    summary = _summarize(
+        graded, duration_ms=duration_ms, others_best_accuracy=others_best
+    )
 
     # ---- 落库（一个事务） ----
     attempt = _write_attempt(
@@ -279,8 +291,21 @@ def _grade_all(
     return graded
 
 
-def _summarize(graded: list[_GradedQuestion], *, duration_ms: int) -> AttemptSummary:
-    """汇总一局。分母是**题量**，未作答的题按 0 分占位。"""
+def _summarize(
+    graded: list[_GradedQuestion],
+    *,
+    duration_ms: int,
+    others_best_accuracy: Sequence[int],
+) -> AttemptSummary:
+    """汇总一局。分母是**题量**，未作答的题按 0 分占位。
+
+    百分位需要「其他冒险者的最佳正确率」，所以由调用方查好传进来 ——
+    这个函数保持纯函数，pytest 里可以直接喂一组池子验算，
+    不必先造一库用户（见 `tests/test_attempt_service.py`）。
+
+    `others_best_accuracy` 为空 = 社团里还没有别的冒险者 → `percentile` 为
+    `None`、`percentile_pool` 为 0，界面据此显示一句实话而不是假数字。
+    """
     total_count = len(graded)
     correct_count = sum(1 for item in graded if item.result.outcome == "correct")
     partial_count = sum(1 for item in graded if item.result.outcome == "partial")
@@ -299,7 +324,8 @@ def _summarize(graded: list[_GradedQuestion], *, duration_ms: int) -> AttemptSum
         xp_gained=xp_gained,
         max_xp=max_xp,
         coins_gained=scoring.coins_for(xp_gained),
-        percentile=scoring.percentile_for(accuracy),
+        percentile=scoring.pool_percentile(accuracy, others_best_accuracy),
+        percentile_pool=len(others_best_accuracy),
         duration_ms=duration_ms,
         avg_seconds_per_question=_avg_seconds(duration_ms, total_count),
     )
@@ -413,7 +439,11 @@ def _write_attempt(
         max_xp=summary.max_xp,
         xp_gained=summary.xp_gained,
         coins_gained=summary.coins_gained,
-        percentile=summary.percentile,
+        # 池子为空时 `percentile` 是 None，但列是 NOT NULL —— 写 0 占位，
+        # 由同行 `percentile_pool = 0` 表明「这个 0 不是成绩，是没事可算」。
+        # 界面读的是 API 返回的 `percentile`（None），不是这一列。
+        percentile=0 if summary.percentile is None else summary.percentile,
+        percentile_pool=summary.percentile_pool,
         avg_seconds_per_question=Decimal(str(summary.avg_seconds_per_question)),
         status="finished",
     )
@@ -513,7 +543,10 @@ def _replay(session: Session, user: User, attempt: Attempt) -> AttemptSubmitResp
             xp_gained=int(attempt.xp_gained),
             max_xp=int(attempt.max_xp),
             coins_gained=int(attempt.coins_gained),
-            percentile=int(attempt.percentile),
+            # 回放必须与首次提交逐位一致，所以这里的 None / 数值判定
+            # 与 `_write_attempt` 的写入口径**成对**（读 `percentile_pool` 决定）。
+            percentile=(None if int(attempt.percentile_pool) <= 0 else int(attempt.percentile)),
+            percentile_pool=int(attempt.percentile_pool),
             duration_ms=int(attempt.duration_ms),
             avg_seconds_per_question=float(attempt.avg_seconds_per_question),
         ),

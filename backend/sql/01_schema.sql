@@ -160,7 +160,10 @@ CREATE TABLE IF NOT EXISTS `attempts` (
   `max_xp`                  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `xp_gained`               SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   `coins_gained`            SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-  `percentile`              TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '演示口径：clamp(round(accuracy*0.9),5,95)',
+  `percentile`              TINYINT UNSIGNED NOT NULL DEFAULT 0
+                            COMMENT '真实口径：本局正确率严格高于其他冒险者最佳正确率的人数占比（0-100）。percentile_pool=0 时此值无意义，界面不得展示',
+  `percentile_pool`         INT UNSIGNED NOT NULL DEFAULT 0
+                            COMMENT '算这个百分位时池子里的可比人数（其他有成绩的冒险者数）；0 = 没有可比对象，界面显示「还没有其他冒险者」',
   `avg_seconds_per_question` DECIMAL(6,2) NOT NULL DEFAULT 0.00 COMMENT '数据看板「平均单局用时」',
   `status`                  VARCHAR(16) NOT NULL DEFAULT 'finished',
   `deleted_at`              DATETIME(3) DEFAULT NULL

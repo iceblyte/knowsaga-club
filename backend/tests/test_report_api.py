@@ -222,8 +222,13 @@ def test_report_stats_match_settlement_bit_for_bit(
     """报告页与结算页的数字必须逐位相同 —— 这是本模块最不能退让的一条。
 
     用一个「多选部分正确」的混合结果来测：正确率 80、答对 4、部分 1、答错 0、
-    XP 170、百分位 72 → 「中上」。只要服务层哪天改成「重新算一遍」，
+    XP 170。只要服务层哪天改成「重新算一遍」，
     这里就会因为两套口径的细微差异而失败。
+
+    百分位（2026-09-23 起是**真实社团分位**）在本用例里是 `None`：社团
+    只有自己一个人、池子为空。两端必须**同时**回到 `None`、同时不给档位 ——
+    一边有数字一边空才是真的对不上。有池子的正常路径在
+    `test_attempt_api.test_percentile_comes_from_real_club_pool`。
     """
     quiz, _ = submitted_quiz()
     multiple = next(q for q in quiz.questions if q.type == "multiple")
@@ -248,9 +253,10 @@ def test_report_stats_match_settlement_bit_for_bit(
     assert report["coins_gained"] == summary["coins_gained"] == 30
     assert report["duration_ms"] == summary["duration_ms"]
     assert report["avg_seconds_per_question"] == summary["avg_seconds_per_question"]
-    # 原型 03 第 1 屏：72% → 「中上」
-    assert report["percentile"] == summary["percentile"] == 72
-    assert report["percentile_label"] == "中上"
+    # 池子为空 → 两端都是 None，且都不给档位（不是「起步」）
+    assert report["percentile"] == summary["percentile"] is None
+    assert report["percentile_pool"] == summary["percentile_pool"] == 0
+    assert report["percentile_label"] is None
 
 
 def test_finished_at_carries_utc_offset(

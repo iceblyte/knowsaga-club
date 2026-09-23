@@ -12,7 +12,13 @@
     "算分是最不能靠人眼比对的——一个 round 语义不同（JS 的 Math.round 遇 .5 进位，",
     "Python 的 round 是银行家舍入）就会让结算数字和前端预览差 1。",
     "",
-    "expected.earned_xp 的单位是 XP；accuracy / percentile 是 0-100 的整数。"
+    "expected.earned_xp 的单位是 XP；accuracy 是 0-100 的整数。",
+    "",
+    "⚠️ 这里**没有** percentile 用例（2026-09-23 移除）。原因：百分位从「正确率 × 0.9」",
+    "的纯函数换成了**真实用户池**分位（其他冒险者最佳正确率的人数占比），",
+    "它依赖库里的数据、前端不再计算 —— 两份实现不再是一回事，",
+    "再放共享用例只会让下一个人以为前端也能算。新口径的判据在",
+    "backend/app/services/scoring.py::pool_percentile，用例在 backend/tests/test_scoring.py。"
   ],
 
   "grade_cases": [
@@ -148,14 +154,5 @@
     { "name": "0 XP → 0 金币", "xp": 0, "expected": 0 },
     { "name": "55 XP → 9.9 → 向下取整 9", "xp": 55, "expected": 9 },
     { "name": "25 XP → 4.5 → 向下取整 4（不能四舍五入）", "xp": 25, "expected": 4 }
-  ],
-
-  "percentile_cases": [
-    { "name": "原型：正确率 80% → 超过 72%", "accuracy": 80, "expected": 72 },
-    { "name": "正确率 5% → 4.5 → JS 口径进位为 5，恰好不触发下限", "accuracy": 5, "expected": 5 },
-    { "name": "正确率 4% → 3.6 → 4，被下限抬到 5", "accuracy": 4, "expected": 5 },
-    { "name": "正确率 0% → 下限 5", "accuracy": 0, "expected": 5 },
-    { "name": "正确率 15% → 13.5 → JS 口径进位为 14", "accuracy": 15, "expected": 14 },
-    { "name": "正确率 100% → 90（上限 95 在 0-100 区间内不可达，保留只为对称）", "accuracy": 100, "expected": 90 }
   ]
 }

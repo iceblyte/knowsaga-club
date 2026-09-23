@@ -219,6 +219,11 @@ class Attempt(Base):
     xp_gained: Mapped[int] = mapped_column(USMALL, nullable=False, default=0)
     coins_gained: Mapped[int] = mapped_column(USMALL, nullable=False, default=0)
     percentile: Mapped[int] = mapped_column(UTINY, nullable=False, default=0)
+    #: 算上面那个百分位时池子里的可比人数（其他有成绩的冒险者数）。
+    #:
+    #: `0` = 没有可比对象，此时 `percentile` 那一格**不许展示**（界面显示
+    #: 「社团里还没有其他冒险者」）。见 `sql/05_attempts_percentile_pool.sql`。
+    percentile_pool: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
     avg_seconds_per_question: Mapped[Decimal] = mapped_column(
         Numeric(6, 2), nullable=False, default=Decimal("0.00")
     )

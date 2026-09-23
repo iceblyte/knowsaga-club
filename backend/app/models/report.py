@@ -180,8 +180,14 @@ class Report(BaseModel):
     xp_gained: int = Field(ge=0)
     max_xp: int = Field(ge=0)
     coins_gained: int = Field(ge=0)
-    percentile: int = Field(ge=0, le=100)
-    percentile_label: NonEmptyStr = Field(description="原型第 1 屏的档位胶囊，如「中上」")
+    #: 真实社团分位。`None` = 这局结算时社团里还没有其他冒险者 ——
+    #: 此时前端**不渲染**百分位卡，改说「社团里还没有其他冒险者」。
+    percentile: int | None = Field(default=None, ge=0, le=100)
+    #: 算这个分位时可比的冒险者人数（说明文案要用）。
+    percentile_pool: int = Field(default=0, ge=0)
+    percentile_label: str | None = Field(
+        default=None, description="原型第 1 屏的档位胶囊，如「中上」；无分位时为 None"
+    )
 
     # ---- 叙述内容：来自 reports（AI 生成，失败时为确定性模板） ----
     mastered_points: list[str] = Field(default_factory=list)

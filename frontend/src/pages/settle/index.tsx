@@ -88,7 +88,14 @@ export default function SettlePage() {
       accuracy: server?.accuracy ?? local.accuracy,
       totalXp: server?.xp_gained ?? local.totalXp,
       coins: server?.coins_gained ?? local.coins,
-      percentile: server?.percentile ?? local.percentile
+      /**
+       * 百分位**只认服务端**（2026-09-23 起）。
+       *
+       * 它现在是真实社团分位（其他冒险者最佳正确率的人数占比），
+       * 前端手里没有别人的成绩、算不出来 —— 所以本地没有兜底值，
+       * 服务端没回话就是 `null`，那一行留空（不是 0%，见下方渲染）。
+       */
+      percentile: server?.percentile ?? null
     }
   }, [local, quiz, attempt])
 
@@ -202,7 +209,15 @@ export default function SettlePage() {
         </View>
       </View>
 
-      {/* 正确率 */}
+      {/* 正确率。
+          百分位那行**只认服务端**（前端手里没有别人的成绩，算不出来），
+          所以三种状态都得诚实：
+            · 服务端回了分位      → 写分位
+            · 服务端回了空池子    → 写「你是社团里第一个完成挑战的冒险者」
+            · 服务端还没回 / 没送到 → 留空
+          第三种**不能**套用第二句文案：交卷失败时我们根本不知道社团里有没有别人，
+          说「你是第一个」就是编的。留一个空 `<View>` 而不是不渲染，
+          是为了卡片高度在服务端回话时不跳。 */}
       <View className='card'>
         <View className='row settle__accuracy'>
           <AccuracyRing percent={view.accuracy} size={64} />
@@ -211,8 +226,11 @@ export default function SettlePage() {
               正确率 {view.correctCount} / {view.totalCount}
             </View>
             <View className='tiny settle__accuracy-note'>
-              {SETTLE_COPY.percentilePrefix} {view.percentile}% {SETTLE_COPY.percentileSuffix}
-              {SETTLE_COPY.percentileNote}
+              {view.percentile !== null
+                ? `${SETTLE_COPY.percentilePrefix} ${view.percentile}% ${SETTLE_COPY.percentileSuffix}`
+                : attempt
+                  ? SETTLE_COPY.percentileNoPool
+                  : ''}
             </View>
           </View>
         </View>

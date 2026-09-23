@@ -162,7 +162,17 @@ class AttemptSummary(BaseModel):
     xp_gained: int
     max_xp: int
     coins_gained: int
-    percentile: int = Field(description="演示口径：clamp(round(accuracy × 0.9), 5, 95)")
+    percentile: int | None = Field(
+        default=None,
+        description=(
+            "真实口径：正确率**严格高于**其他冒险者最佳正确率的人数占比（0–100）。"
+            "`None` = 社团里还没有别的冒险者，界面不许显示这一格"
+        ),
+    )
+    percentile_pool: int = Field(
+        default=0,
+        description="算上面那个百分位时可比的冒险者人数；0 与 percentile=None 成对出现",
+    )
     duration_ms: int
     avg_seconds_per_question: float = Field(description="保留两位小数")
 

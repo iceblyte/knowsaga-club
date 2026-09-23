@@ -239,7 +239,10 @@ def scroll_detail(session: Session, user: User, attempt_id: int) -> ScrollDetail
         total_count=int(attempt.total_count),
         xp_gained=int(attempt.xp_gained),
         max_xp=int(attempt.max_xp),
-        percentile=int(attempt.percentile),
+        # 与 `report_service._load`、`attempt_service._replay` 同一口径：
+        # 由同行的 `percentile_pool` 决定这一格是数字还是「没有可比的人」。
+        percentile=(None if int(attempt.percentile_pool) <= 0 else int(attempt.percentile)),
+        percentile_pool=int(attempt.percentile_pool),
         attempt_no=int(attempt.attempt_no),
         questions=questions,
     )
