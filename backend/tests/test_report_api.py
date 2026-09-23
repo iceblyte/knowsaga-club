@@ -403,6 +403,64 @@ def test_force_true_regenerates(
     assert len(ai_report.calls) == 2
 
 
+def test_report_path_never_fetches_external_material(
+    db_client,
+    auth_headers,
+    submitted_quiz,
+    db_scope,
+    inline_report_submit,
+    ai_report,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """报告链只读已有题库，**从不重新取材**（`add-web-search-grounding` design D11）。
+
+    取材只属于出题链：全仓 `SearchProvider.gather()` 只有 `quiz_service` 一个调用点。
+    报告复用同一份依据，靠的是出题时落进 `quizzes.references` 的快照。
+
+    做法：把取材 Provider 的工厂换成一个「一被调用就断言失败」的探针，
+    再走完整条报告路径（首次生成 + `force=true` 重新生成）。
+    将来若有人在报告链里顺手加一次「重新搜一下更准」的取材，这条用例会立刻红 ——
+    而不是等到线上发现「报告里的说法和题目对不上」。
+    """
+    from app.services import quiz_service
+
+    def _boom(*args: object, **kwargs: object) -> object:
+        raise AssertionError(
+            "报告链不该调用取材 Provider：报告只复述已有题库（design D11）"
+        )
+
+    monkeypatch.setattr(quiz_service, "get_search_provider", _boom)
+
+    quiz, _ = submitted_quiz()
+    attempt = _submit_attempt(db_client, auth_headers, quiz, _all_correct(quiz))
+    ai_report()
+
+    first = _generate_report(db_client, auth_headers, attempt["attempt_id"])
+    _poll_report(db_client, auth_headers, first["task_id"])
+
+    forced = _generate_report(db_client, auth_headers, attempt["attempt_id"], force=True)
+    _poll_report(db_client, auth_headers, forced["task_id"])
+
+    # 走到这里即「探针一次都没被触发」；再确认两次都真的产出了报告
+    assert len(ai_report.calls) == 2
+
+
+def test_report_service_has_no_search_coupling() -> None:
+    """静态兜底：`report_service` 里不该出现任何取材相关的符号。
+
+    上一条是运行时的，只覆盖跑到的分支；这一条覆盖**没跑到的分支** ——
+    将来在 `report_service` 里新加一条「补充资料」的路径，即使测试没走到，
+    这里也会因为出现 `gather` / `get_search_provider` 而失败。
+    """
+    import inspect
+
+    from app.services import report_service
+
+    source = inspect.getsource(report_service)
+    for symbol in ("get_search_provider", ".gather(", "SearchProvider", "SearchRequest"):
+        assert symbol not in source, f"report_service 不该耦合取材：出现了 {symbol}"
+
+
 # -----------------------------------------------------------------------------
 # 降级：AI 全失败 → 模板报告，而不是报错
 # -----------------------------------------------------------------------------

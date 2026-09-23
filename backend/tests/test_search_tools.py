@@ -88,6 +88,49 @@ def test_instance_level_params_come_from_settings_not_the_model() -> None:
     assert search.exact_match is False, "打开会要求 query 必须带引号短语，会让 0 命中率飙升"
 
 
+def test_search_depth_is_pinned_on_the_instance() -> None:
+    """`search_depth` 也必须钉在实例上 —— 这不是省钱，是**能不能搜到**的问题。
+
+    2026-09-22 端到端实测（见 `docs/MVP开发计划.md` §12.4）：模型把 `search_depth`
+    选成了 `fast`，而 Tavily 对这组的回答是 **400**：
+
+        Country parameter is not supported for fast or ultra-fast search_depth.
+
+    我们为了「中文输入偏向中文来源」固定传了 `country`（design D3），
+    于是「模型随手选个深度」就能把整次检索打成失败 —— 那一次 4 个调用额度
+    全部撞在同一个 400 上，最后 `search_state='degraded'`。
+
+    钉住它是**根治**而不是绕过：上游 `TavilySearch._run` 里写的是
+
+        search_depth=self.search_depth if self.search_depth else search_depth
+
+    实例级的值优先于调用级的值，所以模型就算传了也压不过这一行。
+    想拿长正文的正确姿势是 `tavily_extract` 读那一页（Prompt 第三节已这么教）。
+    """
+    settings = _settings()
+
+    for query in (ZH_QUERY, EN_QUERY):
+        search, _ = build_tavily_tools(SearchRequest(query=query), settings)
+        assert search.search_depth == "basic", (
+            "实例级必须是 basic：fast/ultra-fast 与 country 互斥（Tavily 400），"
+            "advanced 又是 2 倍计费"
+        )
+
+
+def test_pinned_depth_stays_legal_with_a_country_preference() -> None:
+    """把两个约束放在一起断言，防止有人「优化」掉其中一个。
+
+    `country` 与 `search_depth∈{fast, ultra-fast}` 互斥，是这次踩到 400 的根因；
+    两条断言必须同时成立，否则要么失去地区偏好、要么随时 400。
+    """
+    settings = _settings(search_country_default="china", search_country_default_en="united states")
+
+    search, _ = build_tavily_tools(SearchRequest(query=ZH_QUERY), settings)
+
+    assert search.country == "china", "中文输入的地区偏好不能丢"
+    assert search.search_depth not in {"fast", "ultra-fast"}, "这个深度组合会被 Tavily 判 400"
+
+
 def test_extract_tool_is_configured_for_markdown_pages() -> None:
     """extract 侧：markdown 格式、有 `chunks_per_source`、图片与用量都不带。"""
     settings = _settings()

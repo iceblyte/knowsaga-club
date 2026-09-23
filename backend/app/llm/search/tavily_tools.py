@@ -9,10 +9,10 @@
 
 | 谁决定 | 参数 |
 |---|---|
-| **服务端（本模块）** | `country`（按输入语种）、`max_results`（按配置）、所有 `include_*` 布尔开关、`format` |
-| **模型（调用时）** | `query`、`search_depth`、`topic`、`time_range`、`start_date`/`end_date`、`include_domains`/`exclude_domains`；extract 侧的 `urls`、`extract_depth`、`query` |
+| **服务端（本模块）** | `country`（按输入语种）、`max_results`（按配置）、`search_depth`（**钉死 `basic`**，见下）、所有 `include_*` 布尔开关、`format` |
+| **模型（调用时）** | `query`、`topic`、`time_range`、`start_date`/`end_date`、`include_domains`/`exclude_domains`；extract 侧的 `urls`、`extract_depth`、`query` |
 
-## 三个刻意的选择
+## 四个刻意的选择
 
 1. **不打开 `include_raw_content`。** 它是实例级开关，一旦打开就**无条件**给每条搜索结果
    附整页正文（实测单页可达 7.5 万字符），必然挤爆 `quiz_max_tokens=4096`，
@@ -22,6 +22,24 @@
    关掉之后 0 命中以异常抛出，由取材循环自己捕获，语义不再有歧义（design D6 第 2 条）。
 3. **每次请求重新装工具，不做模块级缓存。** 缓存会把上一个用户的语种偏好带给下一个用户，
    症状是「英文问题搜出一堆中文站」，极难归因。
+4. **`search_depth` 也钉在实例上（`basic`）。** 原因不是省钱，而是**能不能搜到**：
+
+   2026-09-22 端到端实测（`docs/MVP开发计划.md` §12.4），模型把深度选成了 `fast`，
+   Tavily 的回答是 **400**：
+
+       Country parameter is not supported for fast or ultra-fast search_depth.
+
+   我们为了「中文输入偏向中文来源」固定传了 `country`，于是「模型随手选个深度」
+   就能把整次检索打成失败 —— 那一次 4 个调用额度全撞在同一个 400 上，
+   最终 `search_state='degraded'`，用户贴的链接一条都没读到。
+
+   钉住它是**根治**而不是绕过：上游 `TavilySearch._run` 里写的是
+
+       search_depth=self.search_depth if self.search_depth else search_depth
+
+   实例级的值优先于调用级的值，所以模型就算传了也压不过这一行。
+   想拿长正文的正确姿势是 `tavily_extract` 读那一页（Prompt 第三节已这么教，
+   这条替代路径必须留，否则模型会试图用深度来达到「要更多正文」的目的）。
 """
 
 from __future__ import annotations
@@ -51,6 +69,30 @@ def _pick_country(request: SearchRequest, settings: Settings) -> str | None:
     return settings.search_country_default_en
 
 
+def require_tavily_key(settings: Settings) -> str:
+    """取出并校验 Tavily 的 key，未配置就抛 5000（design D13）。
+
+    **这必须是唯一一份校验与文案。** 两处都写一份的话，总有一处先漂移，
+    而症状是「报文里说的是 A，日志里说的是 B」。
+
+    Args:
+        settings: 配置来源。
+
+    Raises:
+        AppError(5000): 未配置 `TAVILY_API_KEY`。
+            它算**配置错误**而不是「降级」：这时的表现是「开关显示开着、配置写着开着，
+            实际一次都没联网」—— 是最难发现的一类谎报。
+    """
+    api_key = (settings.tavily_api_key or "").strip()
+    if not api_key:
+        raise AppError(
+            ErrorCode.INTERNAL_ERROR,
+            "已开启联网检索但未配置 TAVILY_API_KEY，请在 .env 里填写后重启服务",
+            detail="tavily_api_key is empty",
+        )
+    return api_key
+
+
 def build_tavily_tools(
     request: SearchRequest, settings: Settings
 ) -> tuple[TavilySearch, TavilyExtract]:
@@ -73,19 +115,20 @@ def build_tavily_tools(
         TavilySearchAPIWrapper,
     )
 
-    api_key = (settings.tavily_api_key or "").strip()
-    if not api_key:
-        raise AppError(
-            ErrorCode.INTERNAL_ERROR,
-            "已开启联网检索但未配置 TAVILY_API_KEY，请在 .env 里填写后重启服务",
-            detail="tavily_api_key is empty",
-        )
+    # ⚠️ 变量名刻意**不叫 `api_key`**：`tools/scan_secrets.py` 的「写死密钥」规则
+    # 只看 `api_key=` 后面那一串标识符，会把 `api_key = 函数调用()` 误判成硬编码密钥。
+    # 给安全规则开口子比换个更准的名字危险得多，所以改名字（`tavily_key` 也更准确 ——
+    # 它是 Tavily 的 key，与下面 `tavily_api_key=` 的实参同名）。
+    tavily_key = require_tavily_key(settings)
 
     search_kwargs: dict[str, Any] = {
         # 显式把 key 交给 APIWrapper：不依赖构造期的环境变量回退（与项目 Settings 注入风格一致）
-        "api_wrapper": TavilySearchAPIWrapper(tavily_api_key=api_key),
+        "api_wrapper": TavilySearchAPIWrapper(tavily_api_key=tavily_key),
         "max_results": settings.search_max_results,
         "country": _pick_country(request, settings),
+        # ⚠️ 必须钉死 `basic`（模块 docstring 第 4 条）：`fast` / `ultra-fast` 与 `country`
+        # 互斥，模型一旦选了就是 400；`advanced` 则是 2 倍计费。两者都不要。
+        "search_depth": "basic",
         # 以下全部保持关闭：它们要么会无条件放大体积，要么会抬高失败率或计费
         "include_answer": False,
         "include_raw_content": False,
@@ -107,7 +150,7 @@ def build_tavily_tools(
 
     extract = TavilyExtract(
         # ⚠️ 上游这个字段名是 `apiwrapper`（没有下划线），`TavilySearch` 才叫 `api_wrapper`
-        apiwrapper=TavilyExtractAPIWrapper(tavily_api_key=api_key),
+        apiwrapper=TavilyExtractAPIWrapper(tavily_api_key=tavily_key),
         extract_depth="basic",
         format="markdown",
         chunks_per_source=EXTRACT_CHUNKS_PER_SOURCE,

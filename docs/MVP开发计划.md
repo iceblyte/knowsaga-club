@@ -13,7 +13,7 @@
 | # | 决策项 | 结论 |
 |---|---|---|
 | 1 | 页面范围 | **仅 01 核心闭环 + 02 挑战副本 + 03 冒险日志（部分）**，共 20 屏 |
-| 2 | 联网检索 | **预留 Provider 抽象层，MVP 走纯模型出题**；后续改一个开关即可开启 |
+| 2 | 联网检索 | ~~**预留 Provider 抽象层，MVP 走纯模型出题**；后续改一个开关即可开启~~ → **已接入 Tavily**（关键词检索 + 按 URL 抓整页），开关按次生效，见下方后记 |
 | 3 | 用户体系 | **纯前端展示，不做真实用户数据**；等级/连击/历史为静态示例值 |
 | 4 | 后端持久化 | **不做**，后端无状态（任务表为进程内内存 + TTL） |
 | 5 | 生成接口形态 | **异步任务 + 轮询**（对应原型「三步进度可见 / 8s 后出取消入口」） |
@@ -31,6 +31,17 @@
 > 「真实用户 + 真实数据」「用户域数据全部落库」「历史冒险日志要做」——
 > 修订内容与原因见 `docs/用户系统需求分析文档.md §8`，不在本表就地改写，
 > 以保留决策演进的可追溯性。**其余各条仍然有效。**
+>
+> **后记二（联网检索阶段，2026-09-22）**：上表 **第 2 条已修订**。
+> 原文是「预留抽象层、MVP 走纯模型出题」——预留本身做对了（`SearchProvider`
+> 抽象层在 Phase 1 就落地，接到 `tavily` 时**一行调用方代码都没改**），
+> 但「纯模型出题」这个前提在这轮被推翻：模型训练数据有截断，问它「Harness
+> Engineering 是什么」这类新概念时，它给出的错误理解用户无法分辨 ——
+> 这不是「题目质量不够好」，是**题目在事实层面是错的**，比不出题更有害。
+> 现已在 `add-web-search-grounding` 变更里接入 Tavily（关键词检索 + 按 URL 抓整页），
+> 开关**按次生效**（大厅那只 pill 就是它的控制面），取材结果以快照形式落在
+> `quizzes.search_state` / `quizzes.references` 上。修订详情见该变更的
+> `proposal.md` / `design.md`，实测结论见本文 §12.3 与 §12.4。
 
 ---
 
@@ -221,7 +232,7 @@ knowsaga-club/
 │  │  │  ├─ output_schemas.py      # 结构化输出 Schema
 │  │  │  ├─ quiz_chain.py
 │  │  │  ├─ report_chain.py
-│  │  │  └─ search/{base,noop,bocha,tavily}.py  # Provider 抽象层（MVP 只启用 noop）
+│  │  │  └─ search/{base,noop,tavily,agent,collector,tavily_tools}.py  # Provider 抽象层 + 取材循环（bocha 仍未接入）
 │  │  └─ utils/{text_cleaner,content_filter,id_generator}.py
 │  ├─ tests/
 │  │  ├─ conftest.py
@@ -497,8 +508,40 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 ```
 
 `status` 枚举：`pending | running | succeeded | failed | cancelled`
-- 联网检索关闭时，第一步 `key=retrieve` 的名称由后端的 `SearchProvider` 决定：
-  `NoopSearchProvider` 返回「理解你的输入 / 已提炼 N 个核心概念」，真实 Provider 返回「联网检索知识 / 已完成 · 命中 N 条资料」。**前端不做判断，直接渲染后端给的 name/detail**，这样后续开启联网无需改前端。
+
+第一步 `key=retrieve` 的名称由后端的 `SearchProvider` 按**这次真正走的取材路径**决定
+（`app/llm/search/base.py` 的 `build_initial_step`），优先级 **链接 > 主动检索 > 理解输入**：
+
+| 情形 | `name` | `detail`（完成时） |
+|---|---|---|
+| 输入里有链接 | `读取你给的网页` | `已完成 · 命中 N 条资料（其中整页 M 篇）` |
+| 无链接 + 联网开（`use_search=true`） | `联网检索知识` | 同上 |
+| 无链接 + 联网关，或后端没配检索 | `理解你的输入` | `已提炼 N 个核心概念` |
+| 想联网/想读链接但一条都没取到（降级） | **保持上面那个 `name`** | `未取到可用资料，已提炼 N 个核心概念` |
+
+**前端不做判断，直接渲染后端给的 name/detail**（`frontend/src/utils/retrieval.ts`
+只在后端**还没回第一个状态**时给本地兜底，两边口径由同一条判定函数 `resolveRetrievalMode`
+保证一致）。两条纪律：
+
+- 步骤名回答「这一步在做什么」，**不回答「做成了没有」** —— 做没做到由 `detail` 说。
+  所以「想联网但降级」时名字仍是 `联网检索知识`，而不会改口成「理解你的输入」
+  （那会让人以为开关没生效，而真相是开关生效了、只是没搜到）。
+- `use_search=false` **压不住用户自己贴的链接**（design D4）：链接一定被读，
+  开关只表示「别主动去搜」。文案必须说清这一点，否则开关就在说谎。
+
+### 7.2.1 `POST /quiz/generate` 的 `use_search` 入参
+
+请求体在既有三字段外多一个 `use_search: bool = True`（默认开启）：
+
+```json
+{ "user_input": "什么是 Harness Engineering", "question_count": 5,
+  "difficulty": "mixed", "use_search": true }
+```
+
+它是**意愿**，不是能力 —— 后端有没有配好检索（`GET /health` 的 `search_enabled`）
+是另一件事，两者都满足才会真的联网。凡是「意愿」与「能力」混为一谈的地方，
+用户看到的就是一句解释不了的假话（配了 key 的人点了「不联网」却仍在联网，
+或没配 key 的人以为自己在联网），所以入参与步骤文案都按这两件事分开表达。
 
 ### 7.4 取消任务
 
@@ -739,7 +782,7 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
 | 8 | 轮询响应体**形状固定 10 键** | `task_id / task_type / status / progress / steps / quiz / report / error / created_at / updated_at`，含 `report`（Phase 3 用）且无值的字段给 `null` 而非省略。理由：前端只写一套解析逻辑；省略键会逼前端到处写 `?.`，漏一处就是线上白屏 |
 | 9 | `QuizDraft` 与 `Quiz` **分开定义** | `with_structured_output` 用 `QuizDraft`（只含模型该产出的字段），不用 `Quiz`。理由：不逼模型回显 `user_input`（浪费 token 且可能被改写），也不让它生成服务端才有权决定的 `quiz_id` |
 | 10 | 标签栏图标**改用 PNG** | 微信 `image` 官方支持 SVG，但同时列出「不支持百分比单位 / 不支持 `<style>` / `scaleToFill` 下 WebView 居中」三条限制；抽出的图标只有 `viewBox` 没有 `width/height`，尺寸推导属文档未兜底行为。标签栏是固定 81×81 的位图场景，改为 PNG 一次性消除不确定性。光栅化脚本只用 Python 标准库（不引入原生依赖），矢量副本仍保留在 `assets/icons/svg/` |
-| 11 | 检索 Provider 只落地 `base` + `noop` | 方案设计的目录里列了 `bocha` / `tavily`，但它们是 P1 范围。**不写空壳文件**（既无法测试，也会让人误以为已支持）；改为在 `get_search_provider` 里对这两个名字显式报「尚未接入」。开关打开但 Provider 未实现时**报错而非静默降级成不联网** —— 静默降级最糟：配置明明打开，用户却以为在联网 |
+| 11 | 检索 Provider：`base` + `noop` 落地，`tavily` 已接入、`bocha` 仍未接入 | 方案设计的目录里列了 `bocha` / `tavily`，MVP 期两者都是 P1 范围 —— 当时**不写空壳文件**（既无法测试，也会让人误以为已支持），改为在 `get_search_provider` 里对这两个名字显式报「尚未接入」。**2026-09-22 修订**：`tavily` 已由 `add-web-search-grounding` 接入（`TavilySearchProvider` + 官方 `TavilySearch`/`TavilyExtract` 两个工具 + 手写有界取材循环），`bocha` **仍是**「尚未接入」。开关打开但 Provider 未实现时仍然**报错而非静默降级成不联网** —— 静默降级最糟：配置明明打开，用户却以为在联网 |
 | 12 | 出题主通道**由 `function_calling` 调换为 `json_mode`** | 实测量化：`json_mode` 一次通过 6/6，`function_calling` 4/6（失败形态为「模型系统性省略每题的 `knowledge_point`/`difficulty`」，偶尔是空响应）。降级通道保留 `function_calling` 而非删除 —— 两者失效原因不同，上游若不再支持 `response_format=json_object` 时只有换通道能救。量化脚本 `backend/scripts/compare_output_methods.py` 不进 pytest。详见 §2.4.2 |
 
 ### 12.2 前端工程就绪与依赖树治理（编码期结论）
@@ -824,8 +867,74 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
 - 省略标记是 `[...]`、**不是** `<chunk n>` ⇒ 清洗目标随之改（`<chunk` 只作防御性处理）。
 - 单页可达 **7.5 万字符**，而 `quiz_max_tokens=4096` ⇒ **新增 `search_page_max_chars`**，
   整页正文必须有独立单页上限（`design.md` D14）。
-- 模型会自发选 `search_depth='advanced'`（官方计费是 `basic` 的 **2 倍**）⇒ Prompt 里要给一句
-  默认深度指引，不能完全放任。
+- 模型会自发选 `search_depth='advanced'`（官方计费是 `basic` 的 **2 倍**）⇒ 当初的结论是
+  「Prompt 里给一句默认深度指引」。**⚠️ 该结论已被 §12.4 推翻** —— 软指引挡不住它，
+  且真选成 `fast` 会直接 400。现在改为**服务端钉死**。
+
+---
+
+### 12.4 联网检索端到端抽验（2026-09-22 实测，`add-web-search-grounding` 第 11 组）
+
+> 脚本 `backend/scripts/verify_search_chain.py`（**不进 pytest** —— 必须联网、必须花真实额度）。
+> 用法：`cd backend && ./.venv/Scripts/python.exe scripts/verify_search_chain.py [--only en,zh] [--out report.txt]`。
+> 前置：`.env` 里 `KNOWLEDGE_SEARCH_ENABLED=true` + `KNOWLEDGE_SEARCH_PROVIDER=tavily` + 真实 `TAVILY_API_KEY`，
+> 后端以此配置运行（`DEV_LOGIN_ENABLED=true`，脚本走 `/auth/dev` 拿令牌）。
+> 与 §12.3 一样：**落盘必须用 `--out`**，PowerShell `*>` 会把中文变不可逆乱码。
+> 本轮原始报告（`search-chain-report.txt` / `-nokey.txt`）与截图落在 `.workbuddy/evidence/`，
+> **已 gitignore、不入库** —— 报告里含第三方页面的标题与片段，属于不该进公开仓库的内容。
+
+| 用例 | 断言 |
+|---|---|
+| `en` / `zh` | 纯文字主题、`use_search=true` ⇒ `search_state='hit'`，首步名为「联网检索知识」，`references` 非空 |
+| `link` | `use_search=true` + 正文含**真实可抓取**的 URL ⇒ **用户链接被读到**（本组核心） |
+| `link_nosearch` | `use_search=false` + 有链接 ⇒ 仍读链接、但无 `tavily_search` 命中 |
+| `plain_nosearch` | `use_search=false` + 无链接 ⇒ 一步都不出网 |
+| `bad_link` | 链接不可抓取 ⇒ **降级但不失败**，题目照样出得来 |
+
+**首轮结果：15 项通过、1 项失败** —— 而失败的正是最要命的 `link` 用例：
+**用户贴的链接一条都没被读到**（`search_state='degraded'`）。查后端日志定位到**两个独立原因**：
+
+1. **确定性 bug（主因）**：模型把 `search_depth` 选成了 `fast`，而 Tavily 对这组的回答是 **400**
+   `Country parameter is not supported for fast or ultra-fast search_depth.`
+   我们为「中文输入偏向中文来源」固定传了 `country`（D3）⇒「模型随手选个深度」就能把
+   整次检索打成失败。那一次 **4 个调用额度全撞在同一个 400 上**，颗粒无收。
+   **修复**：`search_depth` **钉死在实例上**（`tavily_tools.py`，值 `basic`）。
+   这是根治而非绕过 —— 上游 `TavilySearch._run` 写的是
+   `search_depth=self.search_depth if self.search_depth else search_depth`，实例值优先。
+2. **超时太紧（次因）**：`tavily_extract` 取的是**整页正文**（本节实测 Wikipedia 词条 **7.4 万字符**），
+   与「只回一小段 JSON」的 search 共用 `SEARCH_TOOL_TIMEOUT_SECONDS=8` ⇒ 连续两次撞 8s 被放弃。
+   **修复**：新增 `SEARCH_EXTRACT_TIMEOUT_SECONDS=15`（必须 > 前者），`agent.py` 的
+   `_timeout_for()` 按工具名分派。
+
+**两条教训**（都是「静默失败」型的，不看实测发现不了）：
+
+- **实例级参数与调用级参数会互相打架。** `country` 锁在实例、`search_depth` 放开给模型，
+  两者在 Tavily 侧互斥 —— 单测各自都绿，只有端到端才暴露。
+  ⇒ 凡是上游存在**取值组合约束**的实例级参数，对偶的调用级参数**也必须一起钉死**。
+- **`search_state` 三态（off / hit / degraded）不足以定位问题。** 首轮只看到 `degraded`，
+  真因要靠翻后端日志里的 `400` 才找到 ⇒ 脚本与 Prompt 一起提供了「为什么降级」的线索。
+
+**修复后复验：16 项断言全通过、0 失败**（同一条命令 `--out` 落盘）。关键用例的变化：
+
+| 用例 | 首轮 | 复验 |
+|---|---|---|
+| `link`（真实维基链接 + 联网开） | ❌ `degraded`、**链接一条没读到** | ✅ `hit`；`references` 含 `[page/user] Model Context Protocol - Wikipedia` |
+| `en` | — | ✅ `hit`，5 条（其中整页 2 篇），26.3s |
+| `zh` | — | ✅ `hit`，**10 条**（中文主题命中率不差，D3 的未知数有了答案） |
+| `link_nosearch` | — | ✅ `hit`，仅 1 条 `[page/user]`（`use_search=false` 确实压不住用户贴的链接，符合 D4） |
+| `plain_nosearch` | — | ✅ `off`，0 条资料，6.1s（一步都没出网） |
+| `bad_link` | — | ✅ `degraded`，0 条资料，但 5 道题照常出（降级不假装读过） |
+
+**⚠️ 11.5④ 的预期被实测推翻（如实记录）**：任务原文写「把 `TAVILY_API_KEY` 临时置空后出题
+→ 任务仍成功、`search_state='degraded'`」。实测（另起 `:8001` 实例、空 key）是
+**`POST /quiz/generate` 直接返回 HTTP 500 / `code=5000`「已开启联网检索但未配置 TAVILY_API_KEY」**，
+任务**建不起来**，压根走不到 `degraded`。
+
+这不是缺陷，而是 D13 的**明确选择**：开关开着却没 key 属于**配置错误**，必须显眼地报出来，
+不能悄悄降级成不联网（那样运维会以为在联网）。`TavilySearchProvider.__init__` 里
+`require_tavily_key()` 在**构造期**就抛，所以失败发生在建任务那一步 —— 早失败、早发现。
+⇒ **真正会走到 `degraded` 的是「key 有效但这次一条都没取到」**（`bad_link` 用例即此形态）。
+两种情形必须分开：**配置错 → 报错；运行时取不到 → 降级**。
 
 ---
 

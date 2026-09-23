@@ -39,12 +39,13 @@ class NoopSearchProvider:
             request, can_search_web=self.can_search_web, can_read_pages=self.can_read_pages
         )
 
-    def gather(self, request: SearchRequest) -> SearchOutcome:  # noqa: ARG002
+    def gather(self, request: SearchRequest, *, on_progress: object = None) -> SearchOutcome:  # noqa: ARG002
         """始终返回空结果。
 
         Args:
             request: 刻意不使用 —— 一旦「假装检索」去编造资料，
                 就会变成最难发现的那类幻觉来源。
+            on_progress: 刻意不使用 —— 它一次外部调用都不发，没有过程可报。
 
         `end_reason` 是 `disabled`（压根没打算联网）而不是某个失败原因：
         这条路径上没有任何外部调用发生过，把它说成「失败」会误导排查。

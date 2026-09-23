@@ -108,6 +108,14 @@ class Settings(BaseSettings):
     # **没有** timeout（0.2.18 已核源码），网络黑洞会让线程无限等。
     # 独立于 `quiz_timeout_seconds`：那是「整条出题链」的粒度，这里是「一次工具调用」。
     search_tool_timeout_seconds: int = 8
+    # ⚠️ **extract 单独一个更长的上限**（2026-09-22 端到端实测追加）。
+    # 两个工具的量级完全不同：`tavily_search` 回来的是一小段 JSON 摘要，
+    # 而 `tavily_extract` 回来的是**整页正文**（第 0 组实测单页 22,916 / 74,801 字符）。
+    # 共用 8s 的后果不是「慢一点」，是**用户贴的链接读不到** —— 实测对 Wikipedia 词条
+    # 连续两次撞在 8s 上，而「我贴了链接却没被读」是本产品最不能出现的失败（design D4）。
+    # 它能吃掉总预算（`search_agent_budget_seconds=20`）的大半，这是**有意的**：
+    # 链接读取是优先级最高的一次取材，让它先跑完，剩下的预算再留给模型自己决定怎么用。
+    search_extract_timeout_seconds: int = 15
     # 每次 search 的结果条数。上游把它列为**实例级**参数（调用时传会抛
     # `forbidden_params`），所以只能由服务端定，模型改不了 —— 见 design D2。
     search_max_results: int = 5

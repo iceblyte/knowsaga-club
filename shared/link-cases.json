@@ -1,0 +1,137 @@
+{
+  "_readme": [
+    "链接抽取规则的**共享判据**。两端各自对着同一份数据断言，谁也不许各写一套。",
+    "",
+    "为什么需要它：大厅那只 pill 显示「会读取你的链接」还是「基于已有知识出题」，",
+    "取决于前端按这组规则算出来的结果；而真正去读哪些页面取决于服务端算出来的结果。",
+    "两边算得不一样的表现是「pill 说会读、进度条说理解你的输入」——用户只会认为功能坏了。",
+    "本项目已经在算分上吃过一次「同一口径两处实现」的亏（shared/scoring-cases.json），",
+    "这次不重蹈。",
+    "",
+    "消费方：",
+    "  · 后端  backend/app/utils/links.py        ← backend/tests/test_links.py",
+    "  · 前端  frontend/src/utils/links.ts       ← frontend/scripts/check_links_parity.mjs",
+    "",
+    "改规则时：先改这里，再让两端同时绿。只改一边会被上面两个检查之一拦下。",
+    "",
+    "字段：name 用例名 / text 输入 / urls 期望结果（已去重、保序、含补好的 scheme）",
+    "全部用例都是**手工构造的假数据**，不含任何真实第三方内容。"
+  ],
+  "cases": [
+    {
+      "name": "纯链接",
+      "text": "https://a.example/x",
+      "urls": ["https://a.example/x"]
+    },
+    {
+      "name": "链接加说明文字",
+      "text": "帮我按这个页面出题：https://a.example/x 谢谢",
+      "urls": ["https://a.example/x"]
+    },
+    {
+      "name": "多个链接保序且去重",
+      "text": "https://b.example 和 https://a.example 以及 https://b.example 再来一次",
+      "urls": ["https://b.example", "https://a.example"]
+    },
+    {
+      "name": "中文句号紧跟在链接后面",
+      "text": "中文句号结尾 https://a.example/p。后面还有字",
+      "urls": ["https://a.example/p"]
+    },
+    {
+      "name": "全角括号包裹",
+      "text": "括号里（https://a.example/p）",
+      "urls": ["https://a.example/p"]
+    },
+    {
+      "name": "半角括号包裹",
+      "text": "括号里 (https://a.example/p)",
+      "urls": ["https://a.example/p"]
+    },
+    {
+      "name": "英文逗号紧随其后",
+      "text": "逗号后面 https://a.example/p, 还有",
+      "urls": ["https://a.example/p"]
+    },
+    {
+      "name": "英文句号结尾",
+      "text": "英文句号 https://a.example/p. And more",
+      "urls": ["https://a.example/p"]
+    },
+    {
+      "name": "查询串里的问号与逗号保留",
+      "text": "问号是查询串 https://a.example/p?q=1,2",
+      "urls": ["https://a.example/p?q=1,2"]
+    },
+    {
+      "name": "路径里的成对括号保留",
+      "text": "维基百科 https://en.example/wiki/Foo_(bar)",
+      "urls": ["https://en.example/wiki/Foo_(bar)"]
+    },
+    {
+      "name": "www 形态补 https 前缀",
+      "text": "看看 www.a.example/docs",
+      "urls": ["https://www.a.example/docs"]
+    },
+    {
+      "name": "同一地址的两种写法只留一个",
+      "text": "www.a.example 与 https://www.a.example",
+      "urls": ["https://www.a.example"]
+    },
+    {
+      "name": "http 也认且不擅自升级",
+      "text": "http://a.example/x",
+      "urls": ["http://a.example/x"]
+    },
+    {
+      "name": "scheme 大小写不敏感",
+      "text": "HTTPS://A.example/X",
+      "urls": ["HTTPS://A.example/X"]
+    },
+    {
+      "name": "中文路径与百分号编码不被吃掉",
+      "text": "读这个 https://a.example/%E4%B8%AD%E6%96%87/页面",
+      "urls": ["https://a.example/%E4%B8%AD%E6%96%87/页面"]
+    },
+    {
+      "name": "裸域名不算链接",
+      "text": "example.com/docs",
+      "urls": []
+    },
+    {
+      "name": "裸域名单独出现也不算",
+      "text": "a.example",
+      "urls": []
+    },
+    {
+      "name": "纯中文没有链接",
+      "text": "什么是以 RAG 为核心的检索增强生成",
+      "urls": []
+    },
+    {
+      "name": "ftp 不算（只认 http(s)）",
+      "text": "ftp://a.example/x",
+      "urls": []
+    },
+    {
+      "name": "mailto 不算",
+      "text": "mailto:someone@example.com",
+      "urls": []
+    },
+    {
+      "name": "只有 https 三个字母不算",
+      "text": "见第 3 章 https 协议的说明",
+      "urls": []
+    },
+    {
+      "name": "空串",
+      "text": "",
+      "urls": []
+    },
+    {
+      "name": "只有空白",
+      "text": "   ",
+      "urls": []
+    }
+  ]
+}

@@ -50,7 +50,10 @@ import { cancelTask, createQuizTask, pollTask } from '../../services/quiz'
 import { useAppStore } from '../../store/useAppStore'
 import { useQuizStore } from '../../store/useQuizStore'
 import type { StepStatus, TaskRecord, TaskStep } from '../../types/api'
+import { hasUrl } from '../../utils/links'
 import { goPage, goTab } from '../../utils/navigation'
+import type { RetrievalMode } from '../../utils/retrieval'
+import { resolveRetrievalMode } from '../../utils/retrieval'
 import { styleOf } from '../../utils/style'
 import {
   advanceQuestionDetail,
@@ -61,12 +64,21 @@ import {
 
 import './index.scss'
 
+/** 取材路径 → 第一步的名字。与后端 `_initial_steps` / `build_initial_step` 同一套判据 */
+const FIRST_STEP_NAME: Record<RetrievalMode, string> = {
+  unavailable: SUMMON_STEPS.retrieveNoop,
+  online: SUMMON_STEPS.retrieveOnline,
+  'online-with-link': SUMMON_STEPS.retrieveLink,
+  'link-only': SUMMON_STEPS.retrieveLink,
+  offline: SUMMON_STEPS.retrieveNoop
+}
+
 /** 后端还没回第一个状态时的本地兜底（名字与后端 `_initial_steps` 保持一致） */
-function fallbackSteps(searchEnabled: boolean, questionCount: number): TaskStep[] {
+function fallbackSteps(firstStepName: string, questionCount: number): TaskStep[] {
   return [
     {
       key: 'retrieve',
-      name: searchEnabled ? SUMMON_STEPS.retrieveOnline : SUMMON_STEPS.retrieveNoop,
+      name: firstStepName,
       status: 'pending',
       detail: '准备中'
     },
@@ -96,6 +108,8 @@ function shortenTopic(text: string, limit = 12): string {
 export default function SummonPage() {
   const setPendingQuiz = useQuizStore((s) => s.setPendingQuiz)
   const searchEnabled = useAppStore((s) => s.searchEnabled)
+  /** 本次意愿。只用于渲染兜底步骤名；建任务时从 `getState()` 取同一份值 */
+  const useSearchWanted = useAppStore((s) => s.useSearch)
 
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [failure, setFailure] = useState('')
@@ -147,6 +161,10 @@ export default function SummonPage() {
     abandonedRef.current = false
 
     const topic = useAppStore.getState().userInput.trim()
+    // 意愿在这一刻一次性定下（与 topic 同一时点）：把它放进 effect 依赖会让
+    // 用户切一次开关就重跑整个出题任务 —— 而那只 pill 在另一个页面上，
+    // 中途根本切不到，多那个依赖只会引入「重新生成时用旧意愿」这类歧义。
+    const wantSearch = useAppStore.getState().useSearch
     if (topic.length < INPUT_MIN_LEN) {
       // 直接进入本页（比如从历史记录跳回来）而没有主题时，退回到大厅而不是白屏
       Taro.showToast({ title: COMMON_COPY.inputTooShort, icon: 'none' })
@@ -171,7 +189,8 @@ export default function SummonPage() {
         const submission = await createQuizTask({
           user_input: topic,
           question_count: QUIZ_QUESTION_COUNT,
-          difficulty: QUIZ_DIFFICULTY
+          difficulty: QUIZ_DIFFICULTY,
+          use_search: wantSearch
         })
         if (!aliveRef.current) return
 
@@ -274,7 +293,19 @@ export default function SummonPage() {
   }
 
   const topic = useAppStore((s) => s.userInput).trim()
-  const steps = task?.steps?.length ? task.steps : fallbackSteps(searchEnabled, QUIZ_QUESTION_COUNT)
+  /**
+   * 首次轮询回来之前的兜底步骤。
+   *
+   * 名字必须与后端**同一套判据**（能力 × 意愿 × 有无链接），否则贴了链接的用户会先看到
+   * 「联网检索知识」、再被后端改成「读取你给的网页」—— 一次一闪而过的自相矛盾。
+   * 判据共用 `utils/retrieval`，那里也是大厅 pill 用的那一份。
+   */
+  const fallbackFirstStep = FIRST_STEP_NAME[
+    resolveRetrievalMode(searchEnabled, useSearchWanted, hasUrl(topic))
+  ]
+  const steps = task?.steps?.length
+    ? task.steps
+    : fallbackSteps(fallbackFirstStep, QUIZ_QUESTION_COUNT)
 
   // ---------------------------------------------------------------------------
   // 平滑进度（见文件头与 `utils/task-progress`）

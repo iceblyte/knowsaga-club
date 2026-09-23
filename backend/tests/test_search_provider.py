@@ -26,7 +26,8 @@ import socket
 import pytest
 
 from app.core.config import Settings
-from app.llm.search import NoopSearchProvider
+from app.core.exceptions import AppError, ErrorCode
+from app.llm.search import NoopSearchProvider, TavilySearchProvider, get_search_provider
 from app.llm.search.base import (
     ReferenceCaps,
     SearchOutcome,
@@ -281,3 +282,106 @@ def test_as_reference_respects_total_char_cap() -> None:
     assert text, "至少要给出第一条"
     assert len(text) <= caps.total_max_chars + 200, "总量上限之外只允许拼接开销"
     assert text.count("来源：") < 5, "不该把所有条目都塞进去"
+
+
+# ---------------------------------------------------------------- Provider 选择
+def _settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "knowledge_search_enabled": False,
+        "knowledge_search_provider": "none",
+        "tavily_api_key": "",
+    }
+    base.update(overrides)
+    return Settings(_env_file=None, **base)  # type: ignore[arg-type]
+
+
+def test_disabled_switch_always_returns_noop() -> None:
+    """开关关 → 一律 Noop，**哪怕名字填了 tavily、key 也填了**。"""
+    provider = get_search_provider(
+        _settings(knowledge_search_enabled=False, knowledge_search_provider="tavily", tavily_api_key="k")
+    )
+
+    assert isinstance(provider, NoopSearchProvider)
+
+
+@pytest.mark.parametrize("name", ["none", "", "  None  "])
+def test_explicit_none_returns_noop_even_when_enabled(name: str) -> None:
+    """开关开着但名字是 none/空 → 仍然是 Noop（这是一个合法的显式配置）。"""
+    provider = get_search_provider(
+        _settings(knowledge_search_enabled=True, knowledge_search_provider=name, tavily_api_key="k")
+    )
+
+    assert isinstance(provider, NoopSearchProvider)
+
+
+def test_enabled_tavily_with_key_returns_the_real_provider() -> None:
+    """开关开 + 名字对 + 有 key → 真实 Provider，且两个能力都为真（第一步才有资格叫联网）。"""
+    provider = get_search_provider(
+        _settings(knowledge_search_enabled=True, knowledge_search_provider="tavily", tavily_api_key="k")
+    )
+
+    assert isinstance(provider, TavilySearchProvider)
+    assert provider.can_search_web is True
+    assert provider.can_read_pages is True
+    assert provider.name == "tavily"
+
+
+def test_enabled_tavily_without_key_raises_instead_of_degrading() -> None:
+    """名字对但 key 为空 → **抛 5000**，绝不静默降级成不联网。
+
+    静默降级是最难发现的一类谎报：开关显示开着、配置写着开着、实际一次都没联网。
+    """
+    with pytest.raises(AppError) as excinfo:
+        get_search_provider(
+            _settings(knowledge_search_enabled=True, knowledge_search_provider="tavily", tavily_api_key="")
+        )
+
+    assert excinfo.value.code == ErrorCode.INTERNAL_ERROR
+    assert "TAVILY_API_KEY" in str(excinfo.value.message)
+
+
+def test_planned_provider_says_not_implemented() -> None:
+    """`bocha` 是「还没做」，不是「配错了」—— 两句不同的话不能合流。"""
+    with pytest.raises(AppError) as excinfo:
+        get_search_provider(
+            _settings(knowledge_search_enabled=True, knowledge_search_provider="bocha", tavily_api_key="k")
+        )
+
+    assert excinfo.value.code == ErrorCode.INTERNAL_ERROR
+    assert "尚未接入" in str(excinfo.value.message)
+    assert "未知" not in str(excinfo.value.message)
+
+
+def test_unknown_provider_lists_the_valid_options() -> None:
+    """未知名字要**列出可选值**，且列表里必须含 `none` —— 否则照提示改还是错。"""
+    with pytest.raises(AppError) as excinfo:
+        get_search_provider(
+            _settings(knowledge_search_enabled=True, knowledge_search_provider="openai", tavily_api_key="k")
+        )
+
+    message = str(excinfo.value.message)
+    assert "未知" in message
+    assert "tavily" in message
+    assert "none" in message
+
+
+def test_tavily_provider_declares_the_three_step_names() -> None:
+    """真实 Provider 才拿得到「联网检索知识」/「读取你给的网页」。"""
+    provider = get_search_provider(
+        _settings(knowledge_search_enabled=True, knowledge_search_provider="tavily", tavily_api_key="k")
+    )
+
+    assert provider.initial_step(WITH_URLS).name == "读取你给的网页"
+    assert provider.initial_step(WITHOUT_URLS_SEARCH_ON).name == "联网检索知识"
+    assert provider.initial_step(WITHOUT_URLS_SEARCH_OFF).name == "理解你的输入"
+
+
+def test_noop_ignores_the_progress_callback_argument() -> None:
+    """`gather(request, on_progress=...)` 是协议的一部分；Noop 收下但不使用。"""
+
+    def _boom(_progress: object) -> None:  # pragma: no cover - 不该被调用
+        raise AssertionError("Noop 没有过程可报，不该回调")
+
+    outcome = NoopSearchProvider().gather(WITHOUT_URLS_SEARCH_ON, on_progress=_boom)
+
+    assert outcome.degraded is True

@@ -135,6 +135,15 @@ class QuizRecord(Base):
     source_hash: Mapped[str | None] = mapped_column(mysql.CHAR(64), nullable=True)
     question_count: Mapped[int] = mapped_column(mysql.TINYINT(unsigned=True), nullable=False)
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="mixed")
+    #: 本次出题的**外部取材状态**。三态必须分得开（`sql/04_quiz_search_reference.sql`）：
+    #: `off` = 没去取（开关关 / 用户关）｜`degraded` = 取了但一条没取到｜`hit` = 取到了。
+    #: 「没去取」是配置问题，「取了没取到」是主题问题 —— 排查路径完全不同，所以是两列不是一列。
+    search_state: Mapped[str] = mapped_column(String(16), nullable=False, default="off")
+    #: 取材到的资料快照。每条只留 `title`/`url`/`snippet`(已按上限截断)/`kind`/`source`。
+    #: ⚠️ 它**不是**资料的权威副本（权威副本在原始网页上），也不该存整页正文 ——
+    #: 实测单页可达 74,801 字符，整篇存进去会让这张表迅速膨胀。
+    #: ⚠️ `REFERENCES` 是 MySQL 保留字，手写 SQL 时必须写成 `` `references` ``。
+    references: Mapped[JsonAny | None] = mapped_column(mysql.JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()

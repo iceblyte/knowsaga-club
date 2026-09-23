@@ -28,6 +28,9 @@ ResultKind = Literal["snippet", "page"]
 #: 资料的来源：`user` = 用户自己在输入里给的链接，`web` = AI 主动检索到的
 ResultSource = Literal["user", "web"]
 
+#: 落库的取材状态（`quizzes.search_state`）。三态的理由见 `SearchOutcome.search_state`。
+SearchState = Literal["off", "degraded", "hit"]
+
 #: 一次取材的结束原因。带 `_exhausted` 后缀的就是「撞到了某个上限」——
 #: 上限名就在字符串里，所以日志与追溯字段不必各写一份（见 design D5）。
 EndReason = Literal[
@@ -204,6 +207,20 @@ class SearchOutcome:
         return not self.results
 
     @property
+    def search_state(self) -> SearchState:
+        """落库用的三态（`quizzes.search_state`，见 `sql/04_quiz_search_reference.sql`）。
+
+        与 `degraded` 的区别：`degraded` 只说「有没有资料」（布尔），
+        这里要区分「**压根没去取**」与「**去取了没取到**」——
+        前者是配置问题（去看 `KNOWLEDGE_SEARCH_ENABLED`），后者是主题问题
+        （换个说法或补一份资料）。两种三态混成一个布尔，排查时就分不开了。
+        """
+        # 资料的**有无**优先于结束原因：这样 `search_state == "hit"` 与 `not degraded`
+        # 是同一个条件，两个派生值不可能各说各话。
+        if self.results:
+            return "hit"
+        return "off" if self.end_reason == "disabled" else "degraded"
+    @property
     def limit_hit(self) -> str | None:
         """触顶的上限名；没触顶则是 `None`。"""
         return self.end_reason if self.end_reason.endswith("_exhausted") else None
@@ -272,7 +289,15 @@ class SearchProvider(Protocol):
         """
         ...
 
-    def gather(self, request: SearchRequest) -> SearchOutcome:
+    def gather(self, request: SearchRequest, *, on_progress: object = None) -> SearchOutcome:
         """取材。**不允许抛异常**：取不到就降级为空结果 + `degraded=True`，
-        因为取材只是出题的增强项，不该把整个出题任务拖垮。"""
+        因为取材只是出题的增强项，不该把整个出题任务拖垮。
+
+        Args:
+            request: 取材请求。
+            on_progress: 可选的进度回调（`ToolProgress -> None`）。做成**每次调用**的参数
+                而不是构造参数，是因为进度要绑在任务上，而任务是在 Provider 构造之后
+                才创建的 —— 写成构造参数就得引入一个可变的持有者来补挂，那更容易出错。
+                回调是装饰性的：它抛异常不该中断取材。
+        """
         ...

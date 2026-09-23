@@ -47,6 +47,17 @@ class QuizGenerateRequest(BaseModel):
         default="mixed", description="难度偏好"
     )
 
+    # 本次召唤要不要让 AI 主动去网上搜。**默认开启**：用户来问「很新的知识」时，
+    # 联网是唯一能让题目基于训练数据之外的资料的办法，所以「不联网」才是需要
+    # 用户主动表达的那个例外（大厅那只 pill 就是它的控制面）。
+    #
+    # ⚠️ 它是**意愿**，不是能力：后端有没有配好检索是另一回事。两者都满足才会真的联网，
+    # 前端按这两件事的组合显示四种文案（见 `frontend/src/pages/hall/index.tsx`）。
+    #
+    # ⚠️ 它**压不住用户自己贴的链接** —— 输入里给了链接就一定会去读那次（design D4）。
+    # 语义是「别主动去搜」，不是「别碰网络」。文案必须说清这一点，否则开关就在说谎。
+    use_search: bool = Field(default=True, description="是否让 AI 联网补充资料（不影响读取你给的链接）")
+
 
 @router.post("/quiz/generate", summary="创建出题任务")
 def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser) -> dict:
@@ -56,5 +67,6 @@ def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser) -> dict:
         user_input=payload.user_input,
         question_count=payload.question_count,
         difficulty=payload.difficulty,
+        use_search=payload.use_search,
     )
     return ok(submission.as_data())

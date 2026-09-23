@@ -37,6 +37,12 @@ def test_search_limits_have_expected_defaults() -> None:
     # 单次工具调用的超时（D12）：上游 `requests.post` **没有** timeout，必须我们外包
     assert s.search_tool_timeout_seconds == 8
 
+    # extract 单独一个更长的超时（2026-09-22 端到端实测追加，见 §12.4）：
+    # 一次 `tavily_extract` 取回的是 **整页正文**（实测 2.2 万–7.5 万字符），
+    # 把它和「返回一小段 JSON」的 search 用同一个 8s 上限，会让「用户贴的链接读不到」
+    # —— 而那正是本产品最不能失败的一条路径（design D4）。
+    assert s.search_extract_timeout_seconds > s.search_tool_timeout_seconds
+
     # 每次 search 的结果条数（实例级参数，由服务端决定，不让模型改）
     assert s.search_max_results == 5
 
@@ -66,6 +72,7 @@ def test_search_country_defaults() -> None:
         ("SEARCH_AGENT_MAX_TOOL_CALLS", "7", "search_agent_max_tool_calls", 7),
         ("SEARCH_AGENT_BUDGET_SECONDS", "33", "search_agent_budget_seconds", 33),
         ("SEARCH_TOOL_TIMEOUT_SECONDS", "12", "search_tool_timeout_seconds", 12),
+        ("SEARCH_EXTRACT_TIMEOUT_SECONDS", "21", "search_extract_timeout_seconds", 21),
         ("SEARCH_MAX_RESULTS", "9", "search_max_results", 9),
         ("SEARCH_SNIPPET_MAX_CHARS", "321", "search_snippet_max_chars", 321),
         ("SEARCH_PAGE_MAX_CHARS", "4321", "search_page_max_chars", 4321),

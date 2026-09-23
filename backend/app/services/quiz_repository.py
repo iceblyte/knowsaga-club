@@ -18,7 +18,9 @@ AI 生成的题目 id 是 `q1`/`q2` 这种**字符串**，而 `answers.question_
 
 1. 前端**一行都不用改** —— 它拿到的还是一个字符串 id，照样当 React key 用。
 2. 交卷时前端回传的就是数据库主键，服务端不需要任何反查表或模糊匹配。
-3. 不需要给 `questions` 表加一列来存「AI 原始题号」—— 本轮没有任何 schema 变更。
+3. 不需要给 `questions` 表加一列来存「AI 原始题号」—— 本次只为 `quizzes` 加了
+   `search_state` / `references` 两列存取材快照（见 `sql/04_quiz_search_reference.sql`），
+   `questions` 的结构没有动。
 
 代价是题库里的题号不再是「第几题」的语义。这不影响任何界面：
 界面上的「第 3 / 5 题」是按数组下标算的，从来没有依赖过 `id` 的字面值。
@@ -48,6 +50,8 @@ SUMMARY_MAX = 512
 SOURCE_NAME_MAX = 128
 SOURCE_TYPE_MAX = 16
 DIFFICULTY_MAX = 16
+#: 与 `sql/04_quiz_search_reference.sql` 的 `search_state VARCHAR(16)` 一致
+SEARCH_STATE_MAX = 16
 HASH_LEN = 64
 KNOWLEDGE_POINT_MAX = 64
 
@@ -77,6 +81,8 @@ def persist_quiz(
     quiz: Quiz,
     difficulty: str = "mixed",
     origins: Sequence[int | None] | None = None,
+    search_state: str = "off",
+    references: Sequence[dict[str, str]] | None = None,
 ) -> Quiz:
     """落库一份题库，返回**id 已回填**的新 `Quiz`。
 
@@ -91,6 +97,14 @@ def persist_quiz(
             `questions` 在同一卷轴内 `seq` 唯一，所以复习时只能复制题目；
             副本靠这一列指回原错题，成长体系才认得出「复习的是哪一道」。
             不传则为全 `None`（普通出题）。
+        search_state: 本次出题的外部取材状态（`off` / `degraded` / `hit`）。
+            不传则按 `off` —— **存量路径与复习关卡都走这个默认值**，
+            它们的语义确实就是「没有用外部资料」。
+        references: 取材到的资料快照，**已经压成 JSON 可存的 dict 形状**
+            （由 `llm/search/collector.serialize_references` 产出，那里也负责按上限截断）。
+            本层只负责写下去 —— 把「资料怎么压」放在检索包里，那组截断常量才只有一个出处（design D6）。
+            **不传就不写这一列**（保持 `NULL`），与「写了一个空数组」不是一回事：
+            前者是「这次没记录」，后者是「记了，是空的」。
     """
     if origins is not None and len(origins) != len(quiz.questions):
         raise ValueError("origins 必须与题目一一对应")
@@ -105,6 +119,8 @@ def persist_quiz(
         source_hash=source_fingerprint(quiz.user_input) if quiz.user_input else None,
         question_count=len(quiz.questions),
         difficulty=_clip(difficulty, DIFFICULTY_MAX),
+        search_state=_clip(search_state, SEARCH_STATE_MAX) or "off",
+        references=list(references) if references is not None else None,
         status="ready",
     )
     session.add(row)

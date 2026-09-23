@@ -60,7 +60,7 @@ from app.llm.fallback import AttemptFailure
 from app.llm.langchain_factory import build_structured_llm
 from app.llm.output_schemas import QuizDraft, draft_to_quiz
 from app.models.quiz import Quiz
-from app.prompts.quiz_prompt import QUIZ_MAX_QUESTIONS, build_quiz_prompt
+from app.prompts.quiz_prompt import QUIZ_MAX_QUESTIONS, build_quiz_prompt, safe_reference
 
 logger = get_logger(__name__)
 
@@ -132,7 +132,7 @@ def generate_quiz(
             "user_input": user_input,
             "question_count": question_count,
             "difficulty": difficulty,
-            "reference": reference or "",
+            "reference": safe_reference(reference or ""),
         }
     )
 

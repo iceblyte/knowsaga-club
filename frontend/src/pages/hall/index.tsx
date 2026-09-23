@@ -7,9 +7,13 @@
  * - 已输入态把 chip 换成「追加资料」类动作
  *
  * 与原型的两处说明：
- * 1. 原型把 `AI 将联网补充` 这个 pill 画死在已输入态。实际上它取决于后端
- *    `search_enabled` 开关，所以这里做成动态：开启时是蓝色的「AI 将联网补充」，
- *    关闭时换成中性的「基于已有知识出题」—— 保留同一个版位，但不说假话。
+ * 1. 原型把 `AI 将联网补充` 这个 pill 画死在已输入态。实际上它取决于三件事：
+ *    后端 `search_enabled`（有没有这个能力）、用户这次的意愿、输入里有没有链接。
+ *    所以这里做成**可点的四态**（文案表见 `HALL_SEARCH_COPY`，判定见 `utils/retrieval`）：
+ *    有能力且意愿开时是蓝色的「AI 将联网补充 / 读取链接并联网补充」，
+ *    否则换成中性的「基于已有知识出题 / 仅读取你的链接」。
+ *    保留同一个版位、同一个样式类，只多了 `onClick` —— **零新增元素即零布局漂移**。
+ *    后端没有这个能力时点击只提示、不改意愿（用户改不了一个没配的能力）。
  * 2. `上传文档 / 粘贴网址 / 追加背景资料` 属于 P1「卷轴工坊」的多源输入能力，
  *    本期未实现，点击给出明确提示而不是静默失败。
  * 3. 底部那张冒险者档案卡（等级 / 累计 XP / 连续天数）原本是写死的演示数据，
@@ -30,12 +34,17 @@
 
 import { Button, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import PhoneShell from '../../components/PhoneShell'
 import ReminderPrompt from '../../components/ReminderPrompt'
 import Sprite from '../../components/Sprite'
-import { ARCHIVE_COMMON, COMMON_COPY, HALL_PROFILE_COPY } from '../../constants/copy'
+import {
+  ARCHIVE_COMMON,
+  COMMON_COPY,
+  HALL_PROFILE_COPY,
+  HALL_SEARCH_COPY
+} from '../../constants/copy'
 import {
   INPUT_MAX_LEN,
   INPUT_MIN_LEN,
@@ -47,7 +56,10 @@ import { useTabPage } from '../../hooks/useTabPage'
 import { fetchProfile } from '../../services/archive'
 import { useAppStore } from '../../store/useAppStore'
 import type { UserPublic } from '../../types/api'
+import { hasUrl } from '../../utils/links'
 import { goPage } from '../../utils/navigation'
+import type { RetrievalMode } from '../../utils/retrieval'
+import { resolveRetrievalMode } from '../../utils/retrieval'
 import { styleOf } from '../../utils/style'
 
 import './index.scss'
@@ -69,12 +81,32 @@ function xpLine(user: UserPublic | null, failed: boolean): string {
   return HALL_PROFILE_COPY.xpFraction(user.xp_total, user.next_level_xp)
 }
 
+/**
+ * 取材路径 → pill 文案（`design.md` D8 的四态表 + 「后端没能力」那一行）。
+ *
+ * 分支判定本身在 `utils/retrieval`（召唤页的兜底步骤名用的是同一份判定）。
+ */
+const PILL_LABEL: Record<RetrievalMode, string> = {
+  unavailable: HALL_SEARCH_COPY.unavailable,
+  online: HALL_SEARCH_COPY.online,
+  'online-with-link': HALL_SEARCH_COPY.onlineWithLink,
+  'link-only': HALL_SEARCH_COPY.linkOnly,
+  offline: HALL_SEARCH_COPY.offline
+}
+
+/** 蓝色实心胶囊只表示「后端有能力 **且** 用户这次想用」—— 也是那两个「愿意联网」的态。 */
+function pillIsActive(mode: RetrievalMode): boolean {
+  return mode === 'online' || mode === 'online-with-link'
+}
+
 export default function HallPage() {
   useTabPage('hall')
 
   const userInput = useAppStore((s) => s.userInput)
   const setUserInput = useAppStore((s) => s.setUserInput)
   const searchEnabled = useAppStore((s) => s.searchEnabled)
+  const useSearch = useAppStore((s) => s.useSearch)
+  const setUseSearch = useAppStore((s) => s.setUseSearch)
 
   /** 冒险者档案（原型 01 底部那张卡）。`me` 为 `null` 时卡片只出占位符 */
   const { status, data, reload } = useAsyncData(() => fetchProfile())
@@ -107,6 +139,36 @@ export default function HallPage() {
   const trimmedLen = draft.trim().length
   const canSubmit = trimmedLen >= INPUT_MIN_LEN
   const hasInput = trimmedLen > 0
+
+  /**
+   * 输入里有没有链接（与后端**同源**的规则，见 `utils/links` 与 `shared/link-cases.json`）。
+   *
+   * 它只决定 pill 显示哪句话 —— 服务端会自己再算一遍。前端算错不会导致
+   * 「贴了链接却没被读」，最多是那一句话说得不准。
+   */
+  const inputHasLink = useMemo(() => hasUrl(draft), [draft])
+
+  /**
+   * 取材路径（能力 × 意愿 × 有无链接）。判定与召唤页兜底步骤名**共用**
+   * `utils/retrieval` 的同一份逻辑 —— 两处各写一遍迟早会改歪一处。
+   */
+  const mode = resolveRetrievalMode(searchEnabled, useSearch, inputHasLink)
+  const pillLabel = PILL_LABEL[mode]
+  const pillBlue = pillIsActive(mode)
+
+  /**
+   * 点 pill = 翻转本次召唤的意愿。
+   *
+   * 能力关时**只提示、不改意愿**。若这时顺手把意愿也翻掉，等哪天后端配好 key，
+   * 界面会莫名其妙停在「基于已有知识出题」上，而没人知道是谁改的。
+   */
+  const handlePillTap = () => {
+    if (!searchEnabled) {
+      Taro.showToast({ title: HALL_SEARCH_COPY.unavailableToast, icon: 'none' })
+      return
+    }
+    setUseSearch(!useSearch)
+  }
 
   /**
    * 点预设问题 = **直接召唤**（本轮修复第 4 条）。
@@ -180,8 +242,11 @@ export default function HallPage() {
           />
           <View className='between'>
             {hasInput ? (
-              <Text className={`pill${searchEnabled ? ' blue' : ''}`}>
-                {searchEnabled ? 'AI 将联网补充' : '基于已有知识出题'}
+              <Text
+                className={`pill${pillBlue ? ' blue' : ''}`}
+                onClick={handlePillTap}
+              >
+                {pillLabel}
               </Text>
             ) : (
               <View />

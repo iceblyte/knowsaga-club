@@ -131,6 +131,13 @@ export interface QuizGeneratePayload {
   user_input: string
   question_count?: number
   difficulty?: Difficulty | 'mixed'
+  /**
+   * 本次是否让 AI 主动联网补充（用户在大厅那只 pill 上的意愿）。
+   *
+   * 不带时后端按 **true** 处理；用户自己贴的链接**始终会被读**，
+   * 不受这个字段影响（那是「你给我的资料」，不是「你去网上找找」）。
+   */
+  use_search?: boolean
 }
 
 export interface HealthInfo {

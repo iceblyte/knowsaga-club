@@ -35,10 +35,14 @@ from app.core.logging import get_logger
 from app.db.session import session_scope
 from app.llm import quiz_chain
 from app.llm.search import SearchProvider, SearchRequest, get_search_provider
+from app.llm.search import collector
+from app.llm.search.agent import ToolProgress
+from app.llm.search.base import ReferenceCaps, SearchOutcome
 from app.models.quiz import Quiz
 from app.services import quiz_repository, task_service
 from app.services.task_service import TaskRecord, TaskStep
 from app.utils.content_filter import check_content
+from app.utils.links import extract_urls
 from app.utils.text_cleaner import validate_input
 
 logger = get_logger(__name__)
@@ -129,15 +133,58 @@ def _initial_steps(
     ]
 
 
-def _build_search_request(user_input: str, settings: Settings) -> SearchRequest:
-    """把已清洗的输入组装成取材请求。
+def _build_search_request(
+    user_input: str, settings: Settings, *, use_search: bool = True
+) -> SearchRequest:
+    """把已清洗的输入组装成取材请求：链接从输入里抽，意愿由请求参数给。
 
-    ⚠️ 这是第 7 组要接管的接缝：那时会在这里补上「从输入里抽链接」与用户的
-    `use_search` 意愿。**当前只保证契约切换不改行为** —— 因此 `urls` 为空、
-    `use_search` 沿用默认（`True`），而 `use_search` 对 `NoopSearchProvider`
-    不产生任何影响（它没有联网能力，文案恒为「理解你的输入」）。
+    ⚠️ 链接抽取走**服务端自己的规则**（`app/utils/links.py`），不看前端的判断 ——
+    前端那只 pill 只决定显示哪句话，不能作为「要读哪些页面」的依据。
+    两边规则同源（同一组正则形态），所以要改一起改。
     """
-    return SearchRequest(query=user_input, max_results=settings.search_max_results)
+    return SearchRequest(
+        query=user_input,
+        urls=extract_urls(user_input),
+        use_search=use_search,
+        max_results=settings.search_max_results,
+    )
+
+
+def _progress_reporter(task_id: str) -> Callable[[ToolProgress], None]:
+    """把取材循环的进度写进「第一步」的 detail。
+
+    取材可能跑十几秒，而进度条第一步必须能从「正在检索」变成「正在读取 2 个网页」——
+    否则用户看到的是一个十几秒不动的界面。文案由后端给（§7.3），前端只渲染。
+    """
+
+    def report(progress: ToolProgress) -> None:
+        _advance(task_id, STEP_RETRIEVE, status="running", detail=progress.detail)
+
+    return report
+
+
+def _gather_safely(provider: SearchProvider, request: SearchRequest, task_id: str) -> SearchOutcome:
+    """取材，并把任何异常降级成「空资料」。
+
+    契约上 `SearchProvider.gather()` **不允许抛异常**（见 `llm/search/base.py` 的模块
+    docstring），但调用侧不能只靠契约：取材是出题的**增强项**，它炸一次不该让用户
+    白等十几秒再看到一个失败任务 —— 那是把「少一点资料」升级成了「什么都没有」。
+
+    配置错误（5000，未配 key）在 `get_search_provider` 那一步就被拦下了，所以这里
+    还能抛出来的都是「取不到资料」，一律降级。
+
+    注意 `step_name` 仍取 Provider 的判断：名字回答「本来打算做什么」，
+    这次确实打算去读链接 / 去搜，只是没成 —— 详情会如实说「未取到可用资料」。
+    """
+    try:
+        return provider.gather(request, on_progress=_progress_reporter(task_id))
+    except Exception as exc:  # noqa: BLE001 - 取材失败不该拖垮出题
+        logger.warning("取材失败，已降级为纯模型出题：provider=%s error=%r", provider.name, exc)
+        return SearchOutcome(
+            provider=provider.name,
+            step_name=provider.initial_step(request).name,
+            end_reason="error",
+        )
 
 
 def _advance(
@@ -240,7 +287,7 @@ def run_quiz_generation(
 
         # ---- 第一步：检索 / 理解输入 ----
         _advance(task_id, STEP_RETRIEVE, status="running", detail="正在解析你的学习需求", progress=8)
-        outcome = provider.gather(request)
+        outcome = _gather_safely(provider, request, task_id)
         # 走到这里之前还不知道会提炼出几个概念，先用计划题量给一个即时反馈
         descriptor = outcome.first_step(concept_count=question_count)
         _advance(
@@ -315,6 +362,10 @@ def run_quiz_generation(
             user_id=user_id,
             quiz=quiz,
             difficulty=difficulty,
+            search_state=outcome.search_state,
+            references=collector.serialize_references(
+                outcome.results, caps=ReferenceCaps.from_settings(s)
+            ),
         )
 
         _advance(
@@ -346,7 +397,14 @@ def run_quiz_generation(
 # -----------------------------------------------------------------------------
 # 落库
 # -----------------------------------------------------------------------------
-def _persist_quiz(*, user_id: int, quiz: Quiz, difficulty: str) -> Quiz:
+def _persist_quiz(
+    *,
+    user_id: int,
+    quiz: Quiz,
+    difficulty: str,
+    search_state: str = "off",
+    references: list[dict[str, str]] | None = None,
+) -> Quiz:
     """把题库写进 `quizzes` + `questions`，返回 id 已回填的题库。
 
     **不要吞掉这里的异常**：落库失败必须让整个任务失败。返回一份没有数据库 id
@@ -358,7 +416,12 @@ def _persist_quiz(*, user_id: int, quiz: Quiz, difficulty: str) -> Quiz:
     """
     with _open_session() as session:
         return quiz_repository.persist_quiz(
-            session, user_id=user_id, quiz=quiz, difficulty=difficulty
+            session,
+            user_id=user_id,
+            quiz=quiz,
+            difficulty=difficulty,
+            search_state=search_state,
+            references=references,
         )
 
 
@@ -373,6 +436,7 @@ def submit_quiz_request(
     difficulty: str,
     settings: Settings | None = None,
     search_provider: SearchProvider | None = None,
+    use_search: bool = True,
 ) -> QuizSubmission:
     """校验输入并创建出题任务（同步返回，不等出题）。
 
@@ -392,7 +456,7 @@ def submit_quiz_request(
     check_content(cleaned)
 
     provider = search_provider or get_search_provider(s)
-    request = _build_search_request(cleaned, s)
+    request = _build_search_request(cleaned, s, use_search=use_search)
     record = task_service.create_task(
         "quiz", user_id=user_id, steps=_initial_steps(provider, request, question_count)
     )

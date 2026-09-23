@@ -11,6 +11,23 @@
 两者一旦不一致，用户会看到「环上是 85% / 文字说 80%」——
 这种自相矛盾的报告比没有报告更糟。所以模型只负责「把已知数据讲成人话」，
 统计数字一律由服务端注入。
+
+## v2 新增（`add-web-search-grounding` 第 9 组，design D11）
+
+v2 **只加一条约束，其余一个字不动** —— 因为报告链吃的是「已被资料约束过的题库」，
+真正的取材风险在出题链就处理完了。新增的是：
+
+> **三句话总结不得引入本次题库之外的新知识。**
+
+它防的不是幻觉，而是**越界补课**：模型看到「向量检索」这个知识点，顺手把
+训练数据里关于向量数据库的一堆东西写进总结，用户会以为自己学过。
+
+同一节还要钉住两条**存量**契约（本次没改，但正是最容易被顺手破坏的）：
+
+1. `REPORT_HUMAN_TEMPLATE` 的变量集合**只允许**那四个 —— 尤其不许出现 `reference`。
+   第三方原文**不进**报告 Prompt（D11）：报告是**复述**，塞原文只增加不确定性，
+   还会让输入体积不可控。
+2. 统计数字字段名（`accuracy` 等）仍**不得**出现在 System Prompt 里。
 """
 
 from __future__ import annotations
@@ -20,8 +37,10 @@ import re
 import pytest
 from langchain_core.prompts import ChatPromptTemplate
 
+from app.prompts.quiz_prompt import REFERENCE_BEGIN, REFERENCE_END
 from app.prompts.report_prompt import (
     REPORT_ADVICE_COUNT,
+    REPORT_HUMAN_TEMPLATE,
     REPORT_PROMPT_VERSION,
     REPORT_SUMMARY_LINES,
     REPORT_SYSTEM_PROMPT,
@@ -29,9 +48,14 @@ from app.prompts.report_prompt import (
 )
 
 
+def _flat(text: str) -> str:
+    """把换行与连续空白压成单个空格 —— 断言不受排版换行影响。"""
+    return re.sub(r"\s+", " ", text)
+
+
 # ---------------------------------------------------------------- 版本化
 def test_prompt_is_versioned() -> None:
-    assert REPORT_PROMPT_VERSION == "v1"
+    assert REPORT_PROMPT_VERSION == "v2"
 
 
 # ---------------------------------------------------------------- JSON 硬性要求
@@ -170,3 +194,38 @@ def test_rendered_prompt_carries_all_inputs() -> None:
     )
     for piece in (topic, quiz_json, records, summary):
         assert piece in joined
+
+
+# ---------------------------------------------------------------- v2 来源受限（D11）
+def test_summary_must_not_introduce_new_knowledge() -> None:
+    """三句话总结只能复述本次题库 —— 越界补课会让用户以为自己学过。"""
+    flat = _flat(REPORT_SYSTEM_PROMPT)
+    assert re.search(r"不得引入[^。]{0,20}(新知识|新名词|新结论|没考到)", flat)
+    assert re.search(r"(只能来自|只能取自|仅限于|限于)[^。]{0,10}(本次)?题库", flat)
+
+
+def test_points_are_limited_to_quiz_knowledge_points() -> None:
+    """掌握点 / 薄弱点必须是**本次题库**里的知识点标签，不许自己造。"""
+    flat = _flat(REPORT_SYSTEM_PROMPT)
+    assert re.search(r"mastered_points[^。]{0,60}知识点标签", flat)
+    assert re.search(r"weak_points[^。]{0,60}知识点标签", flat)
+    assert re.search(r"(不要凭空写出|不要为了凑数编)[^。]{0,20}(知识点|薄弱点)", flat)
+
+
+def test_human_template_slot_set_is_exactly_the_four_known() -> None:
+    """四个槽位之外一个都不许有 —— 尤其不许出现 `reference`（D11：第三方原文不进报告）。"""
+    slots = set(re.findall(r"\{(\w+)\}", REPORT_HUMAN_TEMPLATE))
+    assert slots == {"topic", "quiz_json", "answer_records", "score_summary"}
+
+
+def test_report_prompt_carries_no_reference_delimiters() -> None:
+    """报告链**不复用**出题链的资料定界标记 —— 它压根不给第三方原文。"""
+    for marker in (REFERENCE_BEGIN, REFERENCE_END):
+        assert marker not in REPORT_SYSTEM_PROMPT
+        assert marker not in REPORT_HUMAN_TEMPLATE
+
+
+def test_stats_field_names_still_absent_after_v2_upgrade() -> None:
+    """v2 只加约束，不许顺手把统计字段挪回来（存量契约，回归用）。"""
+    for field in ("accuracy", "xp_gained", "coins_gained", "percentile", "avg_duration_ms"):
+        assert field not in REPORT_SYSTEM_PROMPT
