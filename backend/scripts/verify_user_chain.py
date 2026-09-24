@@ -252,15 +252,30 @@ def main() -> int:
     summary = result["summary"]
 
     print(f"  XP {summary['xp_gained']}/{summary['max_xp']} · 金币 {summary['coins_gained']} · "
-          f"正确率 {summary['accuracy']}% · 百分位 {summary['percentile']}% · "
+          f"正确率 {summary['accuracy']}% · 进度 {summary['progress']['state']} · "
           f"用时 {summary['duration_ms']}ms")
     check("全对 = 满分", summary["xp_gained"] == summary["max_xp"] == expected_xp,
           f"{summary['xp_gained']} vs {expected_xp}")
     check("正确率 100%", summary["accuracy"] == 100, str(summary["accuracy"]))
     check("金币 = floor(XP × 0.18)", summary["coins_gained"] == math.floor(expected_xp * 0.18),
           f"{summary['coins_gained']} vs {math.floor(expected_xp * 0.18)}")
-    check("百分位 = clamp(round(正确率 × 0.9), 5, 95)",
-          summary["percentile"] == min(95, max(5, round(100 * 0.9))), str(summary["percentile"]))
+    check("本局不再返回 percentile* 字段（改为与自己的历史比）",
+          not [key for key in summary if key.startswith("percentile")],
+          str(sorted(summary)))
+    progress = summary["progress"]
+    check("progress.state 落在闭集内",
+          progress["state"] in ("first", "record", "tie_best", "better", "same", "worse"),
+          str(progress["state"]))
+    check("progress 自洽：首局无基准，非首局必有基准",
+          (progress["attempt_count"] == 1) == (progress["best"] is None),
+          f"count={progress['attempt_count']} best={progress['best']} prev={progress['previous']}")
+    check("progress 的比较量只有答对题数，没有正确率",
+          all(
+              set(point) == {"correct", "total"}
+              for point in (progress["best"], progress["previous"])
+              if point is not None
+          ),
+          str(progress))
     check("结果按题序返回",
           [item["seq"] for item in result["results"]] == list(range(1, len(quiz["questions"]) + 1)),
           str([item["seq"] for item in result["results"]]))

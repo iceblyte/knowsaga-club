@@ -176,7 +176,7 @@ questions.N.difficulty       Field required
 15. 最后一题 · 提交中（提交与报告生成合并、进度 76%）
 
 **03 冒险日志（8 屏中做 5 屏）**
-16. 冒险日志 · 主视图（正确率环 + 三小卡 + 百分位条）
+16. 冒险日志 · 主视图（正确率环 + 三小卡 + 自己比自己那一条）
 17. 三句话总结（三句 + 掌握/薄弱知识点 chip）
 18. 复习建议（三条带按钮的可执行建议）
 19. 报告生成失败（保留答题数据 + 重新生成）
@@ -329,7 +329,7 @@ knowsaga-club/
 | 3.1 | `services/report.ts` + `POST /report/generate` 异步任务 + 轮询 | 后端联调通过 |
 | 3.2 | `services/scoring_service.py`：正确率、XP、金币、掌握/薄弱知识点聚合 | `test_scoring_service.py` 全绿 |
 | 3.3 | `prompts/report_prompt.py`：`report_prompt_v1`（严格按方案设计 §8.6） | 契约测试通过 |
-| 3.4 | 冒险日志主视图：正确率环 + 答对/答错/平均用时三卡 + 百分位条 | 与原型 03 第 1 屏一致 |
+| 3.4 | 冒险日志主视图：正确率环 + 答对/答错/平均用时三卡 + **自己比自己**那一条（2026-09-23 前是百分位条） | 与原型 03 第 1 屏一致，**仅此一处有意偏离**（见 §9.4 与 `constants/copy.ts` 文件头第 4 条） |
 | 3.5 | 三句话总结页 + 复习建议页 | 与原型 03 第 2/3 屏一致 |
 | 3.6 | 异常态两屏：报告生成失败、网络异常 | 与原型 03 第 6/7 屏一致 |
 | 3.7 | 主视图底部按钮接 `useShareAppMessage` 微信原生转发 | 转发带自定义标题与路径 |
@@ -604,13 +604,16 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 
 ```json
 { "accuracy": 80, "total": 5, "correct_count": 4, "wrong_count": 1,
-  "avg_duration_ms": 8400, "xp_gained": 180, "coins_gained": 32, "percentile": 72,
+  "avg_duration_ms": 8400, "xp_gained": 180, "coins_gained": 32,
+  "progress": { "state": "record", "attempt_count": 3, "delta_vs_prev": 2,
+                "delta_vs_best": 2, "best": { "correct": 2, "total": 5 },
+                "previous": { "correct": 2, "total": 5 } },
   "mastered_points": [], "weak_points": [],
   "three_line_summary": ["", "", ""], "advice": [], "share_quote": "" }
 ```
 
 > `accuracy / total / correct_count / wrong_count / avg_duration_ms / xp_gained / coins_gained` 由 `scoring_service` **确定性计算**；
-> `percentile` 因无用户数据，由正确率派生（作为静态换算，§9.4）；
+> `progress`（与**自己**的历史比）由 `progress_service` 在**读取时**算、不落库（§9.4）；
 > 其余字段由 AI 报告链生成，服务层做字段完整性兜底。
 
 ---
@@ -648,37 +651,79 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 
 `coins = floor(XP × 0.18)` → `180 XP → 32 金币`，与原型 03 完全一致。
 
-### 9.4 百分位
+### 9.4 「比过去的自己怎么样」（2026-09-23 起替换掉百分位）
 
-> **⚠️ 本节口径已于 2026-09-23 作废**（原文见下方「原方案」）。原文假设「无真实用户池」，
-> 而用户系统落地后池子是真实存在的 —— 再按 `accuracy × 0.9` 算，就是把一个编出来的
-> 数字印在用户的成绩单上（界面必须挂一句「（演示数据）」才不算说假话，而这本身比
-> 不给数字更糟）。
+> **百分位口径已整条作废** —— 包括 09-23 当天短暂上线过的「真实社团分位」版本。
+> 作废理由不在算法，而在这个比较本身：
 >
-> **现行口径**：真实社团分位。取「本局正确率」与社团里**其他**冒险者的
-> **最佳正确率**逐个比较，算严格高于的人数占比；池子为空时返回 `None`，
-> 界面整块换成「社团里还没有其他冒险者」而不显示任何百分数。
+> 1. **「社团」在产品里没有数据实体**：`backend/sql/01_schema.sql` 里既没有
+>    guild / club 表，也没有成员关系表。那句话的真实含义是「全站答过题的人」，
+>    等于把一个虚构的组织名称套在真实统计池上 —— 用户没加过社团，却被告知
+>    「社团里有 7 位冒险者」。
+> 2. **假精度**：7 人池子只有 1/7 的粒度，43% 是把 42.86% 包装成的一个精确
+>    百分数。它比当初那句「（演示数据）」更隐蔽 —— 因为它看起来是真的。
+> 3. **不可比**：拿「你这一局」比「别人的历史最佳」（而且是别人**另一份副本**
+>    的最好成绩），三个变量都不是同一个东西。
+>
+> 另有一条操作层面的教训：那句「按社团里 N 位冒险者的最佳正确率计算」把**内部
+> 口径**（分母怎么取）摊给了用户 —— 那是写给开发看的，不是写给用户看的。
+> 「诚实声明」不等于「展示内部口径」。两个错叠在一起：既自曝家底（7 个人），
+> 又暴露实现细节。
+>
+> **现行口径**：这一格只回答一个问题 —— **比过去的自己怎么样**。比较量是
+> **答对题数**（不是正确率，否则百分比立刻从后门回来），且文案必须带上分母
+> （「答对 4 / 5 题」），让题量差异对用户可见。
+>
+> | 状态 | 含义 |
+> |---|---|
+> | `first` | 第 1 局，没有基准 |
+> | `record` | 刷新了自己的纪录 |
+> | `tie_best` | 追平了自己的最好成绩 |
+> | `better` / `same` / `worse` | 与**紧邻上一局**比 |
+>
+> 判定优先级就是这个顺序（先与「此前最好」比、再与「上一局」比）。反过来会出现
+> 「追平纪录的那一局显示『比上一局少答对 1 题』」这种真话但说错重点的文案；
+> 而先比上一局再看最好，还会在刷新纪录时把好消息盖成「与上一局持平」。
 >
 > | 项 | 位置 |
 > |---|---|
-> | 纯函数（含边界用例） | `backend/app/services/scoring.py::pool_percentile` |
-> | 查库（池子定义） | `backend/app/services/percentile_service.py` |
-> | 存量数据回算 | `backend/scripts/backfill_percentile.py` |
-> | 前端不再计算 | `frontend/src/utils/scoring.ts`（已删除 `percentileOf`） |
+> | 判定（纯函数，六态） | `backend/app/services/progress_service.py::judge` |
+> | 取数（三条查询：上一局 / 此前最好 / 此前条数） | 同文件 `for_attempt` |
+> | 契约 | `summary.progress` 与 `report.progress`（`AttemptProgress`） |
+> | 文案（状态 → 两句话） | `frontend/src/constants/copy.ts::progressTextOf`（两页共用同一个函数） |
+> | 前端**不做**任何比较 | 差值也由服务端给（`delta_vs_prev` / `delta_vs_best`） |
 >
-> 档位文字（「中上」等）仍在 `scoring.percentile_label_for`，与分位是同一次计算的两半；
-> 无分位时**不给档位**（胶囊整块不渲染）。
+> **状态不落库**：读取时按「截至该局之前的记录」重算。落成列会变成假话 ——
+> 用户后来刷新了纪录，旧那一局的报告仍旧宣称「这是你的最好成绩」。
+>
+> **`attempts.percentile` / `attempts.percentile_pool` 两列已删除**，
+> 幂等迁移见 `backend/sql/06_drop_attempts_percentile.sql`；删列前的存量值
+> 留底在 `D:\备份\WorkBuddy\knowsaga-club\2026-09-23\`。
+>
+> ⚠️ **有意偏离原型**：原型 03 第 1 屏的「本局超过社团里 72% 的冒险者」不再实现。
+> 登记在 `frontend/src/constants/copy.ts` 文件头第 4 条 —— **不要**把它加回来。
+> 边界：「社团大厅」「返回社团大厅」这类**世界观包装词保留**（用户读作产品名，
+> 不会追问），被撤掉的只是**统计口径**里的「社团」。
 
 <details>
 <summary>原方案（已作废，保留以便对照）</summary>
 
-无真实用户池，用正确率做单调映射并固定种子，保证同一份答题结果每次都得到同一个百分位：
+**第一版（演示口径，2026-09-18 起）**：无真实用户池，用正确率做单调映射并固定种子，
+保证同一份答题结果每次都得到同一个百分位：
 
 ```
 percentile = clamp(round(accuracy × 0.9), 5, 95)
 ```
 
-`accuracy=80` → `72`，与原型「超过社团里 72% 的冒险者」一致。此值**明确标注为演示数据**，代码中留 `PercentileProvider` 接口，后续接真实统计只换实现。
+`accuracy=80` → `72`，与原型「超过社团里 72% 的冒险者」一致。此值**明确标注为演示数据**，
+代码中留 `PercentileProvider` 接口，后续接真实统计只换实现。
+
+**第二版（真实社团分位，2026-09-23 当天上线当天作废）**：取「本局正确率」与社团里
+**其他**冒险者的**最佳正确率**逐个比较，算严格高于的人数占比；池子为空时返回 `None`，
+界面整块换成一句实话而不显示任何百分数。落点：`scoring.pool_percentile`（纯函数）、
+`percentile_service.others_best_accuracy`（查库）、`scripts/backfill_percentile.py`
+（存量回算）、`attempts.percentile_pool`（新增列，迁移 `sql/05`）。
+作废时这四个落点全部删除或撤改，`sql/05` 只作历史保留。
 
 </details>
 
@@ -715,7 +760,7 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
 | `test_task_service.py` | 创建/查询/取消/TTL 过期/重复取消 |
 | `test_llm_fallback.py` | 空响应、schema 映射失败、字段缺失、重试后成功、彻底失败 → 5001 |
 | `test_quiz_api.py` | 建任务、轮询至成功、非法输入 4000/4001、任务不存在 4004、生成失败 5001 |
-| `test_scoring_service.py` | 全对/全错/多选部分/多选含错选/判断题、XP、金币、正确率、百分位 |
+| `test_scoring_service.py` | 全对/全错/多选部分/多选含错选/判断题、XP、金币、正确率（百分位已于 2026-09-23 整条移除，见 §9.4） |
 | `test_report_api.py` | 建任务、轮询、报告字段完整性、AI 失败降级为确定性模板报告 |
 
 策略：**LLM 调用一律 mock**（不发真实请求），保证测试确定性与速度；真实 API 抽验放在 Phase 1.14 作为独立脚本，不进 pytest。

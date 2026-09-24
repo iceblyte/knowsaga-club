@@ -21,13 +21,13 @@
 `accuracy = 1/8 → 12.5` 就会踩到。
 因此 `scoring.js_round` 刻意手写 `floor(x + 0.5)`，共享用例里也专门放了这几条边界。
 
-## 为什么这里没有 `percentile_cases` 了（2026-09-23）
+## 为什么这里没有 `percentile_cases`（2026-09-23，并在同日彻底移除）
 
 百分位原本是 `round(accuracy × 0.9)` 的**纯函数**，前后端各算一遍，所以能放进
-共享文件。现在它是**真实社团分位**（本局正确率 vs 其他冒险者最佳正确率的人数占比），
-依赖库里的数据、前端不再计算 —— 见 `scoring.pool_percentile` 与
-`app/services/percentile_service.py`。共享文件里的 `percentile_cases` 已删除
-（文件头有说明），判据改成下面那组直接单测。
+共享文件。后来它短暂地变过「真实社团分位」，依赖库里的数据、前端不再计算；
+2026-09-23 起**整条链路被撤掉**，替换为与自己历史的纵向比较
+（`app/services/progress_service.py`，不进共享文件 —— 前端不实现判定，
+只做「状态 → 文案」映射）。
 """
 
 from __future__ import annotations
@@ -99,65 +99,6 @@ def test_accuracy_cases(case: dict[str, Any]) -> None:
 @pytest.mark.parametrize("case", _cases("coins_cases"), ids=_ids("coins_cases"))
 def test_coins_cases(case: dict[str, Any]) -> None:
     assert scoring.coins_for(case["xp"]) == case["expected"]
-
-
-# -----------------------------------------------------------------------------
-# 真实社团分位（2026-09-23 起，替换掉原「正确率 × 0.9」的演示映射）
-# -----------------------------------------------------------------------------
-# 口径：池子 = **其他**冒险者，每人一个样本（他自己的最佳正确率）；
-# 分子 = 严格低于本局正确率的人数；池子为空 → None。
-# 这里锁的是**纯函数**那一半；查库那一半在 `percentile_service`，
-# 端到端（真的提交两局）在 `tests/test_attempt_api.py`。
-@pytest.mark.parametrize(
-    ("accuracy", "others", "expected"),
-    [
-        # 池子为空 → None。**不许**退化成 0 或 100 —— 那正是本次要修掉的假数据。
-        (80, [], None),
-        # 高于所有人 → 100
-        (100, [80, 50, 0], 100),
-        # 低于所有人 → 0
-        (0, [10, 20, 30], 0),
-        # 并列**不算**超过：大家都考 60、你也考 60 → 0（不是 100）
-        (60, [60, 60], 0),
-        # 一比一 → 1/2 = 50
-        (60, [50, 60], 50),
-        # 大小混合 → 2/4 = 50
-        (60, [50, 55, 60, 70], 50),
-        # 池子里只有一个人且他更低 → 100
-        (10, [0], 100),
-        # `.5` 边界：1/8 = 12.5 → JS 口径进位 13（内置 round 会给 12）
-        (50, [0, 99, 99, 99, 99, 99, 99, 99], 13),
-        # 2/3 = 66.67 → 67（四舍五入，不是截断）
-        (50, [0, 0, 99], 67),
-        # 1/3 = 33.33 → 33
-        (50, [0, 99, 99], 33),
-        # 全员并列更高 → 0，且结果不会溢出到负数
-        (100, [100] * 3, 0),
-    ],
-)
-def test_pool_percentile(accuracy: int, others: list[int], expected: int | None) -> None:
-    assert scoring.pool_percentile(accuracy, others) == expected
-
-
-def test_pool_percentile_accepts_any_sequence() -> None:
-    """池子的来源是 SQL 结果，类型上是任意序列 —— 元组也要能吃。"""
-    assert scoring.pool_percentile(50, (10, 90)) == 50
-
-
-def test_percentile_label_bands() -> None:
-    """档位文字与分位数值是同一件事的两半（原型 03 第 1 屏：72% → 「中上」）。
-
-    池子为空时调用方根本不会走到这里 —— 那枚胶囊整块不渲染（见
-    `report_service.merge_draft`），所以这里只断言「有分位」的区间。
-    """
-    assert scoring.percentile_label_for(72) == "中上"
-    assert scoring.percentile_label_for(95) == "顶尖"
-    assert scoring.percentile_label_for(80) == "优秀"
-    assert scoring.percentile_label_for(30) == "中游"
-    assert scoring.percentile_label_for(0) == "起步"
-    # 越界输入也要有归属，不能抛错（数值被夹住）
-    assert scoring.percentile_label_for(120) == "顶尖"
-    assert scoring.percentile_label_for(-5) == "起步"
 
 
 # -----------------------------------------------------------------------------

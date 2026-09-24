@@ -154,8 +154,14 @@ def _report(**overrides: object) -> dict:
         "xp_gained": 180,
         "max_xp": 220,
         "coins_gained": 32,
-        "percentile": 72,
-        "percentile_label": "中上",
+        "progress": {
+            "state": "record",
+            "attempt_count": 2,
+            "delta_vs_prev": 1,
+            "delta_vs_best": 1,
+            "best": {"correct": 3, "total": 5},
+            "previous": {"correct": 3, "total": 5},
+        },
         "mastered_points": ["RAG 基本定义"],
         "weak_points": ["向量检索"],
         "three_line_summary": ["第一句。", "第二句。", "第三句。"],
@@ -169,7 +175,30 @@ def test_report_accepts_consistent_facts() -> None:
     report = Report.model_validate(_report())
     assert report.accuracy == 80
     assert report.degraded is False
-    assert report.percentile_label == "中上"
+    assert report.progress.state == "record"
+    assert report.progress.best is not None and report.progress.best.correct == 3
+
+
+def test_report_requires_progress() -> None:
+    """`progress` 是必填 —— 「这次没算出来」不该是一种状态。
+
+    这一格是结算页与冒险日志页共用的内容，缺了它前端要么渲染一片空白、
+    要么自己去推一遍（而「自己推一遍」正是被撤掉的那套做法的起点）。
+    """
+    payload = _report()
+    payload.pop("progress")
+    with pytest.raises(ValidationError):
+        Report.model_validate(payload)
+
+
+def test_report_schema_has_no_percentile_fields() -> None:
+    """契约里不许再出现任何百分位字段。
+
+    比「响应里没有这个键」多一道保险：`Report` 配的是 `extra="ignore"`，
+    所以服务层即使把 `percentile=72` 塞进来，既不报错、响应里也不会出现 ——
+    只测响应的话，这种「偷偷留着」的写法能一直活下去。
+    """
+    assert not [key for key in Report.model_fields if key.startswith("percentile")]
 
 
 def test_report_rejects_weak_points_when_all_correct() -> None:

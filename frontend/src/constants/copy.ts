@@ -20,7 +20,28 @@
  *    原型这一屏的**设计意图**（图注：「断网时不阻塞浏览历史报告」）没有丢，
  *    只是还没实现 —— 已记入 `docs/MVP开发计划.md §5.3` 遗留清单；
  *    离线缓存落地后，这句可以回到原型原文。
+ * 4. **`PROGRESS_COPY`（2026-09-23）**：原型 03 第 1 屏写「本局超过社团里 72% 的
+ *    冒险者」，本方案**撤掉了这一格的原表达**，改为与**自己的历史**比。
+ *    三条理由：
+ *
+ *      · 「社团」在产品里**没有任何数据实体** —— `backend/sql/01_schema.sql`
+ *        里既没有 guild / club 表，也没有成员关系表。那句话的真实含义是
+ *        「全站答过题的人」，等于把一个虚构的组织名称套在真实统计池上。
+ *      · 7 人池子只有 1/7 的粒度，43% 是把 42.86% 包装成的**假精度** ——
+ *        比它当初挂着的「（演示数据）」更隐蔽，因为它看起来是真的。
+ *      · 拿「你这一局」比「别人的历史最佳」（还是别人**另一份副本**的最好
+ *        成绩），三个变量都不是同一个东西，这个比较在语义上不成立。
+ *
+ *    ⚠️ 这是**有意偏离原型**：原型那句本身也没定义「社团」是谁。不要为了
+ *    「跟原型一致」而把它加回来。来龙去脉见
+ *    `openspec/changes/replace-percentile-with-self-comparison/`。
+ *
+ *    ⚠️ 边界：**只撤统计口径里的「社团」**。「社团大厅」「返回社团大厅」这类
+ *    世界观包装词**保留** —— 用户会把它读成产品名/场景名，不会追问
+ *    「我什么时候加的社团」；而「社团里有 7 位冒险者」会被追问，且答不上来。
  */
+
+import type { AttemptProgress, AttemptScorePoint } from '../types/api'
 
 /** 三步生成过程的兜底文案。
  *
@@ -138,21 +159,15 @@ export const SETTLE_COPY = {
   badge: '已通关',
   xpLabel: '经验值 XP',
   coinsLabel: '冒险金币',
-  percentilePrefix: '超过社团里',
-  percentileSuffix: '的冒险者',
   /**
-   * ⚠️ 这里原来有一句 `percentileNote: '（演示数据）'`，2026-09-23 删掉了。
+   * ⚠️ 这里原本有 `percentilePrefix / percentileSuffix / percentileNote /
+   * percentileNoPool` 四个键，2026-09-23 **整组删掉了**（不只是改文案）。
    *
-   * 百分位以前是 `round(accuracy × 0.9)` 的派生值，不标注就是骗人；
-   * 现在它是**真实社团分位**（正确率严格高于其他冒险者最佳正确率的人数占比，
-   * 见 `backend/app/services/scoring.py::pool_percentile`），那句免责声明
-   * 反而变成了谎话 —— 用户会以为这个数字还是编的。
-   *
-   * 所以**不要**为了「看起来谨慎」把它加回来。真正需要说的是「池子有多大」，
-   * 那句话在报告页（`REPORT_COPY.percentileNote`），那里有位置写清楚。
+   * 它们拼出来的是「超过社团里 43% 的冒险者」+「按社团里 7 位冒险者的最佳
+   * 正确率计算」—— 后一句把内部口径（分母怎么取）摊给了用户，前一句里的
+   * 「社团」根本不存在。那一格现在改用 `PROGRESS_COPY`：与**自己的历史**比，
+   * 用「答对几题」说话。理由与登记见本文件头第 4 条。
    */
-  /** 池子里一个人都没有时替掉整行分位 —— 编一个数字比不说更糟 */
-  percentileNoPool: '你是社团里第一个完成挑战的冒险者',
   viewReport: '查看冒险日志',
   playAgain: '再来一局',
   /**
@@ -164,6 +179,103 @@ export const SETTLE_COPY = {
    */
   reportUnavailable: '这次成绩没能上传，冒险日志暂时无法生成'
 } as const
+
+/**
+ * 「比过去的自己怎么样」那一格的文案（**结算页与冒险日志页共用**）。
+ *
+ * ## 它替换掉了什么
+ *
+ * 这里原来叫 `percentilePrefix / Suffix / Note / NoPool`（两套，结算页一套、
+ * 日志页一套），讲的是「本局超过社团里 43% 的冒险者」+「按社团里 7 位冒险者的
+ * 最佳正确率计算」。整组已删，理由见本文件头第 4 条。
+ *
+ * ## 为什么是「状态 → 文案」的查表，而不是两页各自拼
+ *
+ * 判定（六种状态）与差值（`delta_vs_prev` / `delta_vs_best`）**全部由服务端给出**，
+ * 前端只做查表 —— 页面里一条比较逻辑都没有。两页读同一个函数，因此不可能出现
+ * 「结算页说刷新纪录、日志页说比上一局好」这种自相矛盾。
+ * （红线：报告页与结算页必须**逐位相同**。）
+ *
+ * ## 几个刻意的选择
+ *
+ * - **不说百分比**。比较量是「答对几题」，并且**带上分母**（「答对 4 / 5 题」）——
+ *   5 题答对 5 与 10 题答对 6 之间比答对题数并不公平，让分母可见是唯一的补救。
+ *   正确率一旦从后门回到这里，这一格就重新变成了它替换掉的那个东西。
+ * - **不让用户做减法**。不写「差 1 题追平」（那要用户自己减一次），
+ *   统一说「多答对 N 题 / 少答对 N 题」。
+ * - **退步不批评**。只说「比上一局少答对 1 题」，不写任何评价性词 ——
+ *   03 原型的设计说明明写着「避免社交压力劝退」，这条对「和自己的过去比」同样适用。
+ */
+export const PROGRESS_COPY = {
+  /**
+   * 破纪录时那枚胶囊。复用被删掉的档位胶囊的位置与样式
+   * （`report__progress .pill`）—— 这一格从此只有状态好时才挂东西。
+   */
+  recordBadge: '新纪录',
+  /** 第 1 局那一句。没有基准就不从空基准里推一句比较出来 */
+  firstTitle: '这是你的第一份成绩',
+  firstNote: '下一局开始，就能看到自己有没有进步'
+} as const
+
+/** 一格进度文案：标题（必有）+ 说明（必有）+ 胶囊（只有破纪录时有） */
+export interface ProgressText {
+  title: string
+  note: string
+  badge: string | null
+}
+
+/**
+ * 把服务端的 `progress` 映射成两句话。
+ *
+ * 入参直接吃 `AttemptProgress`（见 `types/api.ts`），所以调用方**不需要**
+ * 先解构、也不需要判断 `best === null` —— 这些分支都在这里一次做完。
+ *
+ * 后三态（`better` / `same` / `worse`）的说明行统一是「你的最好成绩：…」：
+ * 这一格要回答的是「比过去的自己怎么样」，最好成绩是那句话的锚点，
+ * 而它和上一局并不总是同一局（上一局可能不是最好的一局）。
+ */
+export function progressTextOf(progress: AttemptProgress): ProgressText {
+  // 带上分母：「答对 4 题」在 5 题卷与 20 题卷里不是一回事
+  const score = (point: AttemptScorePoint) => `${point.correct} / ${point.total} 题`
+  const bestLine = progress.best ? `你的最好成绩：答对 ${score(progress.best)}` : ''
+
+  switch (progress.state) {
+    case 'first':
+      return {
+        title: PROGRESS_COPY.firstTitle,
+        note: PROGRESS_COPY.firstNote,
+        badge: null
+      }
+    case 'record':
+      return {
+        title: '刷新了自己的纪录',
+        // `delta_vs_best` 为正数（服务端保证），这里不做 `Math.abs`
+        note: `比之前最好的一局多答对 ${progress.delta_vs_best} 题`,
+        badge: PROGRESS_COPY.recordBadge
+      }
+    case 'tie_best':
+      return { title: '追平了自己的最好成绩', note: bestLine, badge: null }
+    case 'better':
+      return { title: `比上一局多答对 ${progress.delta_vs_prev} 题`, note: bestLine, badge: null }
+    case 'same':
+      return { title: '和上一局一样', note: bestLine, badge: null }
+    case 'worse':
+      return {
+        title: `比上一局少答对 ${Math.abs(progress.delta_vs_prev)} 题`,
+        note: bestLine,
+        badge: null
+      }
+    default:
+      /*
+       * 服务端加了新状态、前端还没跟上时的兜底。
+       *
+       * 退回一句**不比较**的中性话，而不是抛错或显示空白：这一格挂了不该
+       * 把整张成绩单弄坏。类型上 `state` 是闭集（`ProgressState`），所以
+       * 真走到这里说明契约漂移了 —— 但用户看到的不该是技术性错误提示。
+       */
+      return { title: `这是你的第 ${progress.attempt_count} 局`, note: bestLine, badge: null }
+  }
+}
 
 /**
  * 冒险日志（原型 03 第 1 / 2 / 3 屏，以及失败 / 断网两态）。
@@ -179,19 +291,18 @@ export const SETTLE_COPY = {
  * 放在前端而不是改后端的默认文案：改默认值会同时改掉出题链的提示，
  * 而两个链需要的是不同的说法（一个说「重新生成题目」，一个说「重新生成报告」）。
  *
- * ## 关于百分位（2026-09-23 重写）
+ * ## 关于那一格（2026-09-23 起是「与自己的历史比」）
  *
- * 这里原来写着「百分位与档位都是 `accuracy × 0.9` 的派生值…必须标注为演示数据」。
- * 现在百分位是**真实社团分位**：把「本局正确率」与社团里其他冒险者的
- * **最佳正确率**逐个比较，算严格高于的人数占比，池子大小随人数一起返回
- * （`percentile_pool`）。所以这一屏要做的变成了**说清楚它在跟谁比**：
+ * 这一屏原来印「本局超过社团里 72% 的冒险者」，右边挂一枚档位胶囊（「中上」）。
+ * 那一整组（`percentilePrefix / Suffix / Note / NoPool` 与档位胶囊）已于
+ * 2026-09-23 **删除** —— 文案与它背后的 `percentile` / `percentile_pool` /
+ * `percentile_label` 三个接口字段一起撤掉，`attempts` 表那两列也删了。
  *
- * | 情况 | 显示 |
- * |---|---|
- * | 有分位 | 「本局超过社团里 N% 的冒险者」+ 「按社团里 M 位冒险者的最佳正确率计算」 |
- * | 池子为空（`percentile === null`） | 整块换成 `percentileNoPool`，**不显示任何百分数** |
+ * 现在这一格读 `report.progress`，讲「比过去的自己怎么样」：标题一句 +
+ * 说明一句（破纪录时多一枚「新纪录」胶囊）。文案集中在 `PROGRESS_COPY`，
+ * 与结算页**共用同一个映射函数**，两屏不可能说法不一致。
  *
- * 「池子为空」时不许显示 0%：那会被读成「谁也没超过」，而真相是「还没人可比」。
+ * 理由与登记见本文件头第 4 条；**不要**把百分位加回来。
  */
 export const REPORT_COPY = {
   navTitle: '冒险日志',
@@ -204,15 +315,6 @@ export const REPORT_COPY = {
   statCorrect: '答对',
   statWrong: '答错',
   statAvgTime: '平均用时',
-  percentilePrefix: '本局超过社团里',
-  percentileSuffix: '的冒险者',
-  /**
-   * 分位下面那行说明。**必须写出人数**：只说「超过 43%」时，
-   * 用户没法判断这个 43% 是在 3 个人里排的还是 300 个人里排的。
-   */
-  percentileNote: (pool: number) => `按社团里 ${pool} 位冒险者的最佳正确率计算`,
-  /** 池子为空时替掉整个百分位卡 —— 见上方表格 */
-  percentileNoPool: '社团里还没有其他冒险者，这是你的第一份成绩',
   /**
    * 模板兜底时的说明。
    *

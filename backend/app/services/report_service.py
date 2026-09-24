@@ -14,12 +14,17 @@
 
 | 字段 | 来源 |
 |---|---|
-| 正确率 / 答对答错数 / 用时 / XP / 金币 / 百分位 | `attempts` 表的既有值，**原样搬运** |
+| 正确率 / 答对答错数 / 用时 / XP / 金币 | `attempts` 表的既有值，**原样搬运** |
+| 与自己比较的进度（`progress`） | **读取时重算**：基准只含该局**之前**的记录（`progress_service`），不落库 |
 | 掌握点 / 薄弱点 / 三句话总结 / 复习建议 | `reports` 表（AI 生成或模板兜底） |
 
 搬运统计数字时**不重新计算**，直接读 `attempts` 上的列。理由是这些列是结算
 那一刻的权威快照：万一将来评分规则改了，历史报告仍然要显示当时算出来的数字，
 用新规则重算会让用户看到「同一局的两个页面数字不一样」。
+
+`progress` 是唯一的例外，而且是**必须**的例外：它是「这一局与之前的自己比」的结果，
+落库会变成假话（用户后来又刷新了纪录，旧那一局的报告仍旧宣称「这是你的最好成绩」）。
+所以它每次读取时按「`id` 小于该局的记录」重算 —— 同一份报告的内容不随时间漂移。
 
 ## 一次读取，两种生命周期
 
@@ -48,6 +53,7 @@ from app.db.session import session_scope
 from app.db.tables import Answer, Attempt, QuizRecord, Report as ReportRow, User
 from app.llm import report_chain
 from app.llm.report_chain import ReportFacts
+from app.models.attempt import AttemptProgress
 from app.models.report import (
     ADVICE_COUNT,
     POINTS_MAX,
@@ -59,7 +65,7 @@ from app.models.report import (
     ReportGenerateRequest,
     ReportGenerateResponse,
 )
-from app.services import quiz_repository, scoring, task_service
+from app.services import progress_service, quiz_repository, task_service
 from app.services.task_service import TaskRecord, TaskStep
 from app.utils.timeutil import as_aware_utc, utcnow
 
@@ -156,12 +162,10 @@ def merge_draft(
         xp_gained=snapshot.xp_gained,
         max_xp=snapshot.max_xp,
         coins_gained=snapshot.coins_gained,
-        percentile=snapshot.percentile,
-        # 池子为空时没有档位 —— 「起步」这种标签配着一个不存在的位置会像嘲讽。
-        percentile_label=(
-            None if snapshot.percentile is None else scoring.percentile_label_for(snapshot.percentile)
-        ),
-        percentile_pool=snapshot.percentile_pool,
+        # 与自己比的结果（基准 = 该局之前的记录）。两侧（结算页 / 报告页）
+        # 拿的是同一份 `progress_service` 的输出，所以逐位相同是结构保证，
+        # 不是「两边小心一点」。
+        progress=snapshot.progress,
         mastered_points=list(draft.mastered_points),
         weak_points=list(draft.weak_points),
         three_line_summary=list(draft.three_line_summary),
@@ -195,11 +199,11 @@ class _Snapshot:
     xp_gained: int
     max_xp: int
     coins_gained: int
-    #: 真实社团分位；`None` = 这一局结算时社团里还没有其他冒险者。
-    #: 判据是同一行的 `percentile_pool`（见 `percentile_service`），
-    #: 而不是「percentile 是不是 0」—— 0% 是一个合法的真实结果。
-    percentile: int | None
-    percentile_pool: int
+    #: 本局与该用户自己历史的比较（`progress_service`）。
+    #:
+    #: 基准用**该局的 id**：只含这一局之前的记录。这正是「历史报告不随时间漂移」
+    #: 的实现方式 —— 用户后来刷新了纪录，这一局的报告仍旧说「这是你的第一局」。
+    progress: AttemptProgress
     #: 喂给模型的三段文本
     quiz_json: str
     answer_records: str
@@ -314,8 +318,12 @@ def _load_snapshot(session: Session, *, attempt_id: int, user_id: int) -> _Snaps
         xp_gained=int(attempt.xp_gained),
         max_xp=int(attempt.max_xp),
         coins_gained=int(attempt.coins_gained),
-        percentile=(None if int(attempt.percentile_pool) <= 0 else int(attempt.percentile)),
-        percentile_pool=int(attempt.percentile_pool),
+        progress=progress_service.for_attempt(
+            session,
+            user_id=int(attempt.user_id),
+            correct_count=int(attempt.correct_count),
+            before_attempt_id=int(attempt.id),
+        ),
         quiz_json=json.dumps(quiz.model_dump(mode="json"), ensure_ascii=False),
         answer_records="\n".join(lines),
         score_summary=(

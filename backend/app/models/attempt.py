@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -151,6 +151,66 @@ class AttemptAnswerResult(BaseModel):
     knowledge_point: str
 
 
+#: 一局的「自我比较」状态。**闭集**，前端按值决定渲染哪一句话与哪枚胶囊。
+#:
+#: 取值的顺序有意义（判定的优先级），不按字母序：`first` > `record` > `tie_best`
+#: > `better` / `same` / `worse`。完整规则见 `app/services/progress_service.judge`。
+ProgressState = Literal["first", "record", "tie_best", "better", "same", "worse"]
+
+
+class AttemptScorePoint(BaseModel):
+    """历史某一局的成绩点：答对几题 / 共几题。
+
+    刻意只有这两个数 —— 这一格的全部文案都是「答对 4 / 5 题」这种绝对量说法，
+    **不带正确率**。正确率（百分比）正是本次要撤掉的东西：一旦它进了这个契约，
+    总有人会顺手拿它去比较，于是「比上一局高 3 个百分点」就会回来。
+
+    `total` 也要带上：5 题答对 5 与 10 题答对 6 之间比「答对题数」并不公平，
+    所以文案里必须让分母可见（见 design.md 的 Risks）。
+    """
+
+    correct: int = Field(ge=0, description="完全答对；多选部分正确不计入")
+    total: int = Field(ge=0)
+
+
+class AttemptProgress(BaseModel):
+    """本局与**该用户自己的**历史记录的比较结果。
+
+    ## 为什么是嵌套一层，而不是在 `summary` 里平铺六个字段
+
+    语义成组（删除时是一个整体）、且差值由服务端给出后**前端连减法都不用做** ——
+    结算页与冒险日志页读同一份数据、走同一个「状态 → 文案」映射，
+    两屏不可能出现两种说法（这是本项目反复强调的那条红线）。
+
+    ## 为什么不落库
+
+    状态是**读的时候按「截至该局之前的历史」重算**的，不是写进 `attempts` 的列。
+    落库会变成假话：用户后来又刷新了纪录，旧那一局的报告仍旧宣称
+    「这是你的最好成绩」。同理，历史报告的基准只算它**之前**的记录，
+    不随时间漂移。见 design.md 的 D1。
+    """
+
+    state: ProgressState
+    #: 这是**该用户**的第几局（含本局）。
+    #:
+    #: ⚠️ 与顶层 `attempt_no`（「**该卷轴**的第几次挑战」）是两个量，
+    #: 名字必须区分开 —— 两个「第几局」放进同一个响应里会互相打架。
+    attempt_count: int = Field(ge=1, description="这是该用户的第几局（含本局）")
+    #: 本局 − **上一局** 的答对题数。正数为进步。首局没有上一局，恒为 `0`
+    #: （`state == "first"` 时前端不会读它）。
+    delta_vs_prev: int = Field(default=0, description="本局 − 上一局的答对题数")
+    #: 本局 − **此前最好** 的答对题数。只有 `record` 时为正数 —— 其余状态下
+    #: 历史最好 ≥ 本局。首局没有基准，恒为 `0`。
+    #:
+    #: 与 `delta_vs_prev` 一起由服务端给，是为了让「刷新了自己的纪录」那句说明
+    #: （「比之前最好的一局多答对 N 题」）不需要前端做减法。
+    delta_vs_best: int = Field(default=0, description="本局 − 此前最好的答对题数")
+    #: 此前最好的一局；**首局为 `None`**（没有基准就不给基准）
+    best: AttemptScorePoint | None = None
+    #: 紧邻的上一局；**首局为 `None`**
+    previous: AttemptScorePoint | None = None
+
+
 class AttemptSummary(BaseModel):
     """一局的汇总。全部指标以**服务端**为准（方案 §6.5）。"""
 
@@ -162,17 +222,11 @@ class AttemptSummary(BaseModel):
     xp_gained: int
     max_xp: int
     coins_gained: int
-    percentile: int | None = Field(
-        default=None,
-        description=(
-            "真实口径：正确率**严格高于**其他冒险者最佳正确率的人数占比（0–100）。"
-            "`None` = 社团里还没有别的冒险者，界面不许显示这一格"
-        ),
-    )
-    percentile_pool: int = Field(
-        default=0,
-        description="算上面那个百分位时可比的冒险者人数；0 与 percentile=None 成对出现",
-    )
+    #: 本局与**该用户自己**历史的比较结果（见 `progress_service`）。
+    #:
+    #: 必填而不是可空：这一格是结算页与冒险日志页共用的内容，
+    #: 「这次没算出来」不该是一种状态 —— 算不出来就是一次服务端故障。
+    progress: AttemptProgress
     duration_ms: int
     avg_seconds_per_question: float = Field(description="保留两位小数")
 

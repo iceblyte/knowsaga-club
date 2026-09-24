@@ -3,6 +3,7 @@
 覆盖：
 - 服务端权威重判：全对 / 全错 / 多选四种分支 / 未作答
 - 汇总口径与前端共享用例一致（`shared/scoring-cases.json`）
+- 自我比较进度：六种状态、`attempt_count`、同用户隔离、幂等回放逐位一致
 - 幂等：同一个 `client_token` 重复提交只产生一条挑战记录
 - 越权：用别人的卷轴交卷 → 4005，且两次响应完全同形
 - 归属：读/取消别人的任务 → 4004
@@ -158,13 +159,7 @@ def test_grading_is_authoritative_not_client_reported(
 
 
 def test_all_wrong_gives_zero(db_client, auth_headers, submitted_quiz) -> None:
-    """全错：0 XP / 0 金币 / 正确率 0。
-
-    百分位在**池子为空**时是 `None`（2026-09-23 起改为真实社团分位）：
-    本用例的社团里只有自己，没有任何可比的人。**不要**断言成 0 或 5 ——
-    0 会被读成「谁也没超过」，5 是已被删掉的演示下限。见
-    `app/services/scoring.py::pool_percentile` 与 `percentile_service`。
-    """
+    """全错：0 XP / 0 金币 / 正确率 0，且状态是 `first`（本用户此前没有记录）。"""
     quiz, _ = submitted_quiz()
     wrong = [_answer(q.id, ["Z"]) for q in quiz.questions]
 
@@ -175,101 +170,178 @@ def test_all_wrong_gives_zero(db_client, auth_headers, submitted_quiz) -> None:
     assert data["summary"]["xp_gained"] == 0
     assert data["summary"]["coins_gained"] == 0
     assert data["summary"]["accuracy"] == 0
-    assert data["summary"]["percentile"] is None
-    assert data["summary"]["percentile_pool"] == 0
     assert data["summary"]["wrong_count"] == 5
+    assert data["summary"]["progress"]["state"] == "first"
+    assert data["summary"]["progress"]["best"] is None
+    assert data["summary"]["progress"]["previous"] is None
 
 
 # -----------------------------------------------------------------------------
-# 真实社团分位（Bug3 的端到端判据）
+# 自我比较进度（2026-09-23 起，替换掉「与他人比百分位」）
 # -----------------------------------------------------------------------------
-def test_percentile_comes_from_real_club_pool(
-    db_client,
-    auth_headers,
-    other_auth_headers,
-    submitted_quiz,
-    other_submitted_quiz,
-) -> None:
-    """百分位真的在跟**社团里其他人**比，而不是 `accuracy × 0.9` 的演示值。
+def _answers_with_n_correct(quiz: Quiz, correct_count: int) -> list[dict]:
+    """前 `correct_count` 题答对、其余答错。
 
-    这条用例是 Bug3（「百分位为演示数据」）的端到端判据，必须造出第二个真实
-    用户才成立，所以走完整接口而不是直接摆弄那一列：
-
-      1. 另一位冒险者先交一局 **全错**（正确率 0）
-      2. 本用例用户交一局 **全对** → 池子 1 人、超过 100%
-         （旧实现里这一步是 90，与「社团里只有两个人」毫无关系）
-      3. 另一位再交一局 **80 分**（4 对 + 1 多选部分），刷新他自己的**最佳**
-      4. 本用例用户再交一局全错 → 池子仍是 **1 人**，分位变成 **0**
-
-    第 3–4 步同时锁住两件事：池子取的是每人**最佳**（不是最近一局），
-    且分母是**人**不是记录数（对方已交两局，`percentile_pool` 依然是 1）。
+    题序不影响结果 —— 判定只看**答对题数**（`scoring.grade_answer` 按题算），
+    所以不必关心哪几题对。答错的题故意选一个**不在选项里**的键（`Z`），
+    这样多选题也不会落进「部分正确」那一档。
     """
-    quiz, _ = submitted_quiz()
-    other_quiz, _ = other_submitted_quiz()
-
-    # 1) 另一位：全错 → 他的最佳正确率是 0
-    other_wrong = [_answer(q.id, ["Z"]) for q in other_quiz.questions]
-    db_client.post(
-        ATTEMPT_URL, json=_submit_body(other_quiz, other_wrong), headers=other_auth_headers
-    )
-
-    # 2) 本用户：全对 → 唯一可比的对手是 0 分，所以超过 100%
-    first = db_client.post(
-        ATTEMPT_URL, json=_submit_body(quiz, _all_correct(quiz)), headers=auth_headers
-    ).json()["data"]
-    assert first["summary"]["accuracy"] == 100
-    assert first["summary"]["percentile_pool"] == 1
-    assert first["summary"]["percentile"] == 100
-
-    # 3) 另一位：4 对 + 1 多选少选（正确率 80）→ 刷新他的最佳
-    partial = [
-        _answer(q.id, list(q.answer)[:1]) if q.type == "multiple" else _answer(q.id, list(q.answer))
-        for q in other_quiz.questions
+    return [
+        _answer(question.id, list(question.answer))
+        if index < correct_count
+        else _answer(question.id, ["Z"])
+        for index, question in enumerate(quiz.questions)
     ]
-    refreshed = db_client.post(
-        ATTEMPT_URL, json=_submit_body(other_quiz, partial), headers=other_auth_headers
-    ).json()["data"]
-    assert refreshed["summary"]["accuracy"] == 80
 
-    # 4) 本用户再交一局全错 → 池子**还是 1 人**（人，不是记录数），分位 0
-    again = db_client.post(
+
+def _summary_of(db_client, auth_headers, quiz: Quiz, correct_count: int) -> dict:
+    data = db_client.post(
         ATTEMPT_URL,
-        json=_submit_body(quiz, [_answer(q.id, ["Z"]) for q in quiz.questions]),
+        json=_submit_body(quiz, _answers_with_n_correct(quiz, correct_count)),
         headers=auth_headers,
     ).json()["data"]
-    assert again["summary"]["accuracy"] == 0
-    assert again["summary"]["percentile_pool"] == 1
-    assert again["summary"]["percentile"] == 0
+    return data["summary"]
 
 
-def test_percentile_pool_counts_people_not_attempts(
-    db_client, auth_headers, other_auth_headers, submitted_quiz, other_submitted_quiz
-) -> None:
-    """同一个人刷 3 局，池子仍然只算 1 个样本。
+def test_summary_carries_no_percentile_field(db_client, auth_headers, submitted_quiz) -> None:
+    """结算响应里**不存在**任何百分位字段。
 
-    否则一个爱刷分的用户能一个人把整个社团的分位拖动 —— 界面那句
-    是「超过 X% 的**冒险者**」，分母必须是**人**。
+    横向比较在本期是硬边界（见 spec 的第一条需求），不是「暂时不显示」——
+    留一个恒为 `null` 的字段，前端就会残留一个永远走不到的分支，
+    下一个人读代码时会以为功能坏了。
     """
     quiz, _ = submitted_quiz()
-    other_quiz, _ = other_submitted_quiz()
-
-    # 另一位连着交 3 局（正确率 0 / 80 / 100）
-    other_wrong = [_answer(q.id, ["Z"]) for q in other_quiz.questions]
-    partial = [
-        _answer(q.id, list(q.answer)[:1]) if q.type == "multiple" else _answer(q.id, list(q.answer))
-        for q in other_quiz.questions
-    ]
-    for answers in (other_wrong, partial, _all_correct(other_quiz)):
-        db_client.post(
-            ATTEMPT_URL, json=_submit_body(other_quiz, answers), headers=other_auth_headers
-        )
 
     data = db_client.post(
-        ATTEMPT_URL, json=_submit_body(quiz, _all_correct(quiz)), headers=auth_headers
+        ATTEMPT_URL, json=_submit_body(quiz, _answers_with_n_correct(quiz, 3)), headers=auth_headers
     ).json()["data"]
 
-    # 3 局记录，但只有 1 个人
-    assert data["summary"]["percentile_pool"] == 1
+    assert "percentile" not in data["summary"]
+    assert "percentile_pool" not in data["summary"]
+    assert "percentile" not in data
+    # 替换它的东西在
+    assert data["summary"]["progress"]["state"] == "first"
+
+
+def test_progress_first_attempt_has_exact_shape(
+    db_client, auth_headers, submitted_quiz
+) -> None:
+    """首局：整个 `progress` 对象逐字段锁死。
+
+    首局是唯一「三个字段全空」的形态，也是最容易被写歪的一种 ——
+    从空基准里推出一句比较（「和上一局一样」）就是从这里开始的。
+    """
+    quiz, _ = submitted_quiz()
+
+    progress = _summary_of(db_client, auth_headers, quiz, 3)["progress"]
+
+    assert progress == {
+        "state": "first",
+        "attempt_count": 1,
+        "delta_vs_prev": 0,
+        "delta_vs_best": 0,
+        "best": None,
+        "previous": None,
+    }
+
+
+def test_progress_walks_all_six_states(db_client, auth_headers, submitted_quiz) -> None:
+    """连续交 6 局，把六种状态真实走一遍。
+
+    | 局 | 答对 | 此前最好 | 上一局 | 期望状态 |
+    |---|---|---|---|---|
+    | 1 | 2 | — | — | `first` |
+    | 2 | 3 | 2 | 2 | `record` |
+    | 3 | 1 | 3 | 3 | `worse` |
+    | 4 | 2 | 3 | 1 | `better` |
+    | 5 | 2 | 3 | 2 | `same` |
+    | 6 | 3 | 3 | 2 | `tie_best`（追平不是刷新） |
+
+    走真实接口而不是直接写库：`attempt_count`、`best`、`previous` 三者
+    必须与「这一局真的被写进去之后」的状态对得上 —— 尤其第 2 局，
+    它同时验了「基准不含本局」（先落库再算的话永远是 `first`）。
+    """
+    quiz, _ = submitted_quiz()
+
+    summaries = [_summary_of(db_client, auth_headers, quiz, n) for n in (2, 3, 1, 2, 2, 3)]
+
+    assert [s["progress"]["state"] for s in summaries] == [
+        "first",
+        "record",
+        "worse",
+        "better",
+        "same",
+        "tie_best",
+    ]
+    assert [s["progress"]["attempt_count"] for s in summaries] == [1, 2, 3, 4, 5, 6]
+
+    # 最好成绩一路跟到最后仍是第 2 局那个 3；上一局始终是紧邻的那一局
+    record = summaries[-1]["progress"]
+    assert record["best"] == {"correct": 3, "total": 5}
+    assert record["previous"] == {"correct": 2, "total": 5}
+    assert record["delta_vs_best"] == 0  # 追平 → 差值 0（也正因如此文案不说「多答对 0 题」）
+    assert record["delta_vs_prev"] == 1
+
+    # 第 2 局：刷新纪录时差值指的是「比此前最好多几题」，不是「比上一局多几题」
+    assert summaries[1]["progress"]["delta_vs_best"] == 1
+    assert summaries[1]["progress"]["delta_vs_prev"] == 1
+
+
+def test_progress_is_per_user_not_global(
+    db_client, auth_headers, other_auth_headers, submitted_quiz, other_submitted_quiz
+) -> None:
+    """别人刷了多少局都与我的 `progress` 无关 —— 这正是本次要撤掉的那种比较。
+
+    旧行为下这里比的是「社团里其他人的最佳正确率」，所以第二个人一交卷，
+    第一个人的成绩单就变了；现在第二个人的成绩对第一个人完全不可见。
+    """
+    mine, _ = submitted_quiz()
+    theirs, _ = other_submitted_quiz()
+
+    # 另一位冒险者连着交 3 局（0 / 5 / 3 对）
+    for correct in (0, 5, 3):
+        db_client.post(
+            ATTEMPT_URL,
+            json=_submit_body(theirs, _answers_with_n_correct(theirs, correct)),
+            headers=other_auth_headers,
+        )
+
+    progress = _summary_of(db_client, auth_headers, mine, 4)["progress"]
+
+    assert progress["state"] == "first"  # 我的历史仍是空的
+    assert progress["attempt_count"] == 1
+    assert progress["best"] is None
+
+
+def test_idempotent_replay_keeps_progress_bit_for_bit(
+    db_client, auth_headers, submitted_quiz
+) -> None:
+    """重复提交（同一个 `client_token`）与首次**逐位一致**，`progress` 也是。
+
+    回放走的基准是「`id` 小于该局的记录」，首次走的是「全量」——
+    两者看起来不同，实质是同一个集合（这一局之前存在的记录）。
+    这条用例专门破坏那个等价：先交第 1 局，再交两局（含一局满分），
+    然后回放第 1 局 —— 它必须仍然是「这是你的第一局」，
+    而不是被后来的成绩改写成别的状态。
+    """
+    quiz, _ = submitted_quiz()
+    body = _submit_body(quiz, _answers_with_n_correct(quiz, 4))
+
+    first = db_client.post(ATTEMPT_URL, json=body, headers=auth_headers).json()["data"]
+    assert first["summary"]["progress"]["state"] == "first"
+
+    for correct in (5, 1):
+        db_client.post(
+            ATTEMPT_URL,
+            json=_submit_body(quiz, _answers_with_n_correct(quiz, correct)),
+            headers=auth_headers,
+        )
+
+    again = db_client.post(ATTEMPT_URL, json=body, headers=auth_headers).json()["data"]
+
+    assert again["duplicate"] is True
+    assert again["summary"] == first["summary"]
+    assert again["summary"]["progress"]["state"] == "first"
 
 
 def test_multiple_choice_partial_is_counted_as_partial_not_correct(
@@ -869,9 +941,9 @@ def test_answers_are_persisted_per_question(
 def test_attempt_row_matches_summary(db_client, auth_headers, submitted_quiz, db_session) -> None:
     """落库的汇总与响应里的汇总必须一致 —— 否则看板与结算页会各说各话。
 
-    百分位这一列有个**刻意的口径差**：列是 `NOT NULL`，池子为空时落 `0`；
-    而接口回 `None`（「还没有人可比」）。两者是同一事实的两种表达，
-    映射对不上才是 bug —— 所以这里比的是映射后的值，不是裸值。
+    `progress` 刻意**不在**被比的列里：它是读的时候重算的，不落库
+    （落库会变成假话 —— 用户后来又刷新了纪录，旧那一局的报告仍旧宣称
+    「这是你的最好成绩」）。见 `progress_service` 的模块说明。
     """
     quiz, _ = submitted_quiz()
 
@@ -884,9 +956,8 @@ def test_attempt_row_matches_summary(db_client, auth_headers, submitted_quiz, db
     assert int(row.xp_gained) == summary["xp_gained"]
     assert int(row.coins_gained) == summary["coins_gained"]
     assert int(row.accuracy) == summary["accuracy"]
-    # 池子为空 → 列上 0、接口回 None，是同一事实的两种表达
-    expected_percentile = 0 if summary["percentile"] is None else summary["percentile"]
-    assert int(row.percentile) == expected_percentile
-    assert int(row.percentile_pool) == summary["percentile_pool"]
+    assert int(row.correct_count) == summary["correct_count"]
     assert int(row.total_count) == summary["total_count"]
     assert row.status == "finished"
+    # 这一局是这位用户的第一局 → progress 说的是 first（而不是从库里读出来的什么）
+    assert summary["progress"]["state"] == "first"

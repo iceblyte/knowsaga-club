@@ -90,6 +90,25 @@ footer{margin-top:40px;color:var(--ink3);font-size:12.5px;text-align:center;
     <div class="meta">2026-09-23 · 后端 pytest 926 passed / 0 failed · tsc 0 error · H5 + WeApp 构建 exit 0 · 联网检索已实测 · chip 点击语义已改回「只填不发」并浏览器实测</div>
   </header>
 
+  <div class="note">
+    <strong>⚠️ 后记（同日当晚）：第 3 条与「附加发现」里描述的方案已作废，请以本段为准。</strong><br>
+    复核时发现：把百分位换成「真实社团分位」并没有解决问题，反而造出两句更不该说的话 ——
+    ① <strong>「社团」在产品里没有任何数据实体</strong>（库里既没有 guild / club 表，也没有成员关系表），
+    那句话的真实含义是「全站答过题的人」，而用户从没加过社团；
+    ② 那句「按社团里 7 位冒险者的最佳正确率计算」<strong>把内部口径摊给了用户</strong>，
+    而「7」这个数字本身就等于当着用户承认产品还没有用户；
+    ③ 7 人池子上的 43% 是把 42.86% 包装成的<strong>假精度</strong>，比原先那句「（演示数据）」更隐蔽；
+    ④ 拿「你这一局」比「别人的历史最佳」（还是别人<strong>另一份副本</strong>的最好成绩），语义上并不成立。<br>
+    现行方案：这一格改为与<strong>自己的历史</strong>比，用「答对几题」说话（不再出现任何百分比）。
+    <code>attempts.percentile</code> / <code>attempts.percentile_pool</code> 两列已删除
+    （幂等迁移 <code>sql/06_drop_attempts_percentile.sql</code>，删列前存量值已留底到
+    <code>D:\备份\WorkBuddy\knowsaga-club\2026-09-23\</code>）。
+    详见 <code>docs/MVP开发计划.md §9.4</code> 与
+    <code>openspec/changes/replace-percentile-with-self-comparison/</code>。<br>
+    本报告余下内容<strong>保持原样</strong>，作为「当天实际做过什么」的记录 —— 不改写历史，
+    但请不要照它去理解现在的实现。
+  </div>
+
   <h2>总览</h2>
   <table>
     <tr><th>#</th><th>问题</th><th>状态</th></tr>

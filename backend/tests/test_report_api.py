@@ -100,6 +100,18 @@ def _one_wrong(quiz: Quiz) -> list[dict]:
     return answers
 
 
+def _two_correct(quiz: Quiz) -> list[dict]:
+    """前两题答对、其余答错 —— 造一局「成绩平平」的历史（答对 2 / 5）。
+
+    取前两题是因为样例题库的第三题起才是多选题与判断题：只用单选凑数，
+    「答对题数」就等于写下的那个数字，不必再算一遍部分正确。
+    """
+    answers = [_answer(question.id, ["Z"]) for question in quiz.questions]
+    for index in range(min(2, len(quiz.questions))):
+        answers[index] = _answer(quiz.questions[index].id, list(quiz.questions[index].answer))
+    return answers
+
+
 @pytest.fixture
 def foreign_attempt(
     db_client, other_auth_headers, other_user_id, db_session, sample_quiz_payload: dict
@@ -225,10 +237,9 @@ def test_report_stats_match_settlement_bit_for_bit(
     XP 170。只要服务层哪天改成「重新算一遍」，
     这里就会因为两套口径的细微差异而失败。
 
-    百分位（2026-09-23 起是**真实社团分位**）在本用例里是 `None`：社团
-    只有自己一个人、池子为空。两端必须**同时**回到 `None`、同时不给档位 ——
-    一边有数字一边空才是真的对不上。有池子的正常路径在
-    `test_attempt_api.test_percentile_comes_from_real_club_pool`。
+    `progress`（自我比较）也要逐位相同：它两侧走的是同一份 `progress_service`
+    判定，报告侧只是把「基准」从「全量」换成「该局之前的记录」——
+    这一局是第一局，两种基准都指向空集合，所以两侧必然是 `first`。
     """
     quiz, _ = submitted_quiz()
     multiple = next(q for q in quiz.questions if q.type == "multiple")
@@ -253,10 +264,71 @@ def test_report_stats_match_settlement_bit_for_bit(
     assert report["coins_gained"] == summary["coins_gained"] == 30
     assert report["duration_ms"] == summary["duration_ms"]
     assert report["avg_seconds_per_question"] == summary["avg_seconds_per_question"]
-    # 池子为空 → 两端都是 None，且都不给档位（不是「起步」）
-    assert report["percentile"] == summary["percentile"] is None
-    assert report["percentile_pool"] == summary["percentile_pool"] == 0
-    assert report["percentile_label"] is None
+    assert report["progress"] == summary["progress"]
+    assert report["progress"]["state"] == "first"
+
+
+def test_report_carries_progress_and_no_percentile_field(
+    db_client, auth_headers, submitted_quiz, db_scope, inline_report_submit, ai_report
+) -> None:
+    """报告文档里只有自我比较的 `progress`，**没有任何百分位字段**。
+
+    与结算响应同一条硬边界：横向比较在本期不做，接口里也不留字段 ——
+    留一个恒为 `null` 的 `percentile`，前端就会残留一个永远走不到的分支。
+    """
+    quiz, _ = submitted_quiz()
+    attempt = _submit_attempt(db_client, auth_headers, quiz, _all_correct(quiz))
+    ai_report()
+
+    created = _generate_report(db_client, auth_headers, attempt["attempt_id"])
+    report = _poll_report(db_client, auth_headers, created["task_id"])["report"]
+
+    assert "percentile" not in report
+    assert "percentile_pool" not in report
+    assert "percentile_label" not in report
+    assert report["progress"]["state"] == "first"
+    assert report["progress"]["best"] is None
+
+
+def test_report_progress_baseline_is_only_before_that_attempt(
+    db_client, auth_headers, submitted_quiz, db_scope, inline_report_submit, ai_report
+) -> None:
+    """历史报告的基准**只含这一局之前**的记录，不随时间漂移。
+
+    造法：先交一局 2 对（记为 A），再交一局满分（记为 B），然后分别给 A、B 出报告。
+
+    - A 的报告仍要说「这是你的第一局」—— 哪怕用户后来拿了满分。
+      若基准按「当前全部历史」算，A 那份报告会变成「比上一局少答对 3 题」，
+      也就是说**同一份历史报告的内容会随用户后来的表现改变**，那是假话。
+    - B 的报告才是 `record`，且差值指的是「比此前最好（A 的 2 分）多 3 题」。
+    """
+    quiz, _ = submitted_quiz()
+    first = _submit_attempt(db_client, auth_headers, quiz, _two_correct(quiz))
+    second = _submit_attempt(db_client, auth_headers, quiz, _all_correct(quiz))
+    ai_report()
+
+    first_report = _poll_report(
+        db_client,
+        auth_headers,
+        _generate_report(db_client, auth_headers, first["attempt_id"])["task_id"],
+    )["report"]
+    second_report = _poll_report(
+        db_client,
+        auth_headers,
+        _generate_report(db_client, auth_headers, second["attempt_id"])["task_id"],
+    )["report"]
+
+    assert first_report["progress"]["state"] == "first"
+    assert first_report["progress"]["attempt_count"] == 1
+    assert first_report["progress"]["best"] is None
+
+    assert second_report["progress"]["state"] == "record"
+    assert second_report["progress"]["attempt_count"] == 2
+    assert second_report["progress"]["best"] == {"correct": 2, "total": 5}
+    assert second_report["progress"]["delta_vs_best"] == 3
+
+    # 与结算当时那一份逐位一致 —— 报告不是「另算一遍」
+    assert second_report["progress"] == second["summary"]["progress"]
 
 
 def test_finished_at_carries_utc_offset(

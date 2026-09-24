@@ -47,7 +47,7 @@ import AccuracyRing from '../../components/AccuracyRing'
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
 import Sprite from '../../components/Sprite'
-import { SETTLE_COPY } from '../../constants/copy'
+import { SETTLE_COPY, progressTextOf } from '../../constants/copy'
 import { useCountUp } from '../../hooks/useCountUp'
 import { submitAttempt } from '../../services/attempt'
 import { useQuizStore } from '../../store/useQuizStore'
@@ -89,13 +89,14 @@ export default function SettlePage() {
       totalXp: server?.xp_gained ?? local.totalXp,
       coins: server?.coins_gained ?? local.coins,
       /**
-       * 百分位**只认服务端**（2026-09-23 起）。
+       * 进度**只认服务端**（2026-09-23 起）。
        *
-       * 它现在是真实社团分位（其他冒险者最佳正确率的人数占比），
-       * 前端手里没有别人的成绩、算不出来 —— 所以本地没有兜底值，
-       * 服务端没回话就是 `null`，那一行留空（不是 0%，见下方渲染）。
+       * 它要的是「截至本局之前的历史最好 / 紧邻上一局」，而这一局**刚刚才提交** ——
+       * 前端手里那份历史不含服务端的权威判分，自己算出来可能与服务端不一致。
+       * 所以本地没有兜底值：服务端没回话就是 `null`，那一行留空（见下方渲染），
+       * 而不是编一句「这是你的第一局」。
        */
-      percentile: server?.percentile ?? null
+      progress: server?.progress ?? null
     }
   }, [local, quiz, attempt])
 
@@ -209,15 +210,15 @@ export default function SettlePage() {
         </View>
       </View>
 
-      {/* 正确率。
-          百分位那行**只认服务端**（前端手里没有别人的成绩，算不出来），
-          所以三种状态都得诚实：
-            · 服务端回了分位      → 写分位
-            · 服务端回了空池子    → 写「你是社团里第一个完成挑战的冒险者」
+      {/* 正确率 + 「比过去的自己怎么样」。
+          进度那行**只认服务端**（本局的历史基准由服务端在落库前算好），
+          所以两种状态都得诚实：
+            · 服务端回了 `progress` → 写它标题那一句
             · 服务端还没回 / 没送到 → 留空
-          第三种**不能**套用第二句文案：交卷失败时我们根本不知道社团里有没有别人，
-          说「你是第一个」就是编的。留一个空 `<View>` 而不是不渲染，
-          是为了卡片高度在服务端回话时不跳。 */}
+          第二种**不能**套用「这是你的第一份成绩」：交卷失败时我们根本不知道
+          这是不是第一局，说「第一份」就是编的。留一个空 `<View>` 而不是不渲染，
+          是为了卡片高度在服务端回话时不跳。
+          说明行只在冒险日志页出现（这里一行放不下两句）。 */}
       <View className='card'>
         <View className='row settle__accuracy'>
           <AccuracyRing percent={view.accuracy} size={64} />
@@ -226,11 +227,7 @@ export default function SettlePage() {
               正确率 {view.correctCount} / {view.totalCount}
             </View>
             <View className='tiny settle__accuracy-note'>
-              {view.percentile !== null
-                ? `${SETTLE_COPY.percentilePrefix} ${view.percentile}% ${SETTLE_COPY.percentileSuffix}`
-                : attempt
-                  ? SETTLE_COPY.percentileNoPool
-                  : ''}
+              {view.progress ? progressTextOf(view.progress).title : ''}
             </View>
           </View>
         </View>

@@ -50,7 +50,14 @@ const COLOR_MID = '#C8912A'
 const COLOR_LOW = '#A63A2E'
 const COLOR_TRACK = '#E6D6B4'
 
-function colorOf(percent: number): string {
+/**
+ * 正确率 → 色阶（≥80 绿 / ≥60 金 / 其余红）。
+ *
+ * **导出**是给冒险日志页那一格进度条用的：那条进度条画的就是本局正确率，
+ * 与这个环是同一个数，颜色必须同源。各写一份阈值表迟早会出现
+ * 「环是红的、条是绿的」这种自相矛盾 —— 而且改阈值的人不会想起第二处。
+ */
+export function colorOf(percent: number): string {
   if (percent >= 80) return COLOR_OK
   if (percent >= 60) return COLOR_MID
   return COLOR_LOW

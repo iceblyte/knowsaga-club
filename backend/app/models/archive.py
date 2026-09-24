@@ -250,10 +250,9 @@ class ScrollDetailResponse(BaseModel):
     total_count: int
     xp_gained: int
     max_xp: int
-    #: 真实口径的社团分位；`None` = 社团里还没有其他冒险者（见 `percentile_service`）。
-    percentile: int | None = None
-    #: 算这个分位时可比的冒险者人数；界面上的说明文案用它，0 时不显示分位。
-    percentile_pool: int = 0
+    #: ⚠️ 这里**没有**任何比较结果（既无横向的百分位，也无纵向的 `progress`），
+    #: 这不是漏了：详情页是「这一局的作答明细」，比较只出现在结算页与冒险日志页。
+    #: 2026-09-23 之前这里曾回 `percentile` / `percentile_pool`，而页面从未读过它们。
     attempt_no: int
     questions: list[ScrollQuestionItem] = Field(default_factory=list)
 

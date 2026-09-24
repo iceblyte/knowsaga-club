@@ -92,7 +92,7 @@ def test_prompt_forbids_extra_prose() -> None:
 # ------------------------------------------------- 统计数字必须由服务端注入
 @pytest.mark.parametrize(
     "field",
-    ["accuracy", "xp_gained", "coins_gained", "percentile", "avg_duration_ms"],
+    ["accuracy", "xp_gained", "coins_gained", "progress", "avg_duration_ms"],
 )
 def test_prompt_forbids_echoing_deterministic_stats(field: str) -> None:
     """模型不得输出统计数字 —— 否则同一事实出现两个来源，必然有一天对不上。"""
@@ -226,6 +226,10 @@ def test_report_prompt_carries_no_reference_delimiters() -> None:
 
 
 def test_stats_field_names_still_absent_after_v2_upgrade() -> None:
-    """v2 只加约束，不许顺手把统计字段挪回来（存量契约，回归用）。"""
-    for field in ("accuracy", "xp_gained", "coins_gained", "percentile", "avg_duration_ms"):
+    """v2 只加约束，不许顺手把统计字段挪回来（存量契约，回归用）。
+
+    `percentile` 已随该字段的删除换成 `progress`（2026-09-23）：留着一个指向
+    已不存在字段的断言，看着绿、实际什么都没守着。
+    """
+    for field in ("accuracy", "xp_gained", "coins_gained", "progress", "avg_duration_ms"):
         assert field not in REPORT_SYSTEM_PROMPT

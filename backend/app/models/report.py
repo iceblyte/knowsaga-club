@@ -6,7 +6,8 @@
 
 | 字段 | 来源 | 为什么 |
 |---|---|---|
-| 正确率 / 答对答错数 / 用时 / XP / 金币 / 百分位 | `attempts` 表（`scoring` 确定性计算） | 必须与结算页**逐位相同**。同一局在结算页写 80%、在报告页写 85%，用户没法判断该信哪个 |
+| 正确率 / 答对答错数 / 用时 / XP / 金币 | `attempts` 表（`scoring` 确定性计算） | 必须与结算页**逐位相同**。同一局在结算页写 80%、在报告页写 85%，用户没法判断该信哪个 |
+| 与自己比较的进度（`progress`） | `progress_service`（读取时按「该局之前的记录」重算） | 同一份报告的内容不许随用户后来的成绩改变 —— 见 `progress_service` 的模块说明 |
 | 掌握点 / 薄弱点 / 三句话总结 / 复习建议 | `reports` 表（AI 生成 + 模板兜底） | 这些是「把已知数据讲成人话」，才需要模型 |
 
 所以 `Report` 里的统计字段一律**从 `attempts` 读**，不从 `reports` 读 ——
@@ -33,7 +34,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.attempt import IdStr, require_numeric_id
+from app.models.attempt import AttemptProgress, IdStr, require_numeric_id
 from app.models.quiz import NonEmptyStr
 
 #: 三句话总结 / 复习建议的固定条数。原型 03 的第 2、3 屏按固定条数排版卡片，
@@ -157,8 +158,15 @@ class Report(BaseModel):
     """对外契约：`GET /tasks/{id}` 成功时 `data.report` 的结构。
 
     这就是原型 03 第 1–3 屏需要的全部数据 —— 前端不做任何二次计算
-    （原型第 1 屏的「答对 4/5」「平均用时 8.4s」「超过 72% 的冒险者」
-    分别对应 `correct_count`/`total_count`、`avg_seconds_per_question`、`percentile`）。
+    （原型第 1 屏的「答对 4/5」「平均用时 8.4s」分别对应
+    `correct_count`/`total_count`、`avg_seconds_per_question`）。
+
+    ⚠️ 原型第 1 屏还有一句「本局超过社团里 72% 的冒险者」，**本方案撤掉了它**：
+    「社团」在产品里没有任何数据实体，7 人池子上的 43% 是假精度，而且拿
+    「你这一局」比「别人的历史最佳」在语义上并不成立。替换它的是 `progress`
+    （与自己的历史比）。这是**有意偏离原型**，登记在
+    `frontend/src/constants/copy.ts` 文件头与 `docs/MVP开发计划.md`，
+    不要当成 bug「修」回去。
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -180,14 +188,10 @@ class Report(BaseModel):
     xp_gained: int = Field(ge=0)
     max_xp: int = Field(ge=0)
     coins_gained: int = Field(ge=0)
-    #: 真实社团分位。`None` = 这局结算时社团里还没有其他冒险者 ——
-    #: 此时前端**不渲染**百分位卡，改说「社团里还没有其他冒险者」。
-    percentile: int | None = Field(default=None, ge=0, le=100)
-    #: 算这个分位时可比的冒险者人数（说明文案要用）。
-    percentile_pool: int = Field(default=0, ge=0)
-    percentile_label: str | None = Field(
-        default=None, description="原型第 1 屏的档位胶囊，如「中上」；无分位时为 None"
-    )
+    #: 本局与该用户自己历史的比较结果（`progress_service`）。
+    #:
+    #: 必填：这一格是报告页第 1 屏的内容，「这次没算出来」不该是一种状态。
+    progress: AttemptProgress
 
     # ---- 叙述内容：来自 reports（AI 生成，失败时为确定性模板） ----
     mastered_points: list[str] = Field(default_factory=list)

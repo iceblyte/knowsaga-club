@@ -74,22 +74,10 @@ DEVICE_B = "verify-report-chain-b"
 POLL_INTERVAL_S = 1.5
 POLL_DEADLINE_S = 120.0
 
-#: 与 `scoring._PERCENTILE_BANDS` 同源的档位表。这里**刻意重写一份**而不是 import：
-#: 抽验脚本的价值就在「不共享实现」—— 直接 import 的话，档位表被改坏时
-#: 两侧会一起错，脚本照样报绿。
-PERCENTILE_BANDS: tuple[tuple[int, str], ...] = (
-    (90, "顶尖"),
-    (75, "优秀"),
-    (50, "中上"),
-    (25, "中游"),
-)
-
-
-def expected_percentile_label(percentile: int) -> str:
-    for threshold, label in PERCENTILE_BANDS:
-        if percentile >= threshold:
-            return label
-    return "起步"
+#: （2026-09-23）此处原有 `PERCENTILE_BANDS` + `expected_percentile_label`，
+#: 用来抽验「档位文字与百分位数值自洽」。百分位整条链路已删除 —— 它与
+#: 「社团」这个并不存在的实体绑定，见 `app/services/progress_service.py` 的模块说明。
+#: 这一格现在讲「与自己的历史比」，因此也不需要一份独立重写的档位表。
 
 
 # -----------------------------------------------------------------------------
@@ -338,7 +326,7 @@ def main() -> int:
     print(f"  attempt_id={attempt_id} · 答对 {summary['correct_count']}/{summary['total_count']} · "
           f"部分正确 {summary['partial_count']} · 答错 {summary['wrong_count']} · "
           f"正确率 {summary['accuracy']}% · XP {summary['xp_gained']}/{summary['max_xp']} · "
-          f"金币 {summary['coins_gained']} · 百分位 {summary['percentile']}% · "
+          f"金币 {summary['coins_gained']} · 进度 {summary['progress']['state']} · "
           f"平均每题 {summary['avg_seconds_per_question']}s")
     check("确实产生了一道非全对的题",
           summary["wrong_count"] + summary["partial_count"] >= 1,
@@ -372,7 +360,7 @@ def main() -> int:
     if not isinstance(report_doc, dict):
         raise SystemExit(f"[x] 任务成功但 data.report 缺失：{str(task)[:200]}")
 
-    print(f"  报告 degraded={report_doc['degraded']} 百分位档位={report_doc['percentile_label']!r}")
+    print(f"  报告 degraded={report_doc['degraded']} 进度={report_doc['progress']['state']}")
     print(f"  掌握点={report_doc['mastered_points']}")
     print(f"  薄弱点={report_doc['weak_points']}")
     for index, line in enumerate(report_doc["three_line_summary"], start=1):
@@ -409,16 +397,19 @@ def main() -> int:
     # ---------- 9. 统计与结算逐位相同 ----------
     section("9. 统计数字与结算页逐位相同（报告链最关键的一条）")
     for field in ("accuracy", "correct_count", "wrong_count", "partial_count", "total_count",
-                  "xp_gained", "max_xp", "coins_gained", "percentile", "duration_ms"):
+                  "xp_gained", "max_xp", "coins_gained", "duration_ms"):
         check(f"{field} 与结算一致",
               report_doc.get(field) == summary[field],
               f"报告 {report_doc.get(field)} vs 结算 {summary[field]}")
     check("avg_seconds_per_question 与结算一致（含两位小数量化）",
           report_doc["avg_seconds_per_question"] == summary["avg_seconds_per_question"],
           f"{report_doc['avg_seconds_per_question']} vs {summary['avg_seconds_per_question']}")
-    check("百分位档位文字与百分位数值自洽",
-          report_doc["percentile_label"] == expected_percentile_label(report_doc["percentile"]),
-          f"{report_doc['percentile_label']!r} vs {expected_percentile_label(report_doc['percentile'])!r}")
+    check("进度（与自己比）在报告与结算里逐位相同",
+          report_doc["progress"] == summary["progress"],
+          f"报告 {report_doc['progress']} vs 结算 {summary['progress']}")
+    check("报告里没有任何 percentile* 字段",
+          not [key for key in report_doc if key.startswith("percentile")],
+          str(sorted(report_doc)))
     check("答对 + 答错 + 部分正确 = 题量",
           report_doc["correct_count"] + report_doc["wrong_count"] + report_doc["partial_count"]
           == report_doc["total_count"],
@@ -513,7 +504,7 @@ def main() -> int:
           all(forced_report[field] == summary[field]
               for field in ("accuracy", "correct_count", "wrong_count", "partial_count",
                             "total_count", "xp_gained", "max_xp", "coins_gained",
-                            "percentile", "duration_ms")),
+                            "duration_ms")),
           "force 重算出来的数字与结算不一致")
     check("重新生成后 attempt_id 未漂移",
           forced_report["attempt_id"] == attempt_id, str(forced_report["attempt_id"]))

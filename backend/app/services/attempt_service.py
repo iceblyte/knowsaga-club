@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -43,6 +42,7 @@ from app.db.tables import Answer, Attempt, QuestionRecord, User
 from app.models.attempt import (
     AttemptAnswerRequest,
     AttemptAnswerResult,
+    AttemptProgress,
     AttemptSubmitRequest,
     AttemptSubmitResponse,
     AttemptSummary,
@@ -50,7 +50,7 @@ from app.models.attempt import (
 from app.services import (
     badge_service,
     growth_service,
-    percentile_service,
+    progress_service,
     quiz_repository,
     scoring,
     user_service,
@@ -110,16 +110,19 @@ def submit_attempt(
     # ---- 判题 ----
     graded = _grade_all(questions, payload.answers)
 
-    # ---- 百分位（真实用户池，见 `percentile_service`） ----
-    # 必须**在落库之前**查：这一局还没写进去，所以「其他人」天然不含本次；
-    # 也不含这位用户自己的历史最佳 —— 那句话说的是「超过社团里的冒险者」。
-    others_best = percentile_service.others_best_accuracy(
-        session, exclude_user_id=int(user.id)
+    # ---- 与自己比（见 `progress_service`） ----
+    # ⚠️ 必须**在落库之前**算。此时本局还没写进 `attempts`，所以
+    # `before_attempt_id=None` 取到的「全量历史」天然不含本局 —— 基准才成立。
+    # 反过来写（先落库再算）本局自己会成为「历史最好」的候选，拿自己跟自己比，
+    # `record` 永远不可能出现，而表现只是「刷新纪录这个状态没生效」。
+    progress = progress_service.for_attempt(
+        session,
+        user_id=int(user.id),
+        correct_count=sum(1 for item in graded if item.result.outcome == "correct"),
+        before_attempt_id=None,
     )
 
-    summary = _summarize(
-        graded, duration_ms=duration_ms, others_best_accuracy=others_best
-    )
+    summary = _summarize(graded, duration_ms=duration_ms, progress=progress)
 
     # ---- 落库（一个事务） ----
     attempt = _write_attempt(
@@ -295,16 +298,13 @@ def _summarize(
     graded: list[_GradedQuestion],
     *,
     duration_ms: int,
-    others_best_accuracy: Sequence[int],
+    progress: AttemptProgress,
 ) -> AttemptSummary:
     """汇总一局。分母是**题量**，未作答的题按 0 分占位。
 
-    百分位需要「其他冒险者的最佳正确率」，所以由调用方查好传进来 ——
-    这个函数保持纯函数，pytest 里可以直接喂一组池子验算，
-    不必先造一库用户（见 `tests/test_attempt_service.py`）。
-
-    `others_best_accuracy` 为空 = 社团里还没有别的冒险者 → `percentile` 为
-    `None`、`percentile_pool` 为 0，界面据此显示一句实话而不是假数字。
+    `progress`（本局与自己历史的比较）由调用方**算好之后传进来** ——
+    它要查库，而这个函数保持纯函数：pytest 里可以直接喂一份判定结果验算汇总口径，
+    不必先造一库用户。
     """
     total_count = len(graded)
     correct_count = sum(1 for item in graded if item.result.outcome == "correct")
@@ -324,8 +324,7 @@ def _summarize(
         xp_gained=xp_gained,
         max_xp=max_xp,
         coins_gained=scoring.coins_for(xp_gained),
-        percentile=scoring.pool_percentile(accuracy, others_best_accuracy),
-        percentile_pool=len(others_best_accuracy),
+        progress=progress,
         duration_ms=duration_ms,
         avg_seconds_per_question=_avg_seconds(duration_ms, total_count),
     )
@@ -439,11 +438,6 @@ def _write_attempt(
         max_xp=summary.max_xp,
         xp_gained=summary.xp_gained,
         coins_gained=summary.coins_gained,
-        # 池子为空时 `percentile` 是 None，但列是 NOT NULL —— 写 0 占位，
-        # 由同行 `percentile_pool = 0` 表明「这个 0 不是成绩，是没事可算」。
-        # 界面读的是 API 返回的 `percentile`（None），不是这一列。
-        percentile=0 if summary.percentile is None else summary.percentile,
-        percentile_pool=summary.percentile_pool,
         avg_seconds_per_question=Decimal(str(summary.avg_seconds_per_question)),
         status="finished",
     )
@@ -543,10 +537,17 @@ def _replay(session: Session, user: User, attempt: Attempt) -> AttemptSubmitResp
             xp_gained=int(attempt.xp_gained),
             max_xp=int(attempt.max_xp),
             coins_gained=int(attempt.coins_gained),
-            # 回放必须与首次提交逐位一致，所以这里的 None / 数值判定
-            # 与 `_write_attempt` 的写入口径**成对**（读 `percentile_pool` 决定）。
-            percentile=(None if int(attempt.percentile_pool) <= 0 else int(attempt.percentile)),
-            percentile_pool=int(attempt.percentile_pool),
+            # 回放必须与首次提交**逐位一致**，所以基准口径要与首次成对：
+            # 首次算时本局还没落库（等价于「全量」），这里用 `id < 本局` ——
+            # 两者是**同一个集合**（这一局之前已经存在的记录），因为 id 就是写入序。
+            # 顺带得到一条有用的性质：历史报告不随时间漂移 —— 用户之后又刷新了纪录，
+            # 这一局回放出来仍旧是「这是你的第一局」，而不是被后来的成绩改写。
+            progress=progress_service.for_attempt(
+                session,
+                user_id=int(user.id),
+                correct_count=int(attempt.correct_count),
+                before_attempt_id=int(attempt.id),
+            ),
             duration_ms=int(attempt.duration_ms),
             avg_seconds_per_question=float(attempt.avg_seconds_per_question),
         ),

@@ -259,15 +259,69 @@ export interface AttemptSummary {
   xp_gained: number
   max_xp: number
   coins_gained: number
-  /**
-   * 真实社团分位：正确率**严格高于**其他冒险者最佳正确率的人数占比（0–100）。
-   * `null` = 这局结算时社团里还没有别的冒险者 —— 界面不许显示这一格。
-   */
-  percentile: number | null
-  /** 算这个分位时可比的冒险者人数；0 与 `percentile: null` 成对出现 */
-  percentile_pool: number
   duration_ms: number
   avg_seconds_per_question: number
+  /** 本局与该用户**自己**的历史记录的对比结果 */
+  progress: AttemptProgress
+}
+
+/**
+ * 一局的「自我比较」状态。**闭集**，前端按值查文案（`copy.ts::progressTextOf`），
+ * 一条比较判断都不写。
+ *
+ * 取值的顺序有意义（判定的优先级），不按字母序：
+ * `first` > `record` > `tie_best` > `better` / `same` / `worse`。
+ * 完整规则见 `backend/app/services/progress_service.judge`。
+ */
+export type ProgressState = 'first' | 'record' | 'tie_best' | 'better' | 'same' | 'worse'
+
+/**
+ * 历史某一局的成绩点：答对几题 / 共几题。
+ *
+ * 刻意**只有这两个数** —— 这一格的全部文案都是「答对 4 / 5 题」这种绝对量
+ * 说法，不带正确率。正确率（百分比）正是本次要撤掉的东西：一旦它进了这个
+ * 契约，总有人会顺手拿它去比较，「比上一局高 3 个百分点」就会回来。
+ */
+export interface AttemptScorePoint {
+  correct: number
+  total: number
+}
+
+/**
+ * 本局与**该用户自己的**历史记录的比较结果。
+ *
+ * ⚠️ 它替换掉的是 `percentile` / `percentile_pool`（2026-09-23）—— 那两格
+ * 讲的是「本局超过社团里 43% 的冒险者」，而「社团」在产品里没有任何数据实体
+ * （库里既没有 guild / club 表，也没有成员关系表），7 人池子上的 43% 是把
+ * 42.86% 包装成的假精度，且拿「你这一局」比「别人的历史最佳」（还是别人
+ * 另一份副本的最好成绩）在语义上并不成立。现在这一格只回答一个问题：
+ * 比过去的自己怎么样。来龙去脉见
+ * `openspec/changes/replace-percentile-with-self-comparison/`。
+ *
+ * ## 为什么是嵌套一层，而不是在 `summary` 里平铺
+ *
+ * 语义成组，且**差值由服务端给出**（`delta_vs_prev` / `delta_vs_best`）——
+ * 前端连减法都不用做，只做「状态 → 文案」的查表。结算页与冒险日志页读同一份
+ * 数据、走同一个函数，因此不可能出现两种说法（红线：两页必须逐位相同）。
+ *
+ * ## 为什么不落库（也就没有「这一格的数据在哪张表」）
+ *
+ * 状态是**读取时按「截至该局之前的记录」重算**的，不是 `attempts` 表的列。
+ * 落库会变成假话：用户后来又刷新了纪录，旧那一局的报告仍旧宣称
+ * 「这是你的最好成绩」。
+ */
+export interface AttemptProgress {
+  state: ProgressState
+  /** 这是**该用户**的第几局（含本局） */
+  attempt_count: number
+  /** 本局 − **上一局** 的答对题数。首局恒为 `0` */
+  delta_vs_prev: number
+  /** 本局 − **此前最好** 的答对题数。只有 `record` 时为正数；首局恒为 `0` */
+  delta_vs_best: number
+  /** 此前最好的一局；首局为 `null` */
+  best: AttemptScorePoint | null
+  /** 紧邻的上一局；首局为 `null` */
+  previous: AttemptScorePoint | null
 }
 
 export interface AttemptSubmitResponse {
@@ -344,11 +398,17 @@ export interface ReportAdvice {
  *
  * | 字段 | 来源 |
  * |---|---|
- * | 正确率 / 答对答错数 / 用时 / XP / 金币 / 百分位 | `attempts` 表，与结算页**逐位相同** |
+ * | 正确率 / 答对答错数 / 用时 / XP / 金币 | `attempts` 表，与结算页**逐位相同** |
+ * | 与本局之前的自己比（`progress`） | `progress_service`，读取时重算（**不落库**） |
  * | 掌握点 / 薄弱点 / 三句话总结 / 复习建议 | AI 生成（失败时为确定性模板兜底） |
  *
- * 所以前端**不做任何二次计算** —— 原型第 1 屏的「答对 4/5」「8.4s」「超过 72%」
- * 分别直接读 `correct_count` / `total_count`、`avg_seconds_per_question`、`percentile`。
+ * 所以前端**不做任何二次计算** —— 原型第 1 屏的「答对 4/5」「8.4s」
+ * 分别直接读 `correct_count` / `total_count`、`avg_seconds_per_question`。
+ *
+ * ⚠️ 原型第 1 屏还有一句「本局超过社团里 72% 的冒险者」，**本方案撤掉了它**
+ * （`percentile` / `percentile_pool` / `percentile_label` 三个字段一并删除）。
+ * 替换它的是 `progress`。这是**有意偏离原型**，理由与登记位置见
+ * `constants/copy.ts` 文件头，不要当成 bug「修」回去。
  */
 export interface AttemptReport {
   attempt_id: string
@@ -369,12 +429,8 @@ export interface AttemptReport {
   xp_gained: number
   max_xp: number
   coins_gained: number
-  /** 真实社团分位；`null` = 这一局结算时社团里还没有其他冒险者，界面整块不渲染 */
-  percentile: number | null
-  /** 算这个分位时可比的冒险者人数（说明文案要用） */
-  percentile_pool: number
-  /** 原型第 1 屏的档位胶囊，如「中上」；没有分位时为 `null` */
-  percentile_label: string | null
+  /** 本局与该用户自己历史的比较结果（见 `AttemptProgress`） */
+  progress: AttemptProgress
 
   // ---- 叙述内容 ----
   mastered_points: string[]
@@ -659,10 +715,6 @@ export interface ScrollDetailResponse {
   total_count: number
   xp_gained: number
   max_xp: number
-  /** 真实社团分位；`null` = 该局结算时社团里还没有其他冒险者 */
-  percentile: number | null
-  /** 算这个分位时可比的冒险者人数 */
-  percentile_pool: number
   attempt_no: number
   questions: ScrollQuestionItem[]
 }

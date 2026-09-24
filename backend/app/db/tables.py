@@ -10,7 +10,7 @@
 |---|---|
 | `BIGINT UNSIGNED` 主键 | 显式用 `mysql.BIGINT(unsigned=True)`；否则取值范围比真实列大，理论上能构造出存不进去的值 |
 | `TINYINT(1)` 布尔列 | 用 `Boolean`（在 MySQL 上就是 TINYINT(1)），Python 侧直接是 `bool` |
-| `TINYINT UNSIGNED` 数值列（accuracy / mastery / stage / percentile） | 用 `mysql.TINYINT(unsigned=True)`，**不要**用 Boolean |
+| `TINYINT UNSIGNED` 数值列（accuracy / mastery / stage） | 用 `mysql.TINYINT(unsigned=True)`，**不要**用 Boolean |
 | JSON 列 | 注解写 `Mapped[Any]` + 显式 `JSON`；写 `Mapped[list[str]]` 会让 SQLAlchemy 找不到类型而报错 |
 | `DECIMAL(6,2)` 平均用时 | 用 `Numeric(6, 2)`，Python 侧是 `Decimal`，**不用浮点** |
 | 时间列 | 一律 `mysql.DATETIME(fsp=3)`；`created_at/updated_at` 的默认值与 `onupdate` 都在 Python 侧给（显式写 UTC），DDL 里的 `CURRENT_TIMESTAMP(3)` 只作兜底 |
@@ -218,12 +218,6 @@ class Attempt(Base):
     max_xp: Mapped[int] = mapped_column(USMALL, nullable=False, default=0)
     xp_gained: Mapped[int] = mapped_column(USMALL, nullable=False, default=0)
     coins_gained: Mapped[int] = mapped_column(USMALL, nullable=False, default=0)
-    percentile: Mapped[int] = mapped_column(UTINY, nullable=False, default=0)
-    #: 算上面那个百分位时池子里的可比人数（其他有成绩的冒险者数）。
-    #:
-    #: `0` = 没有可比对象，此时 `percentile` 那一格**不许展示**（界面显示
-    #: 「社团里还没有其他冒险者」）。见 `sql/05_attempts_percentile_pool.sql`。
-    percentile_pool: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
     avg_seconds_per_question: Mapped[Decimal] = mapped_column(
         Numeric(6, 2), nullable=False, default=Decimal("0.00")
     )

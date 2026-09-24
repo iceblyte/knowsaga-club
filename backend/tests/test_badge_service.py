@@ -370,7 +370,6 @@ def seed_attempt(
         max_xp=100,
         xp_gained=0,
         coins_gained=0,
-        percentile=0,
         avg_seconds_per_question=10,
         status="finished",
     )

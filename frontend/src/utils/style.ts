@@ -1,7 +1,7 @@
 /**
  * 内联样式工具。
  *
- * 这里踩过两个坑，都是**静默失效**：浏览器不报错，元素只是退回默认尺寸。
+ * 这里踩过三个坑，都**静默失效**：浏览器不报错，元素只是退回默认样式。
  *
  * ## 坑一：`style` 必须写成字符串
  *
@@ -23,8 +23,21 @@
  * 所以长度一律走 `designLength()`：小程序给 `rpx`（原生、支持旋转重排），
  * H5 给 `vw`（设计宽 750 下 `1rpx = 0.13333vw`，与 rpx 等价且随视口自适应）。
  *
+ * ## 坑三：属性名不能写 camelCase（2026-09-23 实测踩到）
+ *
+ * `style` 属性是 **CSS 文本**，不是 React 的 `style` 对象 ——
+ * 写 `{ backgroundColor: '#A63A2E' }` 拼出来的是 `backgroundColor: #A63A2E`，
+ * 浏览器不认识这个属性名，**整条声明被丢掉**；而同一串里合法的 `width` 照常生效。
+ * 「一半生效一半不生效」在外面完全看不出来：条形位置对、颜色错，
+ * 极容易误判成「CSS 优先级问题」而去查半天样式表。
+ * ⚠️ 而且**小程序端同样认 kebab**，所以 kebab 是两端唯一的正确写法。
+ *
+ * `styleOf` 现在会把 key 归一成 kebab-case，两种写法都能落地；
+ * 但新代码请直接写 kebab —— 归一只是兜底，不是许可。
+ *
  * @example
  *   <View style={styleOf({ width: `${progress}%` })} />
+ *   <View style={styleOf({ width: '20%', 'background-color': '#A63A2E' })} />
  *   <Image style={squareStyle(104)} />
  */
 
@@ -45,11 +58,25 @@ export function designLength(designPx: number): string {
   return `${Number(((designPx * 100) / DESIGN_WIDTH).toFixed(4))}vw`
 }
 
-/** 对象式样式的字符串化；`undefined` / `''` / `null` 的字段会被跳过 */
+/**
+ * CSS 属性名归一：`backgroundColor` → `background-color`。
+ *
+ * 只转换「**以小写字母开头、含大写字母**」的 key ——
+ * 全小写（`width`）与自定义属性（`--x`，以横线开头）原样返回，避免误伤。
+ */
+function toKebabCase(key: string): string {
+  if (!/^[a-z][A-Za-z0-9]*$/.test(key)) return key
+  return key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+}
+
+/**
+ * 对象式样式的字符串化；`undefined` / `''` / `null` 的字段会被跳过。
+ * key 先过 `toKebabCase()` —— 理由见文件头「坑三」。
+ */
 export function styleOf(rules: Record<string, string | number>): string {
   return Object.entries(rules)
     .filter(([, value]) => value !== '' && value !== undefined && value !== null)
-    .map(([key, value]) => `${key}: ${value}`)
+    .map(([key, value]) => `${toKebabCase(key)}: ${value}`)
     .join('; ')
 }
 

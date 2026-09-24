@@ -9,9 +9,14 @@
  *
  * ## 统计数字全部来自服务端，前端不重算
  *
- * 「答对 4 / 5」「8.4s」「超过 72%」分别直接读 `correct_count`/`total_count`、
- * `avg_seconds_per_question`、`percentile`。理由：报告页与结算页必须**逐位相同**，
+ * 「答对 4 / 5」「8.4s」分别直接读 `correct_count` / `total_count`、
+ * `avg_seconds_per_question`。理由：报告页与结算页必须**逐位相同**，
  * 而两处各算一遍迟早会因为一处改了规则而对不上（见 `backend/app/models/report.py`）。
+ *
+ * 「比过去的自己怎么样」那一格同理：状态与差值都由服务端给（`report.progress`），
+ * 前端只查文案表（`progressTextOf`），一条比较逻辑都不写。
+ * ⚠️ 原型第 1 屏那句「本局超过社团里 72% 的冒险者」已于 2026-09-23 撤回 ——
+ * 理由见 `constants/copy.ts` 文件头第 4 条，**不要**把它加回来。
  *
  * ## 报告的三种来源，以及为什么都不隐瞒
  *
@@ -53,13 +58,18 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro, { useDidShow, useShareAppMessage } from '@tarojs/taro'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import AccuracyRing from '../../components/AccuracyRing'
+import AccuracyRing, { colorOf } from '../../components/AccuracyRing'
 import ArchiveState from '../../components/ArchiveState'
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
 import Sprite from '../../components/Sprite'
 import { CLIENT_ERROR_CODE } from '../../constants/api'
-import { ARCHIVE_COMMON, REPORT_COPY, REPORT_ERROR_TEXT } from '../../constants/copy'
+import {
+  ARCHIVE_COMMON,
+  REPORT_COPY,
+  REPORT_ERROR_TEXT,
+  progressTextOf
+} from '../../constants/copy'
 import type { AsyncStatus } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
 import { fetchScrolls } from '../../services/archive'
@@ -582,6 +592,8 @@ export default function ReportPage() {
   // 主视图（原型 03 第 1 屏）
   // ---------------------------------------------------------------------------
   const finishedLabel = formatDate(report.finished_at)
+  /** 与结算页共用同一个「状态 → 文案」映射（见 `constants/copy.ts`） */
+  const progressText = progressTextOf(report.progress)
 
   return (
     <PhoneShell
@@ -632,39 +644,40 @@ export default function ReportPage() {
         </View>
       </View>
 
-      {/* 百分位：**真实社团分位**（2026-09-23 起，替换掉 `accuracy × 0.9` 的演示值）。
-          池子为空时（`percentile === null`）整块换成一句实话，**不显示任何百分数** ——
-          显示 0% 会被读成「谁也没超过」，而真相是「还没有人可比」。
-          这也是本次修改要修掉的东西本身：分数单上印「（演示数据）」等于承认数字是编的。 */}
+      {/* 「比过去的自己怎么样」（2026-09-23 起替换掉「本局超过社团里 N% 的冒险者」）。
+          这一格**不重复本局数字** —— 上面的环形图与「答对 4/5」已经报过一遍了，
+          它只回答一个问题：跟自己的历史比，这一局站在哪儿。
+          文案全部来自 `progressTextOf`（与结算页共用），这里一条比较逻辑都没有。 */}
       <View className='card plain'>
-        <View className='row report__percentile'>
+        <View className='row report__progress'>
           <Sprite name='momo' size={52} />
-          <View className='report__percentile-body'>
-            {report.percentile === null ? (
-              <View className='tiny report__percentile-note'>{REPORT_COPY.percentileNoPool}</View>
-            ) : (
-              <View>
-                <View className='between'>
-                  <Text className='report__percentile-title'>
-                    {REPORT_COPY.percentilePrefix} {report.percentile}% {REPORT_COPY.percentileSuffix}
-                  </Text>
-                  {/* 档位胶囊与分位是同一次计算的两半，由服务端一起给；
-                      没有分位就没有胶囊（服务端回 `None`），这里不编一个档位名 */}
-                  {report.percentile_label !== null && (
-                    <Text className='pill ok'>{report.percentile_label}</Text>
-                  )}
-                </View>
-                <View className='report__percentile-gap' />
-                <View className='bar ok'>
-                  <View style={styleOf({ width: `${report.percentile}%` })} />
-                </View>
-                {/* 说明里必须写出**人数**：只说「超过 43%」时，用户没法判断
-                    这个 43% 是在 3 个人里排的还是 300 个人里排的 */}
-                <View className='tiny report__percentile-note'>
-                  {REPORT_COPY.percentileNote(report.percentile_pool)}
-                </View>
-              </View>
-            )}
+          <View className='report__progress-body'>
+            <View className='between'>
+              <Text className='report__progress-title'>{progressText.title}</Text>
+              {/* 胶囊只在破纪录时出现 —— 这一格从此只在状态好时才挂东西。
+                  它是被删掉的档位胶囊留下的那个位置与样式（`.pill ok`）。 */}
+              {progressText.badge !== null && (
+                <Text className='pill ok'>{progressText.badge}</Text>
+              )}
+            </View>
+            <View className='report__progress-gap' />
+            {/* 进度条画的是**本局正确率**，与上方环形图同一个数、同一个色阶
+                （`colorOf` 是两侧共用的唯一一份阈值表）。
+                它原来画的是「超过别人多少」—— 那正是本次要撤掉的东西。 */}
+            <View className='bar'>
+              <View
+                style={styleOf({
+                  width: `${report.accuracy}%`,
+                  // ⚠️ 必须写 kebab-case 的 `background-color`：style 属性是 CSS 文本，
+                  // 不是 React 的 style 对象 —— camelCase 会被浏览器当未知属性静默丢掉，
+                  // 而同串里的 width 照常生效，于是这条只留默认色、极难发现
+                  // （2026-09-23 实测：写 camelCase 时条形一直是 base 的 $gold，
+                  //  与环形图的色阶对不上）。`styleOf` 现在会归一，这里也写明以示意。
+                  'background-color': colorOf(report.accuracy)
+                })}
+              />
+            </View>
+            <View className='tiny report__progress-note'>{progressText.note}</View>
           </View>
         </View>
       </View>
