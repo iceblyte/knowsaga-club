@@ -1,0 +1,85 @@
+// 知识库详情（原型 05·7）。
+//
+// 全局类是主体（`.card` / `.pill` / `.li` / `.btn` / `.field`），
+// 这里补四处：
+//   1. 文档行的扩展名标签（原型在那个 28px 方块里写「PDF」「DOC」，
+//      比全局 `.ico` 的 12.5px 字号小一档才放得下三个字母）
+//   2. 改名时的输入框（与设置页的昵称输入框同一套视觉，不套 `.field`）
+//   3. 页脚那颗「删除知识库」的静态小字（朱砂色，压在页面最下面）
+//   4. 描述为空时那句提示的两行行高
+
+@use "../../../styles/tokens" as *;
+
+.kb-detail__head {
+  margin-top: rpx(6);
+}
+
+.kb-detail__summary {
+  margin-top: rpx(6);
+}
+
+.kb-detail__desc {
+  margin-top: rpx(4);
+}
+
+// 扩展名标签：三个大写字母要塞进 28px 的方块里
+.kb-detail__ext {
+  font-family: $f-disp;
+  font-size: rpx(9);
+  font-weight: 700;
+  letter-spacing: 0;
+  color: $ink2;
+}
+
+// 改名用的输入框 —— 与 `settings-profile__input` 逐位相同的一组值。
+// 不抽成公共类：那会把「设置页的昵称」与「知识库的库名」绑在一起，
+// 改一处动两处；而两者的可接受范围（2–40 字 vs 微信昵称规范）本来就不同。
+.kb-detail__input {
+  width: 100%;
+  background: $paper2;
+  border: 1PX solid $stroke-ghost;
+  border-radius: $r-opt;
+  padding: $sp-5 $sp-6;
+  font-size: $fs-body;
+}
+
+.kb-detail__rename-row {
+  margin-top: rpx(10);
+  gap: rpx(8);
+
+  // `.btn` 是「整宽动作条」（`width:100%` + `flex:none`），两颗并排必然溢出。
+  // 这里把宽度交回给 flex —— 只影响这一行，不动全局的按钮语法。
+  .btn {
+    width: auto;
+    flex: 1;
+  }
+}
+
+.kb-detail__rename-hint {
+  margin-top: rpx(6);
+}
+
+// 正在删除的那份文档压暗：删除要过一次网络往返，没有反馈会让用户再按一次
+.li.kb-detail__row--busy {
+  opacity: 0.45;
+}
+
+// 解析失败的那一行把原因显示出来，颜色与 `.pill.bad` 同类（朱砂）
+.kb-detail__row-error {
+  color: $bad;
+}
+
+// 页脚那颗「删除知识库」：它是破坏性动作，但**不该**占一颗主按钮的位置
+// （那会让它比「出题」还显眼）。做成居中的一行小字，与 `.btn` 明确区分。
+.kb-detail__danger {
+  text-align: center;
+  color: $bad;
+  padding: $sp-5 0;
+}
+
+// 「还没有能出题的文档」那一句。中性色、居中 —— 它是**说明**，
+// 不是警告，所以绝不能借用上面那个朱砂色的类。
+.kb-detail__hint {
+  text-align: center;
+  margin-top: rpx(6);
+}

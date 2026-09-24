@@ -1,0 +1,28 @@
+// 选择输入方式（原型 05·1）。
+//
+// 版面几乎全是全局类（`.card` / `.li` / `.pill` / `.spacer`），
+// 这里只补：
+//   1. 四个入口行左侧方块里的那个汉字（原型写的是「文 / 档 / 链 / 影」）
+//   2. 还没开放的入口压暗 —— 它们**可点**（点了要说清为什么不行），
+//      但视觉上必须与能进的区分开，不然用户会以为点了没反应
+//   3. 页脚那行说明居中
+
+@use "../../../styles/tokens" as *;
+
+.kb-source__mark {
+  font-family: $f-disp;
+  font-size: $fs-body;
+  font-weight: 700;
+  color: $ink2;
+}
+
+// 未开放：只压暗图标方块与标题，**不给 `pointer-events: none`** ——
+// 点下去要能听到一句「还没开放」，静默才是最难查的那种失败。
+.kb-source__off {
+  opacity: 0.55;
+}
+
+.kb-source__footer {
+  text-align: center;
+  margin-top: rpx(6);
+}

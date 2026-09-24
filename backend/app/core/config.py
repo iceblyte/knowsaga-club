@@ -136,6 +136,58 @@ class Settings(BaseSettings):
     search_country_default: str | None = "china"
     search_country_default_en: str | None = None
 
+    # ---------- 私有知识库（RAG）----------
+    # 抽象层见 app/llm/kb/。开关关掉时：接口一律拒绝、取材链不绑知识库工具、
+    # 不加载 chromadb —— 与加入本功能之前逐位一致。
+    # **默认关**的理由与 `knowledge_search_enabled` 相同：新能力不该在部署方
+    # 不知情的情况下开始吃磁盘与外部 API 额度。
+    knowledge_base_enabled: bool = False
+
+    # 向量化用百炼（DashScope）的 text-embedding-v4。
+    # 为什么走原生 SDK 而不是 OpenAI 兼容端点：原生接口有 `text_type`
+    # （入库传 document、检索传 query），兼容端点没有这个概念，
+    # 走它会把这个区分丢掉 —— 而它恰好影响召回质量（design D4）。
+    dashscope_api_key: str = ""
+    embedding_model: str = "text-embedding-v4"
+    # ⚠️ 维度必须固定：collection 建好之后向量维度就锁死了，
+    # 改这个值**不会报错**，只会让新写入的向量永远检索不出来。
+    # 它会被写进 collection 的元数据，排查时能一眼看出「库是 1024 维建的、现在是 768」。
+    embedding_dim: int = 1024
+    # 单次请求提交的文本条数。⚠️ 2026-09-24 用真实 key 实测：上游上限**恰为 10**
+    # （n=10 通过，n=11 起返 400 `it should not be larger than 10`）
+    # ⇒ 这个值是「贴住上限」，**只能调小、不能调大**；超限是整次调用失败而非截断。
+    embedding_batch_size: int = 10
+    # 单次向量化调用的超时（秒）。上游 SDK 不保证自带超时。
+    embedding_timeout_seconds: int = 30
+
+    # 分块（字符数）。中文场景下 500 字约等于一段完整论述；
+    # overlap 取 1/10，保证跨块边界的那句话不会被腰斩成两半。
+    kb_chunk_size: int = 500
+    kb_chunk_overlap: int = 50
+
+    # 检索：取几条。与 `search_max_results` 分开配 —— 网页片段与文档片段的
+    # 信息密度不同，共用一个数必然有一方不合适。
+    kb_search_top_k: int = 4
+
+    # 上传准入：单文件上限（字节）。20 MB 与原型 05 第 2 屏的文案一致。
+    kb_doc_max_bytes: int = 20 * 1024 * 1024
+    # 单个知识库的文档数上限。纯防呆：避免一次把解析线程池占死。
+    kb_max_docs_per_base: int = 100
+
+    # 解析线程池大小。**独立于出题线程池**（理由同 report_service：
+    # 解析不该排在出题任务后面等），固定小规模；池满时**不排队**，
+    # 直接把该文档判为失败 —— 解析可以重试，不值得为它把常驻线程撑大。
+    kb_parse_workers: int = 2
+    # 向量库（Chroma）持久化目录；留空则用 backend/vectorstore。
+    # 刻意不放在 uploads 下：那是用户上传目录，混进去会让「清空上传」
+    # 这类操作产生连带伤害（design D10）。
+    vectorstore_dir: str = ""
+    # 文档解析进度的轮询间隔（毫秒）。
+    # 原型 05 第 3 屏写的是 8 秒，这里取 2 秒：轮询间隔与「规避小程序 60 秒
+    # 请求上限」无关（那个上限约束的是**单次**请求时长），而 8 秒粒度下
+    # 用户要空等两轮才看得到状态变化。
+    kb_doc_poll_interval_ms: int = 2000
+
     # ---------- 异步任务 ----------
     quiz_task_ttl_seconds: int = 600
     quiz_task_poll_interval_ms: int = 1200
@@ -250,6 +302,34 @@ class Settings(BaseSettings):
     def avatars_path(self) -> Path:
         """头像目录。"""
         return self.uploads_path / "avatars"
+
+    # ---------- 知识库派生 ----------
+    @property
+    def has_embedding_key(self) -> bool:
+        """是否已配置向量化凭据。
+
+        ⚠️ 它在**功能开关打开**时必须为真，否则建库链一步都走不了。
+        判定放在服务层（而不是这里让服务启动失败）：未开启该功能的部署
+        不该被一个用不到的 key 拖住启动。
+        """
+        return bool(self.dashscope_api_key.strip())
+
+    @property
+    def vectorstore_path(self) -> Path:
+        """Chroma 持久化目录（绝对路径）。默认 `backend/vectorstore`。"""
+        if self.vectorstore_dir.strip():
+            return Path(self.vectorstore_dir.strip()).resolve()
+        # config.py -> core, app, backend
+        return (Path(__file__).resolve().parents[2] / "vectorstore").resolve()
+
+    @property
+    def kb_documents_path(self) -> Path:
+        """知识库原文件目录。
+
+        ⚠️ 它在 `uploads_path` **之内**但**不参与静态挂载**（只有 `avatars` 那一层
+        挂出去了）。文档是用户私有内容，绝不能被匿名 URL 取到（design D10）。
+        """
+        return self.uploads_path / "kb"
 
     @property
     def effective_test_database_url(self) -> str:

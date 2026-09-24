@@ -1,0 +1,18 @@
+// 卷轴工坊（原型 05，本期落地了「文档」那一条路）。
+//
+// 全局类是主体（`.card` / `.li` / `.spacer`），这里只补两处：
+//   1. 两个入口行左侧方块里的汉字（与 `kb-source` 同一套「文 / 档 / 链 / 影」）
+//   2. 「还在撰写中」那张卡里的两行文案间距
+
+@use "../../styles/tokens" as *;
+
+.workshop__mark {
+  font-family: $f-disp;
+  font-size: $fs-body;
+  font-weight: 700;
+  color: $ink2;
+}
+
+.workshop__desc {
+  margin-top: rpx(6);
+}

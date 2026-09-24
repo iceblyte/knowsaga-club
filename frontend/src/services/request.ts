@@ -185,6 +185,17 @@ export interface UploadOptions {
    * 对不上时 FastAPI 会报「field required」，而前端只会看到一次 4000。
    */
   name?: string
+  /**
+   * 额外的**普通表单字段**（`multipart/form-data` 里除文件之外的那些）。
+   *
+   * 知识库上传要用它带两个东西：`filename`（原始文件名 ——
+   * `Taro.uploadFile` 只会把临时路径的最后一段当 multipart filename，
+   * 微信端那是随机临时名，判不了扩展名）与可选的 `kb_id`。
+   *
+   * ⚠️ 值一律是**字符串**：multipart 没有类型，后端在那侧也只会收到字符串。
+   * 数字要自己 `String(...)` —— 传 `number` 进这里在微信端会被静默丢掉。
+   */
+  formData?: Record<string, string>
   timeoutMs?: number
 }
 
@@ -212,8 +223,23 @@ export function upload<T>(options: UploadOptions): Promise<T> {
   return sendUpload<T>(options, true)
 }
 
+/**
+ * ⚠️ `withCredentials: false` 不是可选项，**不传它 H5 的上传永远失败**。
+ *
+ * Taro 的 `Taro.uploadFile` 在 H5 侧把 `withCredentials` 默认成 `true`
+ * （见 `@tarojs/taro-h5/dist/api/network/upload.js`，`createUploadTask` 的形参默认值），
+ * 于是请求变成「带凭证的跨源请求」。而本后端是 `allow_origins=["*"]` +
+ * `allow_credentials=False`，按 CORS 规范，带凭证的响应**不允许**回 `Allow-Origin: *` ——
+ * 浏览器会在预检阶段直接拒掉，`OPTIONS` 明明返 200 也没用。
+ *
+ * 症状极具误导性：控制台只有一句 CORS 报错，前端回落成「上传没成功，请重试」，
+ * 看起来像上传接口写错了。只有真浏览器跑一遍才看得见（小程序端不走 CORS，不受影响）。
+ *
+ * 本项目的登录态走 `Authorization: Bearer`，**不依赖 cookie**，所以关掉凭证传输
+ * 是语义正确的，不是绕过。显式传 `false` 而不是留着默认值，就是为了让这条一直生效。
+ */
 async function sendUpload<T>(options: UploadOptions, allowRelogin: boolean): Promise<T> {
-  const { path, filePath, name = 'file', timeoutMs = UPLOAD_TIMEOUT_MS } = options
+  const { path, filePath, name = 'file', formData, timeoutMs = UPLOAD_TIMEOUT_MS } = options
 
   await ensureSession()
   const usedToken = getToken()
@@ -228,7 +254,10 @@ async function sendUpload<T>(options: UploadOptions, allowRelogin: boolean): Pro
       filePath,
       name,
       header,
-      timeout: timeoutMs
+      ...(formData ? { formData } : {}),
+      timeout: timeoutMs,
+      // 仅 H5 生效；小程序端没有这个参数，传了也不会被读到。见上方说明。
+      withCredentials: false
     })
   } catch {
     // 同 `send()`：原始错误在小程序里可能不带 message，往上抛会拼出 `[object Object]`

@@ -138,6 +138,16 @@ export interface QuizGeneratePayload {
    * 不受这个字段影响（那是「你给我的资料」，不是「你去网上找找」）。
    */
   use_search?: boolean
+  /**
+   * 本次出题去哪个知识库取材。不带则与接入前完全一致。
+   *
+   * ⚠️ 它是**字符串**（后端 `kb_id: int | None` + 前端 id 一律当字符串传的约定）。
+   * 归属校验在后端、且发生在建任务之前：别人的库与不存在的库返回**同一个 4005**，
+   * 不会先给一个注定失败的 `task_id`。
+   *
+   * ⚠️ 知识库检索**不受 `use_search` 影响** —— 关掉联网也能「只用我自己的资料出题」。
+   */
+  kb_id?: string
 }
 
 export interface HealthInfo {
@@ -828,3 +838,111 @@ export interface UserSettingsPublic {
  * 不会出现「服务端支持了、前端忘了加」的空洞。
  */
 export type UserSettingsUpdateRequest = Partial<UserSettingsPublic>
+
+// -----------------------------------------------------------------------------
+// 私有知识库（backend/app/models/kb.py）
+// -----------------------------------------------------------------------------
+/**
+ * 文档的解析状态。**四态是闭集，只有 `ready` 参与检索。**
+ *
+ * 文案不由后端下发（与档案页的 `state` 同一条约定）：静态界面用语归
+ * `constants/copy.ts`，这里只给状态值。`error_message` 是例外 ——
+ * 它是随数据变化的叙述，由后端给且保证是可展示的一句话。
+ */
+export type KbDocStatus = 'pending' | 'parsing' | 'ready' | 'failed'
+
+/** 知识库接受的文档扩展名（小写、不带点）。与后端准入清单一致。 */
+export type KbDocExt = 'pdf' | 'docx' | 'md' | 'txt'
+
+/** 一份文档在界面上的全部信息。 */
+export interface KbDocumentItem {
+  /** 字符串形式的主键（与卷轴 / 题目 id 的约定一致，可直接当 key 用） */
+  id: string
+  kb_id: string
+  /** 客户端给的**原始**文件名（`机器学习导论.pdf`），不是服务端的落盘名 */
+  filename: string
+  /** 小写扩展名**不带点**（`pdf` / `docx` / `md` / `txt`） */
+  ext: string
+  size_bytes: number
+  status: KbDocStatus
+  /** 入库片段数；仅 `ready` 时非零 */
+  chunk_count: number
+  /** 页数（PDF 才有）；不适用时为 0 —— 界面据此决定要不要显示「共 N 页」 */
+  page_count: number
+  /** 失败原因的一句话；非失败态为空串 */
+  error_message: string
+  created_at: string
+  /** 解析结束（成功或失败）的时刻；解析中为 `null` */
+  parsed_at: string | null
+}
+
+/** 一个知识库在列表 / 详情页头部的样子。 */
+export interface KbBaseItem {
+  id: string
+  name: string
+  description: string
+  /** 全部文档数（含解析中与失败的） */
+  document_count: number
+  /**
+   * 已就绪文档数。**「能不能出题」看它** —— 为 0 时按钮要置灰
+   * （原型 05·5 的批注「未就绪的库不允许出题」，后端不拦，见 design D17）。
+   */
+  ready_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** `GET /kb`。恒返回全部库（不分页）：一个用户手上的资料库是「个位数」。 */
+export interface KbListResponse {
+  total: number
+  items: KbBaseItem[]
+}
+
+/** `GET /kb/{kb_id}`：库本身 + 它的全部文档（也不分页）。 */
+export interface KbBaseDetailResponse {
+  base: KbBaseItem
+  documents: KbDocumentItem[]
+}
+
+/** `POST /kb` 的入参。库名 2–40 字，同用户下唯一（重名报 4001）。 */
+export interface KbCreatePayload {
+  name: string
+  description?: string
+}
+
+/**
+ * `PATCH /kb/{kb_id}` 的入参：改名 / 改描述，**至少给一个**。
+ *
+ * 两个都不给会被后端判 4000 —— 「什么都没改」与「改成功」在客户端看起来
+ * 一模一样，而用户明明改过东西。所以类型上就要求至少一个：
+ * 用联合而不是两个可选字段，让漏传在编译期就暴露。
+ */
+export type KbUpdatePayload =
+  | { name: string; description?: string }
+  | { name?: string; description: string }
+
+/**
+ * 上传 / 重新解析的返回。
+ *
+ * 带上 `poll_interval_ms` 而不是让前端写死：轮询节奏由后端配置决定
+ * （原型 05·3 写 8 秒，本期 2 秒）。
+ *
+ * ⚠️ `document.status` 是**调用前的快照**，不一定是终态（上传时通常是
+ * `pending`、重试时是 `parsing`）。终态一律靠轮询 `GET /kb/{kb_id}` 拿到 ——
+ * 不要为「响应里恰好是 ready」写分支，那条分支在真实环境里走不到。
+ */
+export interface KbDocumentEnvelope {
+  document: KbDocumentItem
+  poll_interval_ms: number
+}
+
+/** `DELETE /kb/{kb_id}`。 */
+export interface KbDeleteResponse {
+  kb_id: string
+}
+
+/** `DELETE /kb/documents/{doc_id}`。 */
+export interface KbDocumentDeleteResponse {
+  doc_id: string
+  kb_id: string
+}

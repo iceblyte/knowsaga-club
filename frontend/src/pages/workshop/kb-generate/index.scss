@@ -1,0 +1,32 @@
+// 从知识库出题（原型 05·8）。
+//
+// 全局类是主体（`.card` / `.chip` / `.pill` / `.btn` / `.spacer`），
+// 这里补三处：
+//   1. 每组 chip 的换行与间距（原型 `gap:6px`，选项很少但一行放不下时要能换）
+//   2. 选项组的小标题与选项之间的间距
+//   3. 「还没就绪」那句提示（与详情页同一处说明，居中压在按钮下面）
+
+@use "../../../styles/tokens" as *;
+
+// 选中态用的是 `.chip.on`（表单里「勾了这个」的淡蓝底）——
+// 与 07·6 提醒设置、详情页的输入框同一套语法，**不是** 04·5 筛选条那种实心蓝。
+.kb-generate__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: rpx(6);
+  margin-top: rpx(8);
+}
+
+.kb-generate__label {
+  font-size: $fs-tiny;
+  color: $ink3;
+}
+
+.kb-generate__source-name {
+  margin-top: rpx(4);
+}
+
+.kb-generate__hint {
+  text-align: center;
+  margin-top: rpx(6);
+}

@@ -23,28 +23,22 @@
 
 ## 时间一律带 UTC 偏移
 
-`UtcDatetime` 保证输出的 ISO 串带上 `+00:00`。库里存的是 naive UTC，
-直接序列化会得到 `2026-09-19T03:00:00` 这种**不带偏移**的串 ——
-而 JavaScript 的 `new Date()` 规范上把它当**本地时间**解释，
-界面上的日期会整体偏 8 小时，跨零点时就是错一天。
+`UtcDatetime`（定义在 `app/models/common.py`，本文件与知识库契约共用）保证输出的
+ISO 串带上 `+00:00`。库里存的是 naive UTC，直接序列化会得到
+`2026-09-19T03:00:00` 这种**不带偏移**的串 —— 而 JavaScript 的 `new Date()`
+规范上把它当**本地时间**解释，界面上的日期会整体偏 8 小时，跨零点时就是错一天。
 报告页的 `finished_at` 踩过一次，这里用类型固定住，不靠人记。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.common import UtcDatetime
 from app.models.quiz import Option, QuestionType, Quiz, SourceType
-from app.utils.timeutil import as_aware_utc
-
-#: 序列化时补上 UTC 偏移的 datetime（见模块说明）
-UtcDatetime = Annotated[
-    datetime,
-    PlainSerializer(lambda value: as_aware_utc(value).isoformat(), return_type=str),
-]
 
 #: 看板的统计区间。原型导览栏右侧的「近 30 天」去掉（全站右侧不放文字），
 #: 改由本页的一个切换控件承担，所以区间是显式入参。

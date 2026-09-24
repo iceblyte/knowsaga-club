@@ -362,6 +362,87 @@ class UserBadge(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+# -----------------------------------------------------------------------------
+# 11. knowledge_bases —— 私有知识库
+# -----------------------------------------------------------------------------
+class KnowledgeBase(Base):
+    """用户上传资料的容器（原型 05 第 5 / 6 / 7 屏）。
+
+    与 `knowledge_documents` 分两张表：库是「从哪儿出题」的选择单位，
+    而文档有自己的解析状态机 —— 两者的生命周期不同，合成一张表会让
+    「库存在但一份文档都没有」这个合法状态表达不出来。
+    """
+
+    __tablename__ = "knowledge_bases"
+    __table_args__ = (
+        Index("idx_kb_user_id", "user_id", "id"),
+        UniqueConstraint("user_id", "name", name="uk_kb_user_name"),
+    )
+
+    id: Mapped[int] = _pk()
+    user_id: Mapped[int] = mapped_column(
+        PK,
+        ForeignKey("users.id", name="fk_knowledge_bases_user", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: 2–40 字，同一用户下唯一（否则用户在列表里分不清该选哪个）
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: 用途描述（可选）；它同时参与出题语义
+    description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+# -----------------------------------------------------------------------------
+# 12. knowledge_documents —— 库里的文档（含解析状态）
+# -----------------------------------------------------------------------------
+class KnowledgeDocument(Base):
+    """一份文档及其解析状态。
+
+    ⚠️ `status` 是**唯一真相**，它刻意不放在 `task_service` 的进程内任务表里：
+    那份表有 600 秒 TTL 且进程重启即丢，而用户完全可能隔一夜才回来看
+    「解析好了没有」（design D3）。
+    """
+
+    __tablename__ = "knowledge_documents"
+    __table_args__ = (
+        Index("idx_kdoc_kb_id", "kb_id", "id"),
+        Index("idx_kdoc_user", "user_id"),
+        Index("idx_kdoc_status", "status"),
+    )
+
+    id: Mapped[int] = _pk()
+    kb_id: Mapped[int] = mapped_column(
+        PK,
+        ForeignKey("knowledge_bases.id", name="fk_knowledge_documents_kb", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: 冗余的属主：越权判断要走最短的查询路径，不为了拿它去 JOIN（见 07_*.sql 文件头）
+    user_id: Mapped[int] = mapped_column(
+        PK,
+        ForeignKey("users.id", name="fk_knowledge_documents_user", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: 客户端提供的原始文件名。展示用，也是扩展名准入的判据
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: 小写扩展名（pdf / docx / md / txt），单独一列避免每次从 filename 现切
+    ext: Mapped[str] = mapped_column(String(16), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(mysql.BIGINT(unsigned=True), nullable=False, default=0)
+    #: pending / parsing / ready / failed；**只有 ready 参与检索**
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    #: 入库片段数。仅 ready 时非零 —— 解析产出为空会被判 failed，而不是 ready + 0
+    chunk_count: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
+    #: 页数（PDF / Word 拿得到时）。取不到为 0，不假装知道
+    page_count: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
+    #: 失败分类，供排查聚合；`error_code` 给聚合看，`error_message` 给用户看
+    error_code: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    error_message: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+    #: 解析结束（成功或失败）的时刻；解析中为 NULL
+    parsed_at: Mapped[datetime | None] = mapped_column(DT3, nullable=True)
+
+
 #: 全部表（供测试与迁移核对）
 ALL_TABLES = (
     User,
@@ -374,4 +455,6 @@ ALL_TABLES = (
     WrongQuestion,
     UserKnowledgeStat,
     UserBadge,
+    KnowledgeBase,
+    KnowledgeDocument,
 )

@@ -1,0 +1,61 @@
+// 文档解析中（原型 05·3）。
+//
+// 全局类是主体（`.card` / `.li` / `.pill` / `.btn` / `.spacer` / `.dotmark`），
+// 这里补三处：
+//   1. 法阵与文案的居中（原型这一屏主视觉居中）
+//   2. 三步流程说明的每一行（方块标记 + 文字）
+//   3. 文件名可能很长，要能断行
+//
+// ⚠️ 这一屏**没有进度条**。原型画了一条分阶段的进度（「已完成 · 42 页」
+// 「处理中 · 第 68 / 120 块」），而本期后端只在库里存四态、不存 stage
+// （design 的偏离表已登记）。要做出那条进度就必须先编一个数字出来 ——
+// 那比不给进度差得多。表示「正在跑」的是旋转的法阵（与召唤页同一套语汇）。
+
+@use "../../../styles/tokens" as *;
+
+.kb-parsing__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $sp-5;
+  padding: $sp-6 0 0;
+}
+
+.kb-parsing__title {
+  font-size: $fs-h2;
+  font-weight: 600;
+}
+
+.kb-parsing__file {
+  word-break: break-all;
+  text-align: center;
+}
+
+.kb-parsing__steps {
+  display: flex;
+  flex-direction: column;
+  gap: $sp-4;
+  margin-top: rpx(8);
+}
+
+.kb-parsing__step {
+  display: flex;
+  align-items: center;
+  gap: $sp-4;
+}
+
+// 三步一律同样的中性样式：谁也不打勾、谁也不高亮 —— 它们是**流程说明**，
+// 不是进度（见文件头）。中性色用 `$ink3`，与「已完成」「进行中」都拉开距离。
+.kb-parsing__step-text {
+  font-size: $fs-body;
+  color: $ink3;
+}
+
+.kb-parsing__hint {
+  margin-top: rpx(6);
+  text-align: center;
+}
+
+.kb-parsing__reason {
+  margin-top: rpx(6);
+}

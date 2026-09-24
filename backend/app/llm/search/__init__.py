@@ -49,7 +49,9 @@ def get_search_provider(settings: Settings | None = None) -> SearchProvider:
     """按配置返回检索 Provider。
 
     规则：
-    - `KNOWLEDGE_SEARCH_ENABLED=false` → 一律返回 `NoopSearchProvider`
+    - `KNOWLEDGE_SEARCH_ENABLED=false` → 一律返回 `NoopSearchProvider`。
+      ⚠️ 它**仍然会检索用户的私有知识库**（带库的请求走一轮循环，只是没有联网工具），
+      所以要把 `s` 传进去 —— 见 `noop.py` 的类注释与 design D8。
     - 开关打开但 Provider 还没接入 → 抛 5000 并说明是未实现，避免静默降级成不联网
       （静默降级最糟：配置明明打开了，用户却以为在联网）
     - 开关打开、名字对、但 key 为空 → 同样是 5000，且**在 `create_task` 之前**抛出，
@@ -61,12 +63,12 @@ def get_search_provider(settings: Settings | None = None) -> SearchProvider:
     s = settings or get_settings()
 
     if not s.knowledge_search_enabled:
-        return NoopSearchProvider()
+        return NoopSearchProvider(s)
 
     name = (s.knowledge_search_provider or "none").strip().lower()
 
     if name in ("", "none"):
-        return NoopSearchProvider()
+        return NoopSearchProvider(s)
 
     factory = _PROVIDERS.get(name)
     if factory is not None:

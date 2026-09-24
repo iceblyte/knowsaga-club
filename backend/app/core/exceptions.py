@@ -181,8 +181,23 @@ def rate_limited(detail: str | None = None) -> AppError:
     return AppError(ErrorCode.RATE_LIMITED, detail=detail)
 
 
-def upload_invalid(detail: str | None = None) -> AppError:
-    return AppError(ErrorCode.UPLOAD_INVALID, detail=detail)
+def upload_invalid(message: str | None = None, detail: str | None = None) -> AppError:
+    """上传文件不合规（4002）。
+
+    ⚠️ **这个码是多个上传场景共用的，所以文案必须由调用方给。**
+    不传时用的是 `DEFAULT_MESSAGES` 里那条**给头像写的**文案
+    （「头像不合规，请换一张图片」），文档上传场景沿用它会得到一句文不对题的话。
+    知识库那边踩过一次：传了字符串但走的是 `detail` 参数，
+    于是文案落进了「只写日志」的槽位，用户看到的是头像那句。
+
+    Args:
+        message: 给用户看的那句话。**不传就用头像场景的默认文案。**
+        detail: 仅写日志用，不会返回给前端。
+
+    另注：`4002` 的语义是「上传文件不合规」，**不是**「内容不合规」——
+    后者是 `4001`。文档格式 / 体积不合规属于前者，所以不新增错误码（design D9）。
+    """
+    return AppError(ErrorCode.UPLOAD_INVALID, message, detail)
 
 
 def resource_not_found(detail: str | None = None) -> AppError:

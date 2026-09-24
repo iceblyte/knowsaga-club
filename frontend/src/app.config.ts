@@ -4,6 +4,17 @@ export default defineAppConfig({
     'pages/splash/index',
     'pages/hall/index',
     'pages/workshop/index',
+    // 私有知识库（原型 05 的第 2–8 屏，2026-09-24）：列表 → 详情 → 上传 →
+    // 解析状态 / 选择输入方式 / 生成设置，六屏都是**下钻页**（带返回键、
+    // 不渲染标签栏），归属「卷轴工坊」那一栏。
+    // 与上面那条注释同一个约束：这里加一行就必须有对应的 `pages/**/index.tsx`，
+    // 少一个会让 `build:weapp` 直接失败。
+    'pages/workshop/kb-list/index',
+    'pages/workshop/kb-detail/index',
+    'pages/workshop/kb-upload/index',
+    'pages/workshop/kb-parsing/index',
+    'pages/workshop/kb-source/index',
+    'pages/workshop/kb-generate/index',
     // 冒险日志拆三页：主视图（标签页）+ 三句话总结 + 复习建议。
     // 原型 03 的这三屏各自有独立的导览栏标题，也是
     // docs/用户系统方案设计文档.md §7.3 页面清单里的 12 / 13 号

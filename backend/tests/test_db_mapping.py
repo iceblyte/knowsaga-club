@@ -1,7 +1,7 @@
 """ORM 映射与真实库的一致性守卫。
 
-表结构的**权威来源**是 `backend/sql/01_schema.sql`（表已由它建好），
-`app/db/tables.py` 只是让代码能读写它。两者一旦漂移，症状会非常隐蔽：
+表结构的**权威来源**是 `backend/sql/` 下的 DDL（`01_schema.sql` 建表，其后
+`02`…`07` 逐个增量补列/补表），`app/db/tables.py` 只是让代码能读写它。两者一旦漂移，症状会非常隐蔽：
 例如少映射一列 → 写入时静默用默认值；多映射一列 → 运行时才报
 `Unknown column`。所以在测试里做一次逐列比对，比任何注释都可靠。
 """
@@ -24,16 +24,21 @@ EXPECTED_TABLES = {
     "wrong_questions",
     "user_knowledge_stats",
     "user_badges",
+    # 私有知识库（`sql/07_knowledge_base.sql`）。两张表而不是一张的理由见该 DDL 文件头。
+    "knowledge_bases",
+    "knowledge_documents",
 }
 
 #: 方案设计 §9.1 实测的外键数量（13），Phase D 新增 1 个：
 #: `questions.fk_questions_origin` —— 复习关卡的副本指回原错题（见
 #: `sql/02_questions_origin.sql`）。
-EXPECTED_FK_COUNT = 14
+#: 私有知识库再新增 3 个（见 `sql/07_knowledge_base.sql`）：
+#: `fk_knowledge_bases_user`、`fk_knowledge_documents_kb`、`fk_knowledge_documents_user`。
+EXPECTED_FK_COUNT = 17
 
 
-def test_ten_tables_defined() -> None:
-    assert len(ALL_TABLES) == 10
+def test_twelve_tables_defined() -> None:
+    assert len(ALL_TABLES) == 12
     assert {t.__tablename__ for t in ALL_TABLES} == EXPECTED_TABLES
 
 
@@ -188,7 +193,17 @@ def test_session_is_clean_between_tests(db_session) -> None:  # noqa: ANN001
 
 @pytest.mark.parametrize(
     "table_name",
-    ["users", "user_settings", "quizzes", "questions", "attempts", "answers", "reports"],
+    [
+        "users",
+        "user_settings",
+        "quizzes",
+        "questions",
+        "attempts",
+        "answers",
+        "reports",
+        "knowledge_bases",
+        "knowledge_documents",
+    ],
 )
 def test_created_at_and_updated_at_present(test_engine, table_name: str) -> None:  # noqa: ANN001
     """公共列约定（方案 §5.0）：每表都带 `created_at` / `updated_at`。"""

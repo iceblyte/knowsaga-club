@@ -19,6 +19,7 @@ from app.api.v1.routes import (
     attempts,
     auth,
     health,
+    kb,
     quiz,
     report,
     review,
@@ -40,6 +41,13 @@ def build_api_router() -> APIRouter:
     router.include_router(attempts.router)
     router.include_router(report.router)
     router.include_router(review.router)
+    # 知识库**无条件注册**，不像 `auth.dev_router` 那样挂在开关上：
+    # `KNOWLEDGE_BASE_ENABLED` 管的是「要不要付 chromadb 的加载代价」
+    # （`app/llm/kb/store.py` 里是惰性导入），不是「这些端点存不存在」。
+    # 若按开关注册，关掉开关时前端拿到的是 404，与「接口写错了」长得一样；
+    # 而「未配向量化凭据」这种情况本来就有一条更准的返回
+    # （上传后文档落到 `failed`，文案说明服务暂不可用，见 kb_service）。
+    router.include_router(kb.router)
 
     settings = get_settings()
     if settings.is_dev and settings.dev_login_enabled:

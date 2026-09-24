@@ -14,8 +14,13 @@
  *    否则换成中性的「基于已有知识出题 / 仅读取你的链接」。
  *    保留同一个版位、同一个样式类，只多了 `onClick` —— **零新增元素即零布局漂移**。
  *    后端没有这个能力时点击只提示、不改意愿（用户改不了一个没配的能力）。
- * 2. `上传文档 / 粘贴网址 / 追加背景资料` 属于 P1「卷轴工坊」的多源输入能力，
- *    本期未实现，点击给出明确提示而不是静默失败。
+ * 2. `上传文档 / 粘贴网址 / 追加背景资料`（P1「卷轴工坊」的多源输入能力）
+ *    在 2026-09-24 接通了两个：
+ *    - 「上传文档」→ 知识库的上传页（私有知识库已落地）；
+ *    - 「粘贴网址」→ 「选择输入方式」那一屏（链接本身靠粘进上面的输入框走
+ *      「用户给的链接必读」，没有第二个页面可去）。
+ *    「追加背景资料」在原型里没有对应屏，保持原来的 toast。
+ *    三个 chip 的动作**分开写**，理由见 `handleAttachTap`。
  * 3. 底部那张冒险者档案卡（等级 / 累计 XP / 连续天数）原本是写死的演示数据，
  *    现在读 `GET /users/me`。它是这一屏唯一需要联网的东西，所以它自己
  *    承担加载态 —— 读不到时只出占位符，整屏不因此变成空页面。见 `HALL_PROFILE_COPY`。
@@ -73,7 +78,7 @@ import {
 import { useAsyncData } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
 import { fetchProfile } from '../../services/archive'
-import { useAppStore } from '../../store/useAppStore'
+import { DEFAULT_QUIZ_OPTIONS, useAppStore } from '../../store/useAppStore'
 import type { UserPublic } from '../../types/api'
 import { hasUrl } from '../../utils/links'
 import { goPage } from '../../utils/navigation'
@@ -126,6 +131,7 @@ export default function HallPage() {
   const searchEnabled = useAppStore((s) => s.searchEnabled)
   const useSearch = useAppStore((s) => s.useSearch)
   const setUseSearch = useAppStore((s) => s.setUseSearch)
+  const setQuizOptions = useAppStore((s) => s.setQuizOptions)
 
   /** 冒险者档案（原型 01 底部那张卡）。`me` 为 `null` 时卡片只出占位符 */
   const { status, data, reload } = useAsyncData(() => fetchProfile())
@@ -211,8 +217,34 @@ export default function HallPage() {
     setUserInput(question)
   }
 
-  const handleAttachTap = () => {
-    // P1 能力，明确告知而不是静默失败
+  /**
+   * 三个「追加资料」chip 各自去真正的页面（2026-09-24 接通）。
+   *
+   * 接通之前它们统一弹一句 `COMMON_COPY.comingSoon`（「这功能还在路上」）。
+   * 现在「上传文档」已经真的能走通了，所以它直接进上传页 —— chip 上写的
+   * 就是「上传文档」，让用户先看一屏「选择输入方式」再点一次是多余的。
+   *
+   * 另外两个 chip（粘贴网址 / 追加背景资料）仍然没有对应能力：
+   *
+   * - 「粘贴网址」其实**已经能用** —— 但它的用法是把链接粘进上面那个输入框
+   *   （后端「用户给的链接必读」那一套），没有第二个页面可去。所以它进的是
+   *   「选择输入方式」那一屏，在那里能看到四种来源的现状；
+   * - 「追加背景资料」在原型里就是一个还没定义的东西（没有对应屏），
+   *   所以它保持原来的 toast —— 这是**唯一**还该弹这句的地方。
+   *
+   * ⚠️ 三个 chip 的动作**必须分开写**，不要图省事合成一个 handler：
+   * 合成之后任何一次调整都会同时改掉另外两个，而它们的答案本来就不一样。
+   */
+  const handleAttachTap = (chip: string) => {
+    if (chip === '上传文档') {
+      // 不带 kb_id：落到默认库（design D16），用户不必先挑一个库
+      goPage('/pages/workshop/kb-upload/index', 'navigate')
+      return
+    }
+    if (chip === '粘贴网址') {
+      goPage('/pages/workshop/kb-source/index', 'navigate')
+      return
+    }
     Taro.showToast({ title: COMMON_COPY.comingSoon, icon: 'none' })
   }
 
@@ -225,6 +257,15 @@ export default function HallPage() {
       return
     }
     setUserInput(draft.trim())
+    /**
+     * ⚠️ 大厅这条必须**显式写回默认出题参数**。
+     *
+     * 知识库那条路会把 `kbId` 写进 store，而 store 是内存态的、不会自己清。
+     * 不重置的话，用户从知识库出过题之后回到大厅用一句话召唤，
+     * 这一局仍然会在**上一个知识库里取材** —— 而他刚刚完全没有提到那个库。
+     * 题量与难度同理（知识库那页可以选 3 题，大厅这一路一直是 5 题）。
+     */
+    setQuizOptions(DEFAULT_QUIZ_OPTIONS)
     goPage('/pages/summon/index', 'navigate')
   }
 
@@ -296,7 +337,7 @@ export default function HallPage() {
       {hasInput ? (
         <View className='row hall__chips'>
           {MOCK_ATTACH_CHIPS.map((chip) => (
-            <Text key={chip} className='chip' onClick={handleAttachTap}>
+            <Text key={chip} className='chip' onClick={() => handleAttachTap(chip)}>
               {chip}
             </Text>
           ))}

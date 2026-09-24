@@ -1,0 +1,53 @@
+// 上传文档（原型 05·2）。
+//
+// 全局类是主体（`.card` / `.li` / `.pill` / `.btn` / `.spacer`），
+// 这里补三处：
+//   1. 那个大的「点击选择文件」投放区（原型是虚线框 + 居中两行字）
+//   2. 选中后那一行的「重新选择」小字（行内右侧）
+//   3. 「最近上传」那几行的扩展名标签（与详情页同一套，但那边是组件内的
+//      真实 DOM，这里是列表，所以单独写一份而不是跨页 import 一个类名）
+
+@use "../../../styles/tokens" as *;
+
+// 投放区：与 `.field` 同一种「可以放进东西的压痕面」，但尺寸与居中不同，
+// 所以不套 `.field`（那个类自带 6px 内边距与另一种边框色）。
+.kb-upload__dropzone {
+  background: $paper2;
+  border: 1PX dashed rgba(150, 120, 72, 0.52);
+  border-radius: $r-opt;
+  padding: $sp-10 $sp-7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: $sp-3;
+}
+
+.kb-upload__dropzone-title {
+  font-size: $fs-h2;
+  font-weight: 600;
+}
+
+.kb-upload__dropzone-hint {
+  color: $ink3;
+  font-size: $fs-sub;
+}
+
+// 选中后的文件名可能很长（`机器学习导论（第三版）·勘误.pdf`），
+// 必须让它在容器里断行，而不是把右侧的「重新选择」挤出屏幕。
+.kb-upload__file-name {
+  word-break: break-all;
+}
+
+.kb-upload__ext {
+  font-family: $f-disp;
+  font-size: rpx(9);
+  font-weight: 700;
+  color: $ink2;
+}
+
+// 上传中：主按钮置灰并去掉按压位移（`.btn.dis` 已经处理了位移，
+// 这里只保证 `disabled` 时不再有 `:active` 反馈，与全局一致，故不重复声明）
+.kb-upload__status {
+  text-align: center;
+}

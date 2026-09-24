@@ -4,12 +4,17 @@
 
 | | 取材 Agent（本文件） | 出题链（`quiz_prompt.py`） |
 |---|---|---|
-| 绑工具 | 绑 `tavily_search` / `tavily_extract`，**模型自己决定调哪个** | 不绑工具，只做结构化输出 |
+| 绑工具 | 绑 `tavily_search` / `tavily_extract`（用户带了自己的资料库时再加一个）**模型自己决定调哪个** | 不绑工具，只做结构化输出 |
 | 输出 | 自然语言（「资料已足够」） | 严格 json |
 | 产物 | 一堆资料 → 由 `collector.py` 采集 | 一套题 |
 
 两段式是刻意的：取材要自由（让模型按主题自己权衡检索深度），
 出题要严格（`json_mode` + `QuizDraft` 校验 + 重试预算，一道都不能松）。见 design D5。
+
+⚠️ **第三个工具的名字只能出现在 Human 消息里，不能写进系统提示**：
+系统提示是常量，而「这次有没有库」是每请求不同的事实。不带库却提了它，
+模型会去调一个没绑给它的工具（`agent` 那条「请求了未绑定的工具」的拒绝日志
+就是为这种情况准备的）。这一条由 `test_search_agent_kb.py` 的第 ⑥ 组钉住。
 
 ## 这里写死的三件事为什么必须写
 
@@ -27,18 +32,22 @@ from __future__ import annotations
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from app.llm.search.base import SearchRequest
+from app.llm.search.base import KB_TOOL_NAME, SearchRequest
 
 SEARCH_AGENT_PROMPT_VERSION = "v1"
 
 SEARCH_AGENT_SYSTEM_PROMPT = """你是学习产品「知拾冒险社」的**取材助手**。你的任务只有一件：
 为接下来的出题环节，从外部收集**足够且可靠**的资料。你不负责出题，也不要输出题目。
 
-## 一、你有两个工具
+## 一、你可以用到这些工具
 
 - `tavily_search`：关键词联网检索。用于获取你训练数据覆盖不到的新知识。
 - `tavily_extract`：按网址读取整个网页的正文。用于读用户给出的链接，
   或某条检索结果看起来是权威原文（官方文档、规范、发布说明、原始博客）但你需要完整内容时。
+
+⚠️ 下面的【学习需求】里**可能**还会指出「用户可以检索自己的资料库」。
+那种情况下你的可用工具里会多出一个查私有资料的 —— 它的用法与边界在那一节说明。
+没提就说明这次没有，不要凭空找一个出来调。
 
 ## 二、怎么决定调用哪个
 
@@ -85,6 +94,28 @@ _URL_HINT = """用户在这条学习需求里给出了 {count} 个链接：
 **请先读取这些链接**（用 `tavily_extract` 完成，这属于必做步骤），
 再根据读到的内容判断是否需要用 `tavily_search` 补充背景。"""
 
+#: 带知识库时追加的段落（design D7）。**必须点名工具**，并且必须交代两件
+#: 模型自己推不出来的事：
+#:
+#: 1. **范围只有这一个库** —— 不写的话它会以为这是又一次全网检索，
+#:    查不到就去 `tavily_search` 补，用户「只用我的资料」的诉求就落空了。
+#: 2. **冲突时以用户的资料为准** —— 这是 `quiz-grounding` spec 的要求，
+#:    也是知识库存在意义的全部。模型看到与训练数据/网上说法不一致的内容时，
+#:    默认倾向是推翻它（它「更相信」自己见过多次的东西），
+#:    而这个倾向正好会让「以资料为唯一事实依据」失效。
+#:
+#: 第三件是工程细节：伪 URL（`kb://...`）是我们内部的标识符，
+#: 印给用户看像乱码 —— 让模型按文件名说。
+_KB_HINT = """【用户的资料库】用户指定了**他自己上传的资料库**，这次你可以检索它
+（工具名 `{tool}`，参数只有一个检索词）。三条必须遵守：
+
+1. **范围只有这一个库** —— 它是用户自己上传的材料，不是全网检索。
+   查到就是用户的资料；查不到就说查不到，不要改用联网检索去凑。
+2. **与公开来源冲突时，以用户的资料为准**。这些材料是用户希望你按它出题的东西，
+   哪怕它与你在网上看到的说法、或你的训练数据不一致，也以它为准。
+3. 引用时说清它来自用户的资料（例如「按你上传的《机器学习讲义》」），
+   不要把这些片段的内部标识符写进回答。"""
+
 
 def build_agent_messages(request: SearchRequest, *, max_rounds: int) -> list[BaseMessage]:
     """构造取材循环的初始消息列表。
@@ -101,10 +132,17 @@ def build_agent_messages(request: SearchRequest, *, max_rounds: int) -> list[Bas
     else:
         lines.append("用户没有给出具体链接，请自行判断是否需要联网检索。")
 
+    if request.has_kb:
+        lines.append(_KB_HINT.format(tool=KB_TOOL_NAME))
+
     if not request.use_search:
         lines.append(
             "【注意】用户这次**关闭了主动联网检索**，所以你**不要**调用 `tavily_search`。\n"
-            "你只能读取上面给出的链接。"
+            + (
+                "你只能读取上面给出的链接，以及检索下面提到的用户资料库。"
+                if request.has_kb
+                else "你只能读取上面给出的链接。"
+            )
         )
 
     lines.append(f"【预算】最多 {max_rounds} 轮工具调用，请把最关键的资料优先取回。")

@@ -70,7 +70,12 @@ backend/.pytest_cache/
 backend/.coverage
 backend/htmlcov/
 # 用户上传的头像等运行期文件：属于用户数据，绝不入库
+# （知识库的原文件在 backend/uploads/kb/ 下，已被这一条覆盖）
 backend/uploads/
+# 私有知识库的向量库目录（Chroma 的持久化数据）。
+# 它是**运行期数据**而不是代码：既大又是用户私有内容，绝不能入库。
+# 部署时它必须落在有足够磁盘且会被备份的卷上。
+backend/vectorstore/
 # 沙箱内 pip 装不通时用来本地安装的 wheel 缓存
 backend/.wheels/
 .venv*/

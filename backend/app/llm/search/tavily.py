@@ -20,7 +20,6 @@ from app.llm.search.agent import ProgressCallback, describe_step, run_search_age
 from app.llm.search.base import ReferenceCaps, SearchOutcome, SearchRequest, StepDescriptor
 from app.llm.search.tavily_tools import require_tavily_key
 
-
 class TavilySearchProvider:
     """关键词检索 + 按 URL 读整页，都由模型自己决定何时调用。"""
 
@@ -68,12 +67,18 @@ class TavilySearchProvider:
         Args:
             on_progress: 本次调用的进度回调；不传则用构造时给的那个。
         """
+        # 惰性 import：`app.llm.kb.tools` 会拉起知识库那一层，而联网检索在
+        # 知识库关掉时必须能独立工作（`llm/kb/__init__.py` 的头注释是同一条理由）。
+        # 它自身不 import chromadb，所以这里不存在「打开开关才付代价」的破例。
+        from app.llm.kb.tools import build_kb_tool
+
         return run_search_agent(
             request,
             settings=self._settings,
             provider_name=self.name,
             llm=self._llm,
             tools=self._tools,
+            kb_tool=build_kb_tool(request, self._settings),
             caps=self._caps,
             on_progress=on_progress or self._on_progress,
             clock=self._clock,

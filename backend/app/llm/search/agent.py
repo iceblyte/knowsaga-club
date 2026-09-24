@@ -44,6 +44,7 @@ from langchain_core.messages import BaseMessage, ToolMessage
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.llm.search.base import (
+    KB_TOOL_NAME,
     EndReason,
     ReferenceCaps,
     SearchOutcome,
@@ -115,6 +116,12 @@ def _timeout_for(tool_name: str, settings: Settings) -> float:
     而 search 只回一小段 JSON。两者共用同一个上限的后果是「用户贴的链接读不到」——
     而那正是本产品最不能失败的一条路径（design D4）。
 
+    `kb_search` 与 `tavily_search` **同一档**（落到下面的默认分支）：它的回传体积
+    同量级（最多 `kb_search_top_k` 段，每段又要过 `snippet_max_chars`），
+    慢的那部分只是内部**一次**向量化调用，不是「一页 7 万字符」。
+    给它 extract 那一档会平白吃掉总预算 —— 而预算被吃掉的表现是
+    「后面那几次调用全部超时」，看起来像是检索服务坏了。
+
     ⚠️ 这个分支**不能**写成「默认值 + 特殊情况」那种顺序，否则以后新增工具时
     容易漏掉；这里显式按名字判定，未知工具回落到 `search_tool_timeout_seconds`。
     """
@@ -172,7 +179,7 @@ def _render_for_model(output: ToolOutput) -> str:
 
 
 def _call_count(tool_name: str, args: dict) -> int:
-    """本次调用涉及的条目数：search 是 1 组关键词，extract 是网页数。"""
+    """本次调用涉及的条目数：search 与 kb 都是 1 组关键词，extract 是网页数。"""
     if tool_name == "tavily_extract":
         urls = args.get("urls")
         return len(urls) if isinstance(urls, list) and urls else 1
@@ -180,7 +187,13 @@ def _call_count(tool_name: str, args: dict) -> int:
 
 
 def _describe(tool_name: str, phase: str, count: int, args: dict) -> str:
-    """进度文案。**必须含数量** —— 用户在等待时最想知道的是「在读几个页面」。"""
+    """进度文案。**必须含数量** —— 用户在等待时最想知道的是「在读几个页面」。
+
+    知识库那一支（`kb_search`）单独写一份，而不是复用 search 的文案：
+    用户选了「只用自己的资料」时，进度上说「正在检索 1 组关键词」会让人以为
+    这次同时还在网上搜。**说清范围**是这里唯一要额外做的事，其余沿用同样的
+    「动作 + 数量 + 检索词」结构（用户才知道我们在查什么）。
+    """
     if tool_name == "tavily_extract":
         return {
             "start": f"正在读取 {count} 个网页",
@@ -189,6 +202,12 @@ def _describe(tool_name: str, phase: str, count: int, args: dict) -> str:
         }[phase]
     query = str(args.get("query") or "").strip()
     short = query[:30] + ("…" if len(query) > 30 else "")
+    if tool_name == KB_TOOL_NAME:
+        return {
+            "start": f"正在检索你的资料（{count} 组关键词）：{short}",
+            "done": f"你的资料检索完成（{count} 组关键词）",
+            "failed": f"你的资料检索失败（{count} 组关键词）",
+        }[phase]
     return {
         "start": f"正在检索 {count} 组关键词：{short}",
         "done": f"检索完成 {count} 组关键词",
@@ -203,6 +222,7 @@ def run_search_agent(
     provider_name: str = "tavily",
     llm: Any | None = None,
     tools: tuple[Any, Any] | None = None,
+    kb_tool: Any | None = None,
     caps: ReferenceCaps | None = None,
     on_progress: ProgressCallback | None = None,
     clock: Callable[[], float] | None = None,
@@ -215,16 +235,21 @@ def run_search_agent(
         provider_name: 写进 `SearchOutcome.provider`，仅用于日志与排查。
         llm: 注入模型（测试用）；不传则用 `build_chat_model("quiz")`。
         tools: 注入 `(search_tool, extract_tool)`（测试用）；不传则按配置构造。
+            ⚠️ 元素可以是 `None` —— 「这个 Provider 没有那个工具」是合法状态
+            （`NoopSearchProvider` 就是 `(None, None)`），而不是「没注入」。
+        kb_tool: 注入 `kb_search` 工具（`llm/kb/tools.build_kb_tool`）。
+            **只有 `request.has_kb` 时才绑**；不传则本次不会检索用户资料（记 warning）。
         caps: 单条截断上限；不传则从 `settings` 取。
         on_progress: 每次工具调用前后回调。
         clock: 时钟（测试注入假时钟用）；默认 `time.monotonic`。
     """
     now = clock or time.monotonic
     caps = caps or ReferenceCaps.from_settings(settings)
-    step = build_initial_step(request, can_search_web=True, can_read_pages=True)
 
-    # 完全不想碰外部网络：一次模型调用都不该发生（provider 层通常会先拦，这里是兜底）
-    if not request.wants_external:
+    # 既不想碰外部网络、也没带库：一次模型调用都不该发生
+    # （provider 层通常会先拦，这里是兜底）
+    if not request.wants_grounding:
+        step = build_initial_step(request, can_search_web=False, can_read_pages=False)
         return SearchOutcome(provider=provider_name, step_name=step.name, end_reason="disabled")
 
     deadline = now() + settings.search_agent_budget_seconds
@@ -235,6 +260,24 @@ def run_search_agent(
     else:
         search_tool, extract_tool = tools
 
+    if request.has_kb and kb_tool is None:
+        # 「用户选了自己的库、界面上看着也选上了，但这次一条资料都没查」——
+        # 这条链路整段静默（没有异常、没有失败状态），所以必须留一条日志。
+        logger.warning(
+            "请求带了知识库，但调用方没有提供 kb 工具，本次不会检索用户资料：kb_id=%s",
+            getattr(request.kb, "kb_id", None),
+        )
+
+    # 第一步的名字必须与**真的绑了什么工具**一致（红线：文案不许说没有的能力）：
+    # `NoopSearchProvider` 的 `tools=(None, None)` 若被当成「能联网」，
+    # 用户会看到「联网检索知识」而它一次网络都不会碰。
+    step = build_initial_step(
+        request,
+        can_search_web=search_tool is not None,
+        can_read_pages=extract_tool is not None,
+        can_search_kb=request.has_kb and kb_tool is not None,
+    )
+
     if llm is None:
         from app.llm.langchain_factory import build_chat_model
 
@@ -242,7 +285,25 @@ def run_search_agent(
 
     # 关掉搜索时连工具都不给 —— 让「不该发生」变成「不可能发生」。
     # 这不只是防御：模型看到工具就会想用，绑定再拒绝调用等于跟它较劲。
-    offered: list[Any] = [extract_tool] if not request.use_search else [search_tool, extract_tool]
+    #
+    # ⚠️ 知识库工具**不看 `use_search`**：kb 不是联网。用户关掉「公开检索」
+    # 之后仍然要能「只用我自己的资料出题」，否则那个诉求根本没法表达（design D7）。
+    # 但它**必须看 `request.has_kb`**：这次没选库却把工具绑给模型，
+    # 模型就会去调（描述里明明写着「用户自己的资料库」），
+    # 而这次要用的资料并不在默认库里 —— 用户会拿到一份与自己的材料无关的题。
+    candidates: list[Any | None] = [] if not request.use_search else [search_tool]
+    candidates.append(extract_tool)
+    candidates.append(kb_tool if request.has_kb else None)
+    offered = [tool for tool in candidates if tool is not None]
+
+    if not offered:
+        # 「想去取资料」但手里一个工具都没有（`NoopSearchProvider` + 用户贴了链接
+        # 就一定会走到这里）。如实说 `disabled`，而不是硬跑一圈：
+        # `bind_tools([])` 的行为取决于具体模型实现，而后面那圈链接兜底
+        # 会对着 `None.invoke()` 抛 `AttributeError`。
+        logger.info("取材请求没有任何可用工具，直接收尾：provider=%s", provider_name)
+        return SearchOutcome(provider=provider_name, step_name=step.name, end_reason="disabled")
+
     bound = llm.bind_tools(offered)
 
     outputs: list[ToolOutput] = []
@@ -253,7 +314,12 @@ def run_search_agent(
     # ----------------------------------------------------------- 链接兜底
     # 服务端先读一次用户给的链接（design D4）。它**不计入** tool_calls_used ——
     # 那个上限管的是模型的调用次数，不是我们自己的兜底。
-    if request.urls:
+    #
+    # ⚠️ 没有 extract 工具时**必须跳过**：`NoopSearchProvider` 的
+    # `can_read_pages=False`，它根本没有那个工具，不跳过就是一次
+    # `AttributeError: 'NoneType' object has no attribute 'invoke'`。
+    # 这次读不到链接是**真实的降级**，如实体现在结果里（`degraded`），不假装读过。
+    if request.urls and extract_tool is not None:
         args = {"urls": list(request.urls)}
         count = len(request.urls)
         _emit(on_progress, ToolProgress("tavily_extract", "start", count, f"正在读取 {count} 个链接"))
@@ -267,6 +333,11 @@ def run_search_agent(
                 count,
                 f"已读取 {count} 个链接" if output.ok else f"读取链接失败（{count} 个）",
             ),
+        )
+    elif request.urls:
+        logger.warning(
+            "本次没有读取用户给的链接（该 Provider 没有按 URL 读整页的能力）：count=%s",
+            len(request.urls),
         )
 
     # ----------------------------------------------------------- 有界循环
@@ -367,8 +438,20 @@ def run_search_agent(
 
 
 def describe_step(request: SearchRequest) -> StepDescriptor:
-    """给外部（Provider）复用的第一步文案，避免两处各推一遍 `can_*`。"""
-    return build_initial_step(request, can_search_web=True, can_read_pages=True)
+    """给外部（Provider）复用的第一步文案，避免两处各推一遍 `can_*`。
+
+    ⚠️ 这里假定调用方**有联网能力**（它是给 `TavilySearchProvider` 用的）。
+    知识库那一支反过来——**不能**写成 Provider 的静态能力位：同一个 Tavily
+    Provider，带库的请求该能检索知识库、不带库的不该，所以按请求算（design D7）。
+    这与 `run_search_agent` 里那份判定必须给出同一个名字，否则
+    「进度卡上的名字」与「几秒后回来的 `step_name`」会对不上。
+    """
+    return build_initial_step(
+        request,
+        can_search_web=True,
+        can_read_pages=True,
+        can_search_kb=request.has_kb,
+    )
 
 
 __all__ = [

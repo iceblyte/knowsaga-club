@@ -21,7 +21,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from app.db.tables import QuestionRecord, QuizRecord, WrongQuestion
+from langchain_core.embeddings import Embeddings
+
+from app.db.tables import QuestionRecord, QuizRecord, User, WrongQuestion
 from app.utils.timeutil import business_date, business_day_bounds, to_timestamp_ms
 
 #: 看板柱下的星期标签（`date.weekday()` 0 起，周一是 0）
@@ -265,3 +267,60 @@ def set_last_wrong(session, row: WrongQuestion, *, days: int, hour: int = 10) ->
     """
     row.last_wrong_at = at(-days, hour=hour)
     session.commit()
+
+
+# -----------------------------------------------------------------------------
+# 用户（知识库等「不经过接口」的服务层用例用）
+# -----------------------------------------------------------------------------
+def make_user(session, *, openid: str = "openid-test", nickname: str = "测试冒险者") -> User:
+    """直插一行用户并提交。
+
+    为什么不走 `POST /auth/dev`：服务层（仓库 / 解析状态机）用例不需要 token，
+    走登录只会把限流器与微信 Provider 一起拖进来。**提交是必须的** ——
+    后台解析线程用的是另一个连接，不提交它读不到这行用户。
+    """
+    row = User(openid=openid, nickname=nickname, avatar_key="scholar")
+    session.add(row)
+    session.commit()
+    return row
+
+
+def user_id_of(user: User | int) -> int:
+    return int(user) if isinstance(user, int) else int(user.id)
+
+
+# -----------------------------------------------------------------------------
+# 向量化替身
+# -----------------------------------------------------------------------------
+class BagEmbeddings(Embeddings):
+    """**确定性、零网络**的向量化替身（字袋模型）。
+
+    存在的理由是那条红线：「绝不允许测试发出真实 LLM 请求」。知识库链路上
+    唯一的外部调用就是向量化，把它换成这个之后，分块 / 存储 / 解析状态机
+    全部可以真跑 —— 而它们才是本能力真正要验的逻辑。
+
+    ⚠️ 它**不是**一个像样的 embedding：它只按字符做桶计数，同义词之间毫无相似度。
+    所以它只适合断言「写进去的能按 kb_id 查出来」「某些片段相关度更高」这类
+    **结构性**事实，不能用来断言召回质量。
+
+    ⚠️ `test_kb_store.py` 里另有一份私有的同类实现（`_BagEmbeddings`，带它自己的
+    配置夹具）。这里刻意不去合并那份已跑绿的用例 —— 它是自洽的，改动它的收益
+    只是少十几行，代价是动一个已经钉住隔离语义的测试文件。
+    """
+
+    def __init__(self, dim: int = 16) -> None:
+        self._dim = max(1, int(dim))
+
+    def _vector(self, text: str) -> list[float]:
+        vector = [0.0] * self._dim
+        for char in text:
+            vector[ord(char) % self._dim] += 1.0
+        norm = sum(value * value for value in vector) ** 0.5 or 1.0
+        return [value / norm for value in vector]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+

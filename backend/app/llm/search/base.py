@@ -25,8 +25,42 @@ from typing import Literal, Protocol, runtime_checkable
 #: 资料的形态：`snippet` = 检索摘要片段，`page` = 按 URL 抓到的整页正文
 ResultKind = Literal["snippet", "page"]
 
-#: 资料的来源：`user` = 用户自己在输入里给的链接，`web` = AI 主动检索到的
-ResultSource = Literal["user", "web"]
+#: 资料的来源：`user` = 用户自己在输入里给的链接，`web` = AI 主动检索到的，
+#: `kb` = 用户自己的知识库（上传解析入库的文档片段）
+ResultSource = Literal["user", "web", "kb"]
+
+#: 知识库片段的**伪 URL** 前缀（design D6）。
+#:
+#: 片段没有网址，而 `SearchResult.url` 是必填的、`collector._dedupe()` 又按它去重，
+#: 所以必须有一个能区分「同一文档的不同片段」的标识。用文件名会把一份文档的
+#: 全部片段合成一条，用自增序号则跨文档会撞车。
+#:
+#: 常量放在本文件（叶子模块）而不是 `llm/kb/`：**生产方与消费方要共用同一个字面量** ——
+#: `kb/tools.py` 拼它、`collector._source_for()` 认它。两处各写一份字符串，
+#: 改一处就会让知识库片段被误判成网页资料。
+KB_URL_PREFIX = "kb://"
+
+
+def kb_url(*, kb_id: int, doc_id: int, chunk_index: int) -> str:
+    """拼一条知识库片段的伪 URL（唯一的拼法，见 `KB_URL_PREFIX`）。"""
+    return f"{KB_URL_PREFIX}{int(kb_id)}/{int(doc_id)}#{int(chunk_index)}"
+
+
+def is_kb_url(url: str) -> bool:
+    """这条 url 是不是知识库片段的伪 URL。"""
+    return url.startswith(KB_URL_PREFIX)
+
+
+#: 知识库检索工具的名字。
+#:
+#: 放在这里（而不是 `llm/kb/tools.py`）的理由与 `KB_URL_PREFIX` 相同：它有**两个
+#: 消费方**且分属两层 —— `llm/kb/tools.py` 用它命名工具，
+#: `llm/search/collector.py` 用它做白名单匹配。让采集器去 import `llm/kb/tools`
+#: 会把知识库那一层（连带 `kb_service`）拖进检索层，而检索层在知识库关掉时
+#: 也必须能独立工作。共用同一个字面量常数是这里唯一不会漂的写法。
+#: 漏登记的后果是「命中数恒为 0 且不报错」，见 `test_search_collector_kb.py`。
+KB_TOOL_NAME = "kb_search"
+
 
 #: 落库的取材状态（`quizzes.search_state`）。三态的理由见 `SearchOutcome.search_state`。
 SearchState = Literal["off", "degraded", "hit"]
@@ -110,6 +144,23 @@ def truncate(text: str, limit: int, *, marker: str = " …（已截断）") -> s
 
 
 @dataclass(frozen=True, slots=True)
+class KbScope:
+    """本次出题要用的知识库作用域：**谁的**、**哪一个库**。
+
+    两个字段缺一不可，而且它们对应**两层不同的隔离**（见 `llm/kb/store.py`）：
+    `user_id` 决定落在哪个 Chroma collection（跨用户边界），
+    `kb_id` 是检索时那个 `where` 过滤（同一用户跨库边界）。
+
+    为什么不在 `SearchRequest` 里直接摊成两个 int 字段：它们总是一起出现、
+    一起缺省，摊平之后 `SearchRequest(user_id=3)` 这种「只给了一半」的构造
+    是合法的 —— 而它会让检索静默地跨库或跨用户。
+    """
+
+    user_id: int
+    kb_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class SearchRequest:
     """一次取材请求。
 
@@ -119,16 +170,25 @@ class SearchRequest:
         use_search: 用户这次的**意愿** —— 要不要让 AI 主动去网上搜。
             ⚠️ 它是意愿，不是能力：后端有没有配好检索是另一回事（见 `SearchProvider.can_search_web`）。
         max_results: 一次关键词检索要几条。上游把它列为**实例级**参数，所以由服务端定。
+        kb: 本次要用的知识库（`None` = 不带库，行为与接入前逐位一致）。
+            `kb_id` 的归属校验发生在**建任务之前**（design D13），所以走到这里
+            的 scope 一定是本人且存在的。
     """
 
     query: str
     urls: tuple[str, ...] = ()
     use_search: bool = True
     max_results: int = 5
+    kb: KbScope | None = None
 
     @property
     def has_urls(self) -> bool:
         return bool(self.urls)
+
+    @property
+    def has_kb(self) -> bool:
+        """本次是否指定了知识库。"""
+        return self.kb is not None
 
     @property
     def wants_external(self) -> bool:
@@ -136,8 +196,21 @@ class SearchRequest:
 
         用户自己给的链接**必读**、不受 `use_search` 约束（design D4）——
         「我贴了链接却没被读」是这个产品最不能出现的失败。
+
+        ⚠️ **不含知识库**：知识库是本地数据，不是外部网络。带库的请求算不算
+        「要跑取材循环」由 `wants_grounding` 回答 —— 两者刻意分开，否则这个属性
+        的名字就开始说谎，而它现在被 `agent` 用来决定「要不要一次工具都不调」。
         """
         return self.use_search or self.has_urls
+
+    @property
+    def wants_grounding(self) -> bool:
+        """这次是否**有任何取材依据可取**（外部网络或自己的资料）。
+
+        `agent.run_search_agent()` 用它决定要不要跑那个有界循环：
+        不带库且不想联网的请求一轮模型都不该调（`end_reason="disabled"`）。
+        """
+        return self.wants_external or self.has_kb
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +226,7 @@ def build_initial_step(
     *,
     can_search_web: bool,
     can_read_pages: bool,
+    can_search_kb: bool = False,
 ) -> StepDescriptor:
     """按「输入里有没有链接 × 用户想不想搜 × 我有没有这个能力」决定第一步叫什么。
 
@@ -160,13 +234,24 @@ def build_initial_step(
     `NoopSearchProvider` 拿到「想联网」的请求时若显示「联网检索知识」，
     而它其实一次网络都不会碰 —— 那是红线上明令禁止的「文案与实现冲突」。
 
-    优先级：链接 > 主动检索 > 理解输入。
+    优先级：链接 > 主动检索 > 知识库 > 理解输入。
+
+    Args:
+        can_search_kb: 这个 Provider 这次能不能检索知识库。
+            ⚠️ 它**不做成 Provider 的能力位**（design D7）：知识库检索不取决于
+            「配了哪个检索服务」，取决于「这次请求有没有带库」——
+            同一个 Noop Provider，带库的请求该是 `True`、不带库的该是 `False`。
+            所以由调用方按请求算好传进来，本函数保持纯函数
+            （`base.py` 是叶子模块，不 import 配置）。
+            默认 `False` 让既有的调用点行为逐位不变。
     """
     if request.has_urls and can_read_pages:
         count = len(request.urls)
         return StepDescriptor("读取你给的网页", f"正在读取 {count} 个链接")
     if request.use_search and can_search_web:
         return StepDescriptor("联网检索知识", "正在检索最新资料")
+    if request.has_kb and can_search_kb:
+        return StepDescriptor("检索你的知识库", "正在你的资料里查找相关内容")
     return StepDescriptor("理解你的输入", "正在解析你的学习需求")
 
 
@@ -258,12 +343,28 @@ class SearchOutcome:
         for index, item in enumerate(self.results, 1):
             if len(lines) >= caps.max_items:
                 break
-            block = f"[{index}] {item.title}\n{item.snippet}\n来源：{item.url}"
+            block = reference_block(index, item)
             if used + len(block) > caps.total_max_chars:
                 break
             lines.append(block)
             used += len(block)
         return "\n\n".join(lines)
+
+
+def reference_block(index: int, item: SearchResult) -> str:
+    """一条资料的 Prompt 段落。
+
+    知识库片段**单独一种形态**（design D6）：它没有可点的网址，把
+    `kb://7/12#3` 这种伪 URL 印给模型看只会让它以为那是个网页。
+    改成印**文件名** —— 模型看到的是「来源：你的知识库《机器学习讲义.md》」，
+    它的行为也随之不同：这是用户自己的材料，不是网上的东西。
+
+    ⚠️ 非 kb 来源的输出格式**逐字未变**：既有 Prompt 契约测试是按原格式钉的
+    （`test_search_prompt_contract.py`），改它就要连着改测试，而那条格式没有错。
+    """
+    if item.source == "kb":
+        return f"[{index}] 来源：你的知识库《{item.title}》\n{item.snippet}"
+    return f"[{index}] {item.title}\n{item.snippet}\n来源：{item.url}"
 
 
 @runtime_checkable

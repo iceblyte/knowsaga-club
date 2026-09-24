@@ -17,9 +17,9 @@
  * 全部列入要去掉的名单），所以这里连占位都不给 —— 标题居中由
  * `PhoneShell` 自己保留等宽空白来维持。
  *
- * ## 入口行从三行变成了五行
+ * ## 入口行从三行变成了六行
  *
- * 原型 04·1 只有三个入口行。另外两行都不是「顺手加的」，每一行都补掉了
+ * 原型 04·1 只有三个入口行。另外三行都不是「顺手加的」，每一行都补掉了
  * 一个**在原型里无处安放**的页面：
  *
  * - **错题本（04·7）**：原型的标签栏把 04·7 划给「我的」，但它不在
@@ -31,6 +31,9 @@
  * - **设置（07·5）**：原型把「设置」长在导览栏右侧，而那一处已按全局口径
  *   去掉 —— 于是它在原型里唯一的位置没有了。设置是 Phase E 的页面，
  *   必须有一个**看得见**的入口，所以按其它入口行的做法落在这里。
+ * - **知识库（2026-09-24）**：它归属「卷轴工坊」tab，但知识库同时也是
+ *   「我的资料」这类个人资产 —— 用户找它的第一直觉有一半是来这里翻。
+ *   理由与图标复用见 `PROFILE_COPY.rowKnowledgeBase`。
  *
  * 知识树与勋章墙仍按原型直接跳转。
  *
@@ -256,6 +259,18 @@ export default function MinePage() {
             自己在顶部列出全部日志供选择，这里再放一行就是同一个列表的第二个副本。
             `pages/profile/scrolls/index` 这个路由**没有删** —— 报告页的断网态
             与全局断网页的「查看历史日志」仍然指向它，它依旧可达。 */}
+
+        {/* 知识库（2026-09-24）。插在「错题本」之后、「勋章墙」之前 ——
+            它与上面两行都是「我的学习资产」，与下面三行（勋章 / 公会卡 / 设置）
+            那种「功能入口」在语义上不同。理由见 `PROFILE_COPY.rowKnowledgeBase`。 */}
+        <View className='li' onClick={() => goPage('/pages/workshop/kb-list/index', 'navigate')}>
+          <RowIcon name='scrolls' />
+          <View className='tx'>
+            <View className='n'>{PROFILE_COPY.rowKnowledgeBase}</View>
+            <View className='d'>{PROFILE_COPY.rowKnowledgeBaseDesc}</View>
+          </View>
+          <Text className='pill'>{PROFILE_COPY.rowView}</Text>
+        </View>
 
         <View className='li' onClick={() => goPage('/pages/profile/badges/index', 'navigate')}>
           <RowIcon name='badges' />

@@ -11,6 +11,35 @@
 
 import { create } from 'zustand'
 
+import { QUIZ_DIFFICULTY, QUIZ_QUESTION_COUNT } from '../constants/api'
+import type { Difficulty } from '../types/api'
+
+/**
+ * 本次召唤的出题参数。
+ *
+ * ⚠️ **它必须由「发起召唤的那个入口」显式写入**，不能只依赖默认值 ——
+ * 曾经设过知识库的 `kbId` 会留在这里，下一次从大厅发起的召唤就会莫名其妙地
+ * 带着上一个库取材。大厅的提交路径因此每次显式写回 `DEFAULT_QUIZ_OPTIONS`。
+ *
+ * 三个字段都是**请求级**的（出题接口的入参），与 `userInput` / `useSearch`
+ * 同一层、同一生命周期：都是「这一次召唤」的一部分，没有跨局保留的意义。
+ */
+export interface QuizOptions {
+  /** 题量。后端 `MIN_QUESTIONS=3` / `MAX_QUESTIONS=5` 是硬边界 */
+  questionCount: number
+  /** 难度偏好；`mixed` 让模型自己分配（与后端默认一致） */
+  difficulty: Difficulty | 'mixed'
+  /** 从哪个知识库取材。**空串表示不取材**（`kb_id` 字段整个不发给后端） */
+  kbId: string
+}
+
+/** 大厅那条路（以及所有「不带知识库」的召唤）用的默认参数 —— 与接入知识库之前逐位一致。 */
+export const DEFAULT_QUIZ_OPTIONS: QuizOptions = {
+  questionCount: QUIZ_QUESTION_COUNT,
+  difficulty: QUIZ_DIFFICULTY,
+  kbId: ''
+}
+
 interface AppState {
   /** 社团大厅里用户输入的主题（跨页共享：召唤页与确认页都要用） */
   userInput: string
@@ -37,6 +66,10 @@ interface AppState {
   useSearch: boolean
   setUseSearch: (enabled: boolean) => void
 
+  /** 出题参数（题量 / 难度 / 取材的知识库），由发起召唤的入口写入 */
+  quizOptions: QuizOptions
+  setQuizOptions: (options: QuizOptions) => void
+
   /** 后端可达性；为 false 时前端展示网络异常态 */
   backendReachable: boolean
   setBackendReachable: (reachable: boolean) => void
@@ -51,6 +84,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   useSearch: true,
   setUseSearch: (enabled) => set({ useSearch: enabled }),
+
+  quizOptions: DEFAULT_QUIZ_OPTIONS,
+  setQuizOptions: (options) => set({ quizOptions: options }),
 
   backendReachable: true,
   setBackendReachable: (reachable) => set({ backendReachable: reachable })

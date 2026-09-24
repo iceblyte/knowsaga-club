@@ -37,12 +37,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import MagicStage from '../../components/MagicStage'
 import PhoneShell from '../../components/PhoneShell'
-import {
-  CANCEL_APPEAR_MS,
-  CLIENT_ERROR_CODE,
-  QUIZ_DIFFICULTY,
-  QUIZ_QUESTION_COUNT
-} from '../../constants/api'
+import { CANCEL_APPEAR_MS, CLIENT_ERROR_CODE } from '../../constants/api'
 import { COMMON_COPY, SUMMON_COPY, SUMMON_STEPS } from '../../constants/copy'
 import { INPUT_MIN_LEN } from '../../constants/mock'
 import { ApiError, toDisplayMessage } from '../../services/request'
@@ -165,6 +160,15 @@ export default function SummonPage() {
     // 用户切一次开关就重跑整个出题任务 —— 而那只 pill 在另一个页面上，
     // 中途根本切不到，多那个依赖只会引入「重新生成时用旧意愿」这类歧义。
     const wantSearch = useAppStore.getState().useSearch
+    /**
+     * 出题参数（题量 / 难度 / 取材的知识库）同样在这一刻定下。
+     *
+     * ⚠️ 这一页**不判**「有没有知识库」：带库与不带库走的是同一个接口、
+     * 同一条链路，差别只在请求体里多不多一个 `kb_id`。而 `kb_id` 为空时
+     * **整个字段都不发** —— 后端那侧是 `int | None`，发一个空串会直接被
+     * 参数校验拒掉（4000），而「不取材」本来就是合法且默认的形态。
+     */
+    const options = useAppStore.getState().quizOptions
     if (topic.length < INPUT_MIN_LEN) {
       // 直接进入本页（比如从历史记录跳回来）而没有主题时，退回到大厅而不是白屏
       Taro.showToast({ title: COMMON_COPY.inputTooShort, icon: 'none' })
@@ -188,9 +192,11 @@ export default function SummonPage() {
       try {
         const submission = await createQuizTask({
           user_input: topic,
-          question_count: QUIZ_QUESTION_COUNT,
-          difficulty: QUIZ_DIFFICULTY,
-          use_search: wantSearch
+          question_count: options.questionCount,
+          difficulty: options.difficulty,
+          use_search: wantSearch,
+          // 只有真的带库时才出现这个键（见上面 `options` 的说明）
+          ...(options.kbId ? { kb_id: options.kbId } : {})
         })
         if (!aliveRef.current) return
 
@@ -294,6 +300,11 @@ export default function SummonPage() {
 
   const topic = useAppStore((s) => s.userInput).trim()
   /**
+   * 兜底步骤里的题量也要跟着这次请求走 —— 从知识库出题时它是 3 题，
+   * 写死 5 会让兜底那一下显示「生成 5 道题」，然后被后端的真步骤改成 3 道。
+   */
+  const questionCount = useAppStore((s) => s.quizOptions.questionCount)
+  /**
    * 首次轮询回来之前的兜底步骤。
    *
    * 名字必须与后端**同一套判据**（能力 × 意愿 × 有无链接），否则贴了链接的用户会先看到
@@ -305,7 +316,7 @@ export default function SummonPage() {
   ]
   const steps = task?.steps?.length
     ? task.steps
-    : fallbackSteps(fallbackFirstStep, QUIZ_QUESTION_COUNT)
+    : fallbackSteps(fallbackFirstStep, questionCount)
 
   // ---------------------------------------------------------------------------
   // 平滑进度（见文件头与 `utils/task-progress`）

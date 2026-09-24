@@ -39,9 +39,29 @@
  *    ⚠️ 边界：**只撤统计口径里的「社团」**。「社团大厅」「返回社团大厅」这类
  *    世界观包装词**保留** —— 用户会把它读成产品名/场景名，不会追问
  *    「我什么时候加的社团」；而「社团里有 7 位冒险者」会被追问，且答不上来。
+ * 5. **`KB_*`（2026-09-24，私有知识库）**：原型 05 的 8 屏是**需求文档 P1 的
+ *    完整设计**，本期只落地其中的「文档 → 知识库 → 出题」这一段。逐条对齐见
+ *    `openspec/changes/add-private-knowledge-base/design.md` 末尾的偏离表，
+ *    这里只留**会影响用户读数**的四条，其余（不渲染题型控件、不渲染出题范围、
+ *    解析不分阶段、未就绪置灰）在各自常量上就地说明：
+ *
+ *      · 题量选项**去掉「10 题」与「自定义」** —— 后端 `MAX_QUESTIONS=5`
+ *        是硬上限（用户已明确本期不放宽）。留一个点下去必然失败的选项
+ *        比不给更糟。
+ *      · 「选择输入方式」的那句导语**从「四种来源」改成「两种」** ——
+ *        原型写「一句话、一份文档、一个网页或一段视频，都能变成知识副本」，
+ *        而网页/视频本期不做。照抄就是在四个并排的入口里承诺两个进不去的。
+ *      · 列表页**不渲染「已用 12.6 MB」** —— 后端没有任何「按用户统计体积」的
+ *        接口，`GET /kb` 只给每个库的文档数与就绪数。这一格只能靠前端把
+ *        所有库的文档体积加起来猜，而它一猜错（比如漏掉解析失败的文档）
+ *        就是在给用户看一个假数字。
+ *      · 「上传文档」页的**「最近上传」只在从某个库进来时才有** ——
+ *        它是一个「这一页刚传的东西」的回顾，而大厅那个入口不带库 id
+ *        （落到默认库，见 design D16），翻不出「最近传到哪」的列表。
+ *        没有库上下文时这一块**整块不渲染**，而不是伪造几条。
  */
 
-import type { AttemptProgress, AttemptScorePoint } from '../types/api'
+import type { AttemptProgress, AttemptScorePoint, KbDocStatus } from '../types/api'
 
 /** 三步生成过程的兜底文案。
  *
@@ -685,7 +705,23 @@ export const PROFILE_COPY = {
    * 所以按其它四个入口行的做法加在这里。
    */
   rowSettings: '设置',
-  rowSettingsDesc: '提醒、缓存与账号'
+  rowSettingsDesc: '提醒、缓存与账号',
+
+  /**
+   * 知识库（2026-09-24 新增）的入口行。
+   *
+   * 原型把这一栏的东西放在「卷轴工坊」tab 下，而知识库**同时**是
+   * 「我的资料」这类个人资产 —— 用户找它的第一直觉有一半是来这里翻。
+   * 与「错题本」「公会卡」的做法一致：一个页面在原型里只有一个归属，
+   * 但那个归属不是用户唯一会去找它的地方时，补一个**看得见**的入口
+   * 比让他自己猜到 tab 里去点要好。
+   *
+   * 图标复用 `scrolls`（一页带横线的纸）—— 它就是「文档」的样子。
+   * 不为这一行新画一个图标：`assets/profile-icons` 是脚本生成的，
+   * 加一个图标要动生成脚本与那一批 SVG，而现有这枚的语义正好。
+   */
+  rowKnowledgeBase: '知识库',
+  rowKnowledgeBaseDesc: '上传过的资料，可以拿它们出题'
 } as const
 
 /**
@@ -1363,5 +1399,275 @@ export const HALL_PROFILE_COPY = {
   xpTotal: (xp: number) => `${xp} XP`,
   /** 连续打卡。原型「连续 4 天」 */
   streak: (days: number) => `连续 ${days} 天`
+} as const
+
+// =============================================================================
+// 私有知识库（原型 05 的第 2–8 屏）
+// =============================================================================
+// 这一段的文案**分五组**，与五个页面一一对应（`kb-list` / `kb-detail` /
+// `kb-upload` / `kb-parsing` / `kb-source` / `kb-generate` 里前五个各占一组，
+// 加上 `KB_COMMON` 与状态表）。不合成一个大对象：五个页面的文案各自成篇，
+// 合在一起会让「改上传页的一句话」要在两千行里找。
+//
+// ## 一条贯穿全段的约定：状态值归后端、说法归前端
+//
+// `pending / parsing / ready / failed` 是后端的闭集（`KbDocStatus`），
+// 前端只做「状态 → 说法」的查表，一条判断都不写。与档案页的 `state` 同一个约定。
+// **唯一的例外是 `error_message`** —— 那是随数据变化的叙述（「这份文件没能解析
+// 成功，它可能已损坏或加密」），由后端给，前端原样渲染，不自己拼一句。
+// =============================================================================
+
+/** 解析状态 → 用户语言。四态闭集，与后端 `KbDocStatus` 逐位对应。 */
+export const KB_STATUS_LABEL: Record<KbDocStatus, string> = {
+  pending: '等待解析',
+  parsing: '解析中',
+  ready: '已就绪',
+  failed: '解析失败'
+}
+
+/**
+ * 解析状态 → `.pill` 的修饰符（空串 = 默认纸色）。
+ *
+ * `parsing` 用 `blue` 而不是 `gold`：它是「正在进行」，与召唤页那几步同一个色语；
+ * `gold` 在这套配色里读作「值得高兴的成就」（XP、勋章），用在一个还在跑的
+ * 中间态上会让「解析中」看起来像「解析完了还得了奖励」。
+ */
+export function kbStatusPill(status: KbDocStatus): string {
+  if (status === 'ready') return 'ok'
+  if (status === 'failed') return 'bad'
+  if (status === 'parsing') return 'blue'
+  return ''
+}
+
+/** 每个库的文档上限与单份文档体积上限由后端卡（`kb_max_docs_per_base` / `kb_doc_max_bytes`）。 */
+export const KB_LIST_COPY = {
+  navTitle: '我的知识库',
+  /** 列表页顶部那行概览。原型还有「已用 12.6 MB」，见文件头第 5 条 */
+  summary: (total: number) => `共 ${total} 个知识库`,
+  /**
+   * 每一行的副标题。原型写「3 份文档 · 已就绪」——它把「共几份」与
+   * 「有几份能用」压成了一个词，而这两件事在多份文档时并不相等
+   * （3 份里 1 份解析中时，原型那句话既像真话又像假话）。
+   * 后端 `ready_count` 本来就把两件事分开给了，所以这里如实写两个数。
+   */
+  rowMeta: (documentCount: number, readyCount: number) =>
+    `${documentCount} 份文档 · ${readyCount} 份已就绪`,
+  /** 行尾胶囊：有已就绪的文档，能出题 */
+  ask: '出题',
+  /** 行尾胶囊：有文档但一份都没就绪（还在解析 / 全失败） */
+  waiting: '等待',
+  /** 行尾胶囊：一份文档都没有（把库里的文档全删光之后会落到这个状态） */
+  blank: '空库',
+  /** 行内那个方块里的字（原型就是「库」一个汉字） */
+  icon: '库',
+  emptyTitle: '还没有知识库',
+  /**
+   * 空态的说明必须点出「它怎么来的」：库不是用户主动建的
+   * （原型那个「新建知识库」独立屏本期不做，见文件头第 5 条），
+   * 而是**上传第一份文档时自动建好**的 —— 不说这句，用户会去找一个
+   * 不存在的「新建」按钮。
+   */
+  emptyBody: '上传一份文档就会自动建好一个知识库，之后就能用它出题。',
+  emptyCta: '上传文档'
+} as const
+
+/** 知识库详情（原型 05·7）。 */
+export const KB_DETAIL_COPY = {
+  /** 顶部那枚大胶囊：库里有一份能用的文档 */
+  readyPill: '已就绪',
+  /** 一个能用的都没有时的胶囊 */
+  pendingPill: '尚未就绪',
+  /** 原型「3 份文档 · 120 个知识块」。分母与分子都由后端算 */
+  summary: (documentCount: number, chunkCount: number) =>
+    `${documentCount} 份文档 · ${chunkCount} 个知识块`,
+  descriptionLabel: '用途描述',
+  /** 没有填描述时的占位，不写「暂无描述」（只说明缺失，读起来像加载失败） */
+  descriptionEmpty: '还没写用途。写清楚主题，AI 检索时会更容易命中相关段落。',
+  renameAction: '重命名',
+  renameLabel: '知识库名称',
+  renamePlaceholder: '例如：机器学习导论',
+  renameHint: (min: number, max: number) => `${min}–${max} 个字`,
+  renameSave: '保存',
+  renameCancel: '取消',
+  /** 提交时名字一个字都没动 —— 直接不提交，别发一个注定 4000 的请求 */
+  renameSame: '名字没有变化',
+  renameTooShort: (min: number) => `名字至少要 ${min} 个字`,
+  renameTooLong: (max: number) => `名字最多 ${max} 个字`,
+  /** 后端名字在同一用户下唯一，重名是 4001 —— 必须说清是哪一种冲突 */
+  renameConflict: '这个名字已经有了，换一个',
+  renameDone: '已改名',
+  renameFailed: '改名没成功，请重试',
+  docsLabel: '文档',
+  docsEmpty: '这个库里还没有文档，先上传一份。',
+  uploadAction: '上传文档',
+  /** 文档行副标题：原型「42 页 · 68 块」。页数只有 PDF 有（`page_count` 为 0 时不写） */
+  docMeta: (pageCount: number, chunkCount: number) =>
+    pageCount > 0 ? `${pageCount} 页 · ${chunkCount} 块` : `${chunkCount} 块`,
+  /** 解析失败的那一行把原因显示出来 —— 那是用户唯一能拿来判断怎么办的线索 */
+  docFailedPrefix: '解析失败 · ',
+  askAction: '从本知识库出题',
+  /**
+   * 出题按钮置灰的原因。原型 05·5 的批注要求「未就绪的库不允许出题」，
+   * 但**拦在前端**（后端不拦，见 design D17）：后端拦的话用户要等几秒
+   * 才被告知一件一次查询就能知道的事。
+   */
+  askBlockedHint: '还没有解析完成的文档，先上传一份或等它解析好',
+  deleteDocTitle: '删除这份文档？',
+  deleteDocBody: '它的记录、向量与原文件会一起删掉。删除后这道库里的题就不会再引用它。',
+  deleteDocConfirm: '删除',
+  deleteDocCancel: '取消',
+  deleteDocDone: '已删除',
+  deleteDocFailed: '删除没成功，请重试',
+  /** 删库。比删单份文档严重得多，所以弹窗里必须把连带范围说明白 */
+  deleteBaseAction: '删除知识库',
+  deleteBaseTitle: '删除这个知识库？',
+  deleteBaseBody: '它里面的全部文档、向量与原文件都会一起删掉。这一步不能撤销。',
+  /** 长按 / 点击文档行时的说明（原型的删除入口在行内，没有单独的垃圾桶图标） */
+  docActionHint: '长按文档可以删除'
+} as const
+
+/** 上传文档（原型 05·2）。 */
+export const KB_UPLOAD_COPY = {
+  navTitle: '上传文档',
+  pickTitle: '点击选择文件',
+  /** 原型「支持 PDF / Word / Markdown / TXT」。写的是用户的说法，不是扩展名 */
+  pickHint: '支持 PDF / Word / Markdown / TXT',
+  /** 体积上限从 `utils/document-picker` 的常量拼，两处不重复一个数字 */
+  sizeLimit: (label: string) => `单个文件不超过 ${label}`,
+  /** 选中文件之后那一行的标题 */
+  selectedLabel: '已选择',
+  reselect: '重新选择',
+  submit: '上传文档',
+  uploading: '正在上传…',
+  /** 上传成功后跳去解析页之前的过渡文案（解析已经在后台跑了） */
+  uploadingHint: '上传完成后它会自己开始解析，你可以先离开这一页。',
+  recentLabel: '最近上传',
+  /** 取消选择不是错误，一句话都不说 */
+  canceled: '',
+  unsupported: '这个格式还不支持，请选 PDF / Word / Markdown 或 TXT',
+  tooLarge: (label: string) => `文件太大了，单个不超过 ${label}`,
+  /** 本地选文件失败（没权限 / 环境不支持）—— 与「取消」分开 */
+  pickFailed: '没能读取这个文件，请换一个再试',
+  uploadFailed: '上传没成功，请重试'
+} as const
+
+/**
+ * 文档解析中（原型 05·3）。
+ *
+ * ⚠️ **原型那三步是没有进度可言的**：它画了「1 提取正文 已完成 · 42 页 /
+ * 2 切分与向量化 处理中 · 第 68 / 120 块 / 3 存入知识库 等待中」，
+ * 而本期后端只在库里存四态（`pending / parsing / ready / failed`），
+ * **不新增 stage 列**（design 的偏离表已登记）。所以下面这三步是
+ * **流程说明**，不是进度 —— 三行一律同样的中性样式，谁也不打勾，
+ * 真正表示「在跑」的只有那条不确定的进度条。
+ *
+ * 不为一个只在一次解析内有效的「第几步」加列 + 加迁移，收益远小于
+ * 把「正在解析」这四个字说清楚；失败时用户真正需要的是**原因**
+ * （`error_message`），那一条后端给了。
+ */
+export const KB_PARSING_COPY = {
+  navTitle: '解析中',
+  /** 终态时导览栏改成状态本身 —— 停在「解析中」的标题上会与页面内容自相矛盾 */
+  navReady: '文档已就绪',
+  navFailed: '解析未成功',
+  title: '正在解析文档',
+  /** 三步流程说明（不是进度，见上） */
+  steps: ['提取正文', '切分与向量化', '存入知识库'],
+  stepsLabel: '解析流程',
+  pollingHint: '解析在后台进行，这一页会自动刷新，不用手动重试。',
+  /**
+   * 轮询到达上限之后**不判失败** —— 解析还在跑，我们只是停止追问。
+   * 说「失败」会冤枉后台（它可能下一秒就成功），说「还在解析」又不给出口，
+   * 所以给一句实情 + 一个手动刷新的按钮。
+   */
+  stillRunning: '解析还在进行，可以先去做别的，回头再来看看。',
+  refresh: '刷新看看',
+  readyTitle: '这份文档可以用了',
+  readyBody: '它的内容已经进了知识库，现在可以拿它出题。',
+  readyBlocks: (chunkCount: number) => `已切分 ${chunkCount} 个知识块`,
+  readyCta: '去出题',
+  failedTitle: '这份文档没能解析成功',
+  /** 后端 `error_message` 为空时的兜底（正常不会发生，但别把空串渲染成空白行） */
+  failedFallback: '可能是文件损坏、加密，或者里面没有可提取的文字。',
+  failedHint: '可以换一份文件重传，或者修好之后再试一次。',
+  retry: '重新解析',
+  retrying: '正在重新提交…',
+  retryFailed: '重新解析没成功，请稍后再试',
+  /** 文档已经不在了（被删掉 / 换过账号）—— 给出口，不要停在转圈上 */
+  goneTitle: '这份文档不在了',
+  goneBody: '它可能已经被删除。回到知识库看看现在有哪些文档。',
+  goneCta: '回到知识库'
+} as const
+
+/** 选择输入方式（原型 05·1）。 */
+export const KB_SOURCE_COPY = {
+  navTitle: '选择输入方式',
+  title: '想从哪儿开始？',
+  /**
+   * ⚠️ 原型写「一句话、一份文档、一个网页或一段视频，都能变成知识副本」。
+   * 本期只开放前两种（网页已由「用户给的链接必读」覆盖，视频不做），
+   * 所以这句**改成两种** —— 下面并排的四个入口里有两个进不去，
+   * 而导语却承诺四个都能用，那是最直接的一种骗人。
+   */
+  body: '一句话，或一份你自己的文档，都能变成知识副本。',
+  /** 每个入口的说明与「现在能不能进」 */
+  items: {
+    text: { label: '一句话 / 一段文本', desc: '最快，AI 会联网补充背景' },
+    doc: { label: '上传文档', desc: 'PDF / Word / Markdown / 纯文本' },
+    link: { label: '网页链接', desc: '本期还没开放' },
+    video: { label: '视频链接', desc: '本期还没开放' }
+  },
+  /** 点还没开放的入口时的提示（不是静默失败，也不是假装能进） */
+  notReady: '这个输入方式还没开放',
+  /** 页脚说明：把「为什么只有两个」讲出来，而不是让用户以为是坏了 */
+  footer: '网页与视频解析属于后续版本。'
+} as const
+
+/** 从知识库出题（原型 05·8）。 */
+export const KB_GENERATE_COPY = {
+  navTitle: '生成设置',
+  sourceLabel: '出题来源',
+  /** 来源卡里的副标题，与详情页头部同一句 */
+  sourceMeta: (documentCount: number, chunkCount: number) =>
+    `${documentCount} 份文档 · ${chunkCount} 个知识块`,
+  countLabel: '题目数量',
+  /**
+   * ⚠️ 原型有「3 题 / 5 题 / 10 题 / 自定义」四项。这里只有前两项 ——
+   * 后端 `MAX_QUESTIONS=5` 是硬上限，用户已明确本期不放宽（文件头第 5 条）。
+   */
+  countOptions: [3, 5] as ReadonlyArray<number>,
+  countLabelOf: (count: number) => `${count} 题`,
+  difficultyLabel: '难度分布',
+  /**
+   * 与后端 `models/quiz.py` 的 `Difficulty` 逐位对应
+   * （`easy` / `medium` / `hard`；`mixed` 是「让模型自己分配」，
+   * 这里的「均衡」就是它，不另开一个取值）。
+   */
+  difficultyOptions: [
+    { key: 'easy', label: '偏易' },
+    { key: 'medium', label: '均衡' },
+    { key: 'hard', label: '偏难' }
+  ] as ReadonlyArray<{ key: 'easy' | 'medium' | 'hard'; label: string }>,
+  submit: '生成知识副本',
+  submitting: '正在提交…',
+  submitFailed: '没能开始生成，请重试',
+  /** 学习需求由前端构造（design D14）：这一页没有输入框，而 `user_input` 有 8 字下限 */
+  inputOf: (name: string) => `学习「${name}」中的内容`,
+  /** 联网开关。默认**开着**，与大厅那只 pill 的默认一致 */
+  searchLabel: '联网补充',
+  searchOn: 'AI 会同时联网补充',
+  searchOff: '只用你自己的资料',
+  searchToggleUnavailable: '后端未配置联网检索'
+} as const
+
+/** 这一组跨页共用的说法。 */
+export const KB_COMMON = {
+  /** 越权与不存在在**任何**知识库接口上都是同一个 4005（design D9），所以只有这一句 */
+  notFound: '内容不存在或已删除',
+  loadFailed: '没能读到数据，请重试',
+  retry: '重新加载',
+  /** 知识库名与描述的长度限制，与后端 `KB_NAME_MIN_LEN` / `KB_NAME_UI_MAX_LEN` 一致 */
+  nameMin: 2,
+  nameMax: 40
 } as const
 

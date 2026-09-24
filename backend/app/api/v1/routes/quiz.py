@@ -17,7 +17,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, DbSession
 from app.core.response import ok
 from app.models.quiz import MAX_QUESTIONS, MIN_QUESTIONS
 from app.services import quiz_service
@@ -58,15 +58,30 @@ class QuizGenerateRequest(BaseModel):
     # 语义是「别主动去搜」，不是「别碰网络」。文案必须说清这一点，否则开关就在说谎。
     use_search: bool = Field(default=True, description="是否让 AI 联网补充资料（不影响读取你给的链接）")
 
+    # 本次出题去哪个知识库取材。**可选**：不带就是原来的行为，一个字都不变。
+    #
+    # ⚠️ 归属校验发生在服务层、且在建任务**之前**（design D13）——
+    # 越权 / 不存在会直接返 4005，不会先给一个注定失败的 task_id。
+    #
+    # `ge=1` 是刻意的：`kb_id=0` / 负数一律 4000 拒掉。静默当成「没传」
+    # 是最糟的处理 —— 用户以为自己选了某个库，结果出题用的是默认库。
+    kb_id: int | None = Field(default=None, ge=1, description="知识库 id；不传则不使用知识库")
+
 
 @router.post("/quiz/generate", summary="创建出题任务")
-def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser) -> dict:
-    """校验输入并创建异步出题任务，立刻返回 `task_id` 与轮询间隔。"""
+def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser, db: DbSession) -> dict:
+    """校验输入并创建异步出题任务，立刻返回 `task_id` 与轮询间隔。
+
+    `db` 只用于 `kb_id` 的归属校验（design D13）—— 校验通过后，
+    真正取资料发生在后台线程里（那时另有自己的会话）。
+    """
     submission = quiz_service.submit_quiz_request(
         user_id=int(user.id),
         user_input=payload.user_input,
         question_count=payload.question_count,
         difficulty=payload.difficulty,
         use_search=payload.use_search,
+        kb_id=payload.kb_id,
+        session=db,
     )
     return ok(submission.as_data())

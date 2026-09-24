@@ -37,7 +37,7 @@ from app.llm import quiz_chain
 from app.llm.search import SearchProvider, SearchRequest, get_search_provider
 from app.llm.search import collector
 from app.llm.search.agent import ToolProgress
-from app.llm.search.base import ReferenceCaps, SearchOutcome
+from app.llm.search.base import KbScope, ReferenceCaps, SearchOutcome
 from app.models.quiz import Quiz
 from app.services import quiz_repository, task_service
 from app.services.task_service import TaskRecord, TaskStep
@@ -134,20 +134,61 @@ def _initial_steps(
 
 
 def _build_search_request(
-    user_input: str, settings: Settings, *, use_search: bool = True
+    user_input: str,
+    settings: Settings,
+    *,
+    use_search: bool = True,
+    kb: KbScope | None = None,
 ) -> SearchRequest:
     """把已清洗的输入组装成取材请求：链接从输入里抽，意愿由请求参数给。
 
     ⚠️ 链接抽取走**服务端自己的规则**（`app/utils/links.py`），不看前端的判断 ——
     前端那只 pill 只决定显示哪句话，不能作为「要读哪些页面」的依据。
     两边规则同源（同一组正则形态），所以要改一起改。
+
+    Args:
+        kb: 本次要用的知识库作用域。**归属已经校验过了**（见 `_resolve_kb_scope`）——
+            本函数只负责装进请求，不判定权限。
     """
     return SearchRequest(
         query=user_input,
         urls=extract_urls(user_input),
         use_search=use_search,
         max_results=settings.search_max_results,
+        kb=kb,
     )
+
+
+def _resolve_kb_scope(
+    kb_id: int | None, *, user_id: int, session: Session | None
+) -> KbScope | None:
+    """把请求里的 `kb_id` 变成取材作用域；**越权 / 不存在直接抛 4005**。
+
+    ⚠️ 这一步必须在 `create_task` **之前**（design D13），理由与
+    `TavilySearchProvider.__init__` 里校验 key 相同：用户该直接看到
+    「这个库不能用」，而不是拿到一个 `task_id`、等几秒后看到一个注定失败的任务。
+
+    `user_id` 只来自鉴权 —— 客户端只提供 `kb_id`。两者都由客户端给的话，
+    越权就只是一个数字的事了。
+
+    Args:
+        session: 请求级会话。传了就用它（接口路径）；没传就自己开一个
+            （服务层的其它调用点，如测试）。**服务层只在后台线程那一条路径上
+            自开会话**，这里是例外，所以有显式分支而不是默默用全局工厂。
+    """
+    if kb_id is None:
+        return None
+
+    # 惰性 import：知识库关着的部署连 `kb_service` 都不该在出题链上被拉起
+    # （它会拖进 `langchain_core.embeddings` 与仓库层）。
+    from app.services import kb_service
+
+    if session is not None:
+        kb_service.require_owned_base(session, user_id=user_id, kb_id=kb_id)
+    else:
+        with _open_session() as probe:
+            kb_service.require_owned_base(probe, user_id=user_id, kb_id=kb_id)
+    return KbScope(user_id=user_id, kb_id=int(kb_id))
 
 
 def _progress_reporter(task_id: str) -> Callable[[ToolProgress], None]:
@@ -437,26 +478,32 @@ def submit_quiz_request(
     settings: Settings | None = None,
     search_provider: SearchProvider | None = None,
     use_search: bool = True,
+    kb_id: int | None = None,
+    session: Session | None = None,
 ) -> QuizSubmission:
     """校验输入并创建出题任务（同步返回，不等出题）。
 
-    **校验顺序是「先长度、后内容」**：长度检查便宜且无需加载词表，
+    **校验顺序是「先长度、后内容、最后库归属」**：长度检查便宜且无需加载词表，
     而一段连 8 个字都不到的输入本来就该先提示「再多说一点」，
-    不必走到敏感词判断。
+    不必走到敏感词判断；库归属要查库，放在最后。
 
     Args:
         user_id: 任务的归属用户。任务表不再允许匿名（见 `task_service.get_task_for_user`）。
+        kb_id: 本次出题要用的知识库。`None` = 不带库，行为与接入前逐位一致。
+        session: 请求级会话；接口路径传入，用于 `kb_id` 的归属校验。
 
     Raises:
-        AppError: 4001 内容过短 / 过长 / 命中敏感词或提示词注入。
+        AppError: 4001 内容过短 / 过长 / 命中敏感词或提示词注入；
+            4005 `kb_id` 对应的库不存在或不属于该用户（**在建任务之前**）。
     """
     s = settings or get_settings()
 
     cleaned = validate_input(user_input)
     check_content(cleaned)
 
+    scope = _resolve_kb_scope(kb_id, user_id=user_id, session=session)
     provider = search_provider or get_search_provider(s)
-    request = _build_search_request(cleaned, s, use_search=use_search)
+    request = _build_search_request(cleaned, s, use_search=use_search, kb=scope)
     record = task_service.create_task(
         "quiz", user_id=user_id, steps=_initial_steps(provider, request, question_count)
     )

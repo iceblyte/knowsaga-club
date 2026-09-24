@@ -384,7 +384,7 @@ def db_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
 
     from sqlalchemy.orm import sessionmaker
 
-    from app.services import quiz_service, report_service
+    from app.services import kb_service, quiz_service, report_service
 
     factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
 
@@ -400,7 +400,7 @@ def db_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         finally:
             session.close()
 
-    for module in (quiz_service, report_service):
+    for module in (quiz_service, report_service, kb_service):
         monkeypatch.setattr(module, "_open_session", scope)
     return scope
 
@@ -487,3 +487,125 @@ def tiny_jpeg() -> bytes:
 @pytest.fixture
 def tiny_webp() -> bytes:
     return TINY_WEBP
+
+
+# -----------------------------------------------------------------------------
+# 私有知识库夹具
+# -----------------------------------------------------------------------------
+# 为什么这一组**不 autouse**：它们会把 `KNOWLEDGE_BASE_ENABLED` 打开、
+# 把上传目录与向量库目录换掉，而那会改变「钉默认值」类用例的前提
+# （`test_config_search.py` 就是钉默认关闭的）。所以由各 KB 测试模块
+# 自己声明一条 autouse 夹具去请求 `kb_harness`（见 `test_kb_service.py`）——
+# 「这个文件里每条用例都在 KB 环境里跑」这件事因此是**显式**的。
+#
+# 这一组也是本次唯一把「后端线程 + 外部服务」两件事同时替掉的地方：
+#   - `kb_session_scope` 替掉后端线程的会话（同 `db_scope` 之于出题链）
+#   - `kb_fake_embeddings` 替掉向量化（同「LLM 一律 mock」那条红线）
+# 两者都做成可注入的模块级接缝（见 `kb_service` 模块头）。
+
+
+@pytest.fixture
+def kb_env(tmp_path, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """开启知识库并把两个目录都指到临时目录。
+
+    返回一个「改配置再取一次」的小工厂：用例里要改上限（比如把单文件上限压到
+    100 字节来验超限）时不必各自写一遍清缓存。
+    """
+
+    def _configure(**env: object):  # noqa: ANN202
+        from app.core.config import get_settings
+
+        baseline = {
+            "KNOWLEDGE_BASE_ENABLED": "true",
+            # 假 key：`build_embeddings` 只检查它非空，不会用它发请求
+            "DASHSCOPE_API_KEY": "sk-fake-for-tests",
+            "UPLOADS_DIR": str(tmp_path / "uploads"),
+            "VECTORSTORE_DIR": str(tmp_path / "vectorstore"),
+        }
+        baseline.update({key: str(value) for key, value in env.items()})
+        for key, value in baseline.items():
+            monkeypatch.setenv(key, value)
+        get_settings.cache_clear()
+        return get_settings()
+
+    yield _configure
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def kb_fake_embeddings(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """把向量化换成**确定性、零网络**的替身。
+
+    存在的理由是那条红线：「绝不允许测试发出真实 LLM 请求」。知识库链路上唯一的
+    外部调用就是向量化，换掉它之后，分块 / 存储 / 解析状态机可以真跑 ——
+    而它们才是本能力真正要验的逻辑。
+    """
+    from app.services import kb_service
+    from tests.helpers import BagEmbeddings
+
+    fake = BagEmbeddings()
+    monkeypatch.setattr(kb_service, "_build_embeddings", lambda _settings: fake)
+    return fake
+
+
+@pytest.fixture
+def kb_session_scope(db_engine, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """把**解析线程里的落库会话**指向测试库。
+
+    同 `db_scope` 的理由：后台线程没有请求级会话，只能自己开一个
+    （`kb_service._open_session`，默认是 `session_scope`），而它按 `DATABASE_URL`
+    建引擎 —— 不替换的话，任何一次「上传并解析」都会**真的往业务库写几行**，
+    而接口测试照样通过（它走 `get_db`）。
+    """
+    from contextlib import contextmanager
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.services import kb_service
+
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False, future=True)
+
+    @contextmanager
+    def scope():  # noqa: ANN202
+        session = factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    monkeypatch.setattr(kb_service, "_open_session", scope)
+    return scope
+
+
+@pytest.fixture
+def kb_inline_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """解析在**本线程**执行（确定性；同 `inline_submit` 之于出题链）。"""
+    from app.services import kb_service
+
+    monkeypatch.setattr(kb_service, "_submit", lambda fn, *, settings: (fn(), True)[1])
+
+
+@pytest.fixture
+def kb_harness(kb_env, kb_fake_embeddings, kb_session_scope):  # noqa: ANN001, ANN201, ARG001
+    """一次凑齐知识库用例需要的那套替身与环境，并保证收尾。
+
+    各 KB 测试模块用一条 autouse 夹具请求它：
+
+        @pytest.fixture(autouse=True)
+        def _kb(kb_harness):
+            return kb_harness
+
+    解析池是**进程内全局状态**（`kb_tasks`），所以收尾统一在这里做 ——
+    `test_upload_returns_before_parse` 这类用例会真的留下一个后台线程。
+    """
+    from app.services import kb_service
+
+    yield kb_env()
+    kb_service.shutdown(wait=True)
+

@@ -51,6 +51,10 @@ context: |
   - Taro 页面不能依赖自动修复，必须在真机 / 浏览器实测 DOM 尺寸。
   - 测试里禁用 `get_session_factory()`，一律用 `db_session`；别写死 `user_id=1`。
   - 跑后端测试必须带环境变量 `CODEBUDDY_SAFE_DELETE_ENABLED=0`。
+  - H5 上传必须传 `withCredentials: false`（Taro 默认 true，撞 `allow_origins=["*"]` 的
+    CORS 预检 ⇒ 必失败；报错只有一句 CORS，看着像接口写错）。
+  - 页面必须有一处**挂载即发首帧请求**，否则「靠自身结果才启动的轮询」会死锁：
+    界面一直转圈而**后端请求数为 0**，tsc 与双端构建全绿也发现不了。
 
 rules:
   proposal:

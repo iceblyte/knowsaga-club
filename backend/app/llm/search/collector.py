@@ -30,9 +30,11 @@ from urllib.parse import urlparse
 
 from app.core.logging import get_logger
 from app.llm.search.base import (
+    KB_TOOL_NAME,
     ReferenceCaps,
     SearchRequest,
     SearchResult,
+    is_kb_url,
     truncate,
 )
 
@@ -48,10 +50,13 @@ _CHUNK = re.compile(r"<chunk\s*\d+\s*>", re.IGNORECASE)
 #: 清洗后留下的连续空白（省略符被替换成空格会留下双空格）。
 _SPACES = re.compile(r"[ \t]{2,}")
 
-#: 已知的两个工具名。不认识的名字只警告 —— 上游加了新工具时，猜它的形状更危险。
+#: 已知的三个工具名。`kb_search` 是**我们自己**的工具（`llm/kb/tools.py`），
+#: 名字来自 `base.KB_TOOL_NAME` —— 与其共用同一个常数，避免「新增工具忘登记」
+#: 那类静默失败（详见 `base.KB_TOOL_NAME` 的注释）。
+#: 不认识的名字只警告 —— 上游加了新工具时，猜它的形状更危险。
 _SEARCH_TOOL = "tavily_search"
 _EXTRACT_TOOL = "tavily_extract"
-_KNOWN_TOOLS = frozenset({_SEARCH_TOOL, _EXTRACT_TOOL})
+_KNOWN_TOOLS = frozenset({_SEARCH_TOOL, _EXTRACT_TOOL, KB_TOOL_NAME})
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +122,13 @@ def _source_for(url: str, request: SearchRequest) -> str:
 
     判据是 **URL 在不在用户的输入里**，不是「哪次调用取回来的」——
     用户贴了链接、模型又恰好搜到同一个 URL 时，它仍要能被认出来（design D9）。
+
+    ⚠️ **知识库伪 URL 优先判**（`kb://...`）：它是我们自己造的标识符，
+    语义明确，不该再走「在不在输入里」那条推断。反过来若放在后面判断，
+    用户输入里恰好出现 `kb://...` 这种串时片段会被误判成 `user`。
     """
+    if is_kb_url(url):
+        return "kb"
     return "user" if url in request.urls else "web"
 
 
@@ -170,6 +181,51 @@ def _collect_extract(payload: dict, request: SearchRequest, caps: ReferenceCaps)
                 snippet=truncate(clean_text(raw), caps.page_max_chars),
                 kind="page",
                 source=_source_for(url, request),
+            )
+        )
+    return out
+
+
+def _collect_kb(payload: dict, caps: ReferenceCaps) -> list[SearchResult]:
+    """知识库片段 → `SearchResult`。
+
+    ⚠️ **不调 `clean_text()`**：那是给网页用的，清的是上游的省略符 `[...]`
+    与分段标记 `<chunk 1>`。知识库正文是**用户自己写的文字**，里面出现
+    同样的字符完全是合法内容 —— 对它跑一遍清洗会把用户的原文静默改掉，
+    而用户看到的是「我明明写了这段」。所以只截断，不清洗。
+
+    另外两处与网页不同的取舍：
+
+    - `kind` 恒为 `"snippet"`（design D5）。片段就是片段，它没有「整页」形态。
+    - `title` **不走** `_title_for()` 那条链。那条链在标题缺失时会依次回落到
+      markdown 标题行与 URL 的 host —— 而知识库片段的 URL 是伪 URL，
+      `urlparse("kb://7/12#0").netloc` 是 `7`，印在 Prompt 里就是
+      「你的知识库《7》」。缺标题时宁可留空。
+    """
+    items = _pick_items(payload, KB_TOOL_NAME)
+    if items is None:
+        return []
+    out: list[SearchResult] = []
+    for item in items:
+        url = item.get("url")
+        if not isinstance(url, str) or not url:
+            continue
+        if not is_kb_url(url):
+            # 工具返回了一个不像伪 URL 的地址。**只警告并跳过**，不猜它是什么 ——
+            # 猜错的方向是把它当网页，于是用户的私有资料被当成公开来源。
+            logger.warning("知识库片段携带了非伪 URL，已跳过：url=%r", url)
+            continue
+        title = item.get("title")
+        if not isinstance(title, str) or not title.strip():
+            filename = item.get("filename")
+            title = filename.strip() if isinstance(filename, str) else ""
+        out.append(
+            SearchResult(
+                title=title.strip() if isinstance(title, str) else "",
+                url=url,
+                snippet=truncate(item.get("content") or "", caps.snippet_max_chars),
+                kind="snippet",
+                source="kb",
             )
         )
     return out
@@ -253,8 +309,11 @@ def collect_results(
 
         if output.tool == _SEARCH_TOOL:
             collected.extend(_collect_search(payload, request, caps))
-        else:
+        elif output.tool == _EXTRACT_TOOL:
             collected.extend(_collect_extract(payload, request, caps))
+        else:
+            # 只剩 kb：`_KNOWN_TOOLS` 是它唯一的入口，所以这里不会是别的名字
+            collected.extend(_collect_kb(payload, caps))
 
     return tuple(_dedupe(collected))
 

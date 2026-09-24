@@ -51,6 +51,38 @@ langchain-tavily==0.2.18
 # 联网取材不走它：Tavily 侧由 langchain-tavily 自带的 requests / aiohttp 负责。
 httpx==0.28.1
 
+# --- 私有知识库（RAG）---
+# 2026-09-24 安装并实测。下面 6 个是本功能新增的**直接**依赖；其余
+# （onnxruntime / grpcio / kubernetes / opentelemetry-* / tokenizers / numpy /
+#  huggingface-hub / typer / rich 等）都是 chromadb 带进来的传递依赖，不直接引用。
+#
+# ⚠️ 代价要如实记住：实测新增约 **198 MB**（装后 venv 合计 433 MB），安装耗时数分钟。
+#    它们只在 `import chromadb` 时加载（实测 import chromadb 1.31s / langchain_chroma 1.78s），
+#    所以 KNOWLEDGE_BASE_ENABLED=false 的部署没有运行期成本 —— 这也是开关默认关的理由之一。
+#
+# 版本兼容性核对（按**安装后实测**，不是推测）：
+#   langchain-chroma 1.1.0 要求 langchain-core>=1.1.3,<2 —— 与本文件的 1.6.3 兼容；
+#   装完之后 langchain 1.4.0 / langchain-core 1.6.3 / langchain-openai 1.6.2
+#   三个既有版本**未被改动**（`pip list` 复核过）。升级本段任何一项前请重跑 pytest。
+#
+# 为什么用 langchain-chroma 而不是直接调 chromadb：它提供 LangChain 的
+#   VectorStore / Embeddings 契约，能直接吃我们自写的 embedding 适配器。
+#   直接调 chromadb 要自己拼 id、元数据与查询结果映射 —— 等于把这块重新写一遍，
+#   而「重新写一遍」正是最容易在隔离过滤上出错的地方。
+chromadb==1.5.9
+langchain-chroma==1.1.0
+# 分块用。它不在 langchain 主包里，版本独立演进，所以必须显式声明。
+langchain-text-splitters==1.1.2
+# PDF 解析。选它而不是 PyMuPDF：纯 Python、无需要编译的二进制依赖，跨平台可复现。
+pypdf==6.19.0
+# .docx 解析（Word 2007+）。⚠️ 它**不支持**旧的 .doc —— 那种格式要么拒收、
+# 要么得装 LibreOffice 转换，本期只收 .docx，且准入文案要照实说明。
+docx2txt==0.9
+# 百炼（DashScope）SDK：向量化 text-embedding-v4。
+# ⚠️ 为什么不走 OpenAI 兼容端点：原生接口有 `text_type`（入库传 document、
+#    检索传 query），兼容端点没有这个概念，走它会把这个区分丢掉（design D4）。
+dashscope==1.27.7
+
 # --- 测试 ---
 pytest==9.1.1
 pytest-asyncio==1.4.0
