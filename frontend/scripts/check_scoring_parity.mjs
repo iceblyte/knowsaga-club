@@ -104,8 +104,11 @@ for (const item of cases.coins_cases || []) {
   record('coins_cases', item.name, scoring.coinsOf(item.xp), item.expected)
 }
 
-// 百分位**不在这里比对**：它已经是真实用户池的分位（依赖库里的其他冒险者），
-// 前端算不出来、也不该算。判据与用例都在后端（`pool_percentile`）。
+// 百分位**不在这里比对**，因为 2026-09-24 起它已经被整条删掉了
+// （列 / 计算链 / 接口字段全没了，迁移 `sql/06`）。那一格换成了「与自己的历史比」：
+// 后端 `progress_service.py` 算好六态塞进 `summary.progress` / `report.progress`，
+// 前端只负责把状态翻成文案（`constants/copy.ts :: progressTextOf`）。
+// 前端这一侧没有可算的公式，自然也就没有共享用例。
 
 // -----------------------------------------------------------------------------
 // 输出

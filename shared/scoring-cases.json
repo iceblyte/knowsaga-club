@@ -14,11 +14,12 @@
     "",
     "expected.earned_xp 的单位是 XP；accuracy 是 0-100 的整数。",
     "",
-    "⚠️ 这里**没有** percentile 用例（2026-09-23 移除）。原因：百分位从「正确率 × 0.9」",
-    "的纯函数换成了**真实用户池**分位（其他冒险者最佳正确率的人数占比），",
-    "它依赖库里的数据、前端不再计算 —— 两份实现不再是一回事，",
-    "再放共享用例只会让下一个人以为前端也能算。新口径的判据在",
-    "backend/app/services/scoring.py::pool_percentile，用例在 backend/tests/test_scoring.py。"
+    "⚠️ 这里**没有** percentile 用例，而且将来也不该有：**百分位整条链路已于 2026-09-24 删除**",
+    "（两列 attempts.percentile / percentile_pool 已 drop，迁移 sql/06；计算链与接口字段一并移除）。",
+    "两版口径——「正确率 × 0.9」的纯函数、以及真实用户池分位——都已作废；",
+    "那一格改成了**与自己的历史比**（AttemptProgress 六态），由",
+    "backend/app/services/progress_service.py 计算，用例在 backend/tests/test_progress_service.py。",
+    "所以这里少一块**不是遗漏** —— 是那件事已经不在「前后端各写一遍」的范围内了。"
   ],
 
   "grade_cases": [
