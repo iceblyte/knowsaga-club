@@ -30,10 +30,32 @@
 （`InvalidArgumentError: Expected a name containing 3-512 characters`），
 所以 `user_1` 合法而 `u1` 不行。`collection_name()` 是唯一的名字来源，
 测试里也钉了这条规则。
+
+## ⚠️ 为什么 client 必须进程级共享（2026-09-24 实测，并发解析必然踩到）
+
+`chromadb` 的 system 是**按路径的进程级单例**（`SharedSystemClient._identifier_to_system`），
+而 `Chroma(persist_directory=...)` 每次构造都会新建一个 `PersistentClient`。
+两个线程同时构造时，其中一个的失败清理（`_release_system` → `system.stop()`）
+会把另一个**正在使用**的 system 拆掉，实测两条症状：
+
+* `AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'`
+  （对方把 `bindings` 删了，这边正在读）；
+* `KeyError: '<vectorstore 路径>'`（共享缓存里那条记录已被删）。
+
+后果不是一条报错，而是**两份文档一起落到 `failed`**，而对用户的文案是那句
+通用的「知识库服务暂时不可用」—— 从界面上完全看不出是并发问题。
+
+⚠️ 注意它的影响面**不限于同一用户**：缓存按**路径**索引，而全后端只用一个
+`vectorstore_path`，所以「A 用户解析 + B 用户检索」也会互踩。
+
+所以 client 走 `_shared_client()`：**每个路径只构造一次**，之后所有人共用。
+`langchain_chroma` 支持传入外部 `client`（第 369 行），且它与 `persist_directory`
+互斥（同时给会 `ValueError`）。
 """
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 from langchain_core.embeddings import Embeddings
@@ -47,6 +69,36 @@ logger = get_logger(__name__)
 #: ⚠️ 它只在**建 collection 时**生效：以后改这个值对已存在的 collection 是**静默无效**的
 #: （实测重开时新元数据被忽略、旧的保留），要换度量只能重建 collection。
 _HNSW_SPACE = "cosine"
+
+#: 进程级共享的 chromadb client，按向量库路径索引。
+#:
+#: ⚠️ 必须共享，不能每次 `_open()` 现建 —— chromadb 的 system 是按路径的
+#: 进程级单例，重复构造会在并发时互相拆台（见模块 docstring）。
+_clients: dict[str, object] = {}
+_clients_lock = threading.Lock()
+
+
+def _shared_client(settings: Settings) -> object:
+    """拿到（必要时创建）这个向量库路径上的共享 client。
+
+    按**路径**缓存而不是按用户：chromadb 的 system 按路径索引，按用户缓存
+    仍会让两个用户各自构造一个 —— 踩的正是这个坑。
+
+    双检加锁：并发首次访问时只有一个线程真正构造，其余等它建好直接复用。
+    """
+    key = str(settings.vectorstore_path)
+    cached = _clients.get(key)
+    if cached is not None:
+        return cached
+
+    with _clients_lock:
+        cached = _clients.get(key)  # 等锁期间别人可能已经建好
+        if cached is None:
+            import chromadb  # 惰性导入，理由同 `_open()`
+
+            cached = chromadb.PersistentClient(path=key)
+            _clients[key] = cached
+    return cached
 
 
 def collection_name(user_id: int) -> str:
@@ -96,9 +148,12 @@ def _open(
     from langchain_chroma import Chroma  # 惰性导入
 
     return Chroma(
+        # ⚠️ 传共享 `client` 而不是 `persist_directory`：后者每次都会新建
+        # `PersistentClient`，并发时两个线程会互相拆掉对方的 system
+        # （见模块 docstring）。两者互斥，同时给会 ValueError。
+        client=_shared_client(settings),
         collection_name=collection_name(user_id),
         embedding_function=embeddings,
-        persist_directory=str(settings.vectorstore_path),
         collection_metadata={
             "hnsw:space": _HNSW_SPACE,
             # 记录建库时的维度，供排查用（design D4）。改配置**不会**刷新它 ——

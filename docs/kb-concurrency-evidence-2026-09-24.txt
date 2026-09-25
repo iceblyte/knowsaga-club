@@ -1,0 +1,57 @@
+多份文档并发解析 —— 后端原始日志证据（修复后）
+================================================
+日期：2026-09-24
+进程：backend/.venv uvicorn app.main:app --host 127.0.0.1 --port 8000
+探针：threading.Barrier 让 6 份文档（每份约 16000 字 / 35 片段）同时提交上传接口，
+      登录用**全新的 device_id**（干净账号），不触碰既有数据。
+配置：KB_PARSE_WORKERS=2（池满即拒，不排队）
+
+---------------- 原始日志（节选，逐行照抄） ----------------
+INFO:     127.0.0.1:9480 - "POST /api/v1/auth/dev HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9483 - "POST /api/v1/kb HTTP/1.1" 200 OK
+19:21:06.387 | INFO    | app.services.kb_tasks        | 知识库解析池就绪：workers=2
+INFO:     127.0.0.1:9488 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9492 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+19:21:06.411 | WARNING | app.services.kb_tasks        | 知识库解析池已满（workers=2），拒绝本次提交
+19:21:06.411 | WARNING | app.services.kb_tasks        | 知识库解析池已满（workers=2），拒绝本次提交
+19:21:06.411 | WARNING | app.services.kb_tasks        | 知识库解析池已满（workers=2），拒绝本次提交
+INFO:     127.0.0.1:9495 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9490 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9493 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+19:21:06.432 | WARNING | app.services.kb_tasks        | 知识库解析池已满（workers=2），拒绝本次提交
+INFO:     127.0.0.1:9494 - "POST /api/v1/kb/documents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9516 - "GET /api/v1/kb/4 HTTP/1.1" 200 OK
+19:21:10.291 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=10 chunks=35
+19:21:10.302 | INFO    | app.services.kb_service      | 知识库解析完成：doc=10 chunks=35
+19:21:10.716 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=11 chunks=35
+19:21:10.725 | INFO    | app.services.kb_service      | 知识库解析完成：doc=11 chunks=35
+INFO:     127.0.0.1:9526 - "POST /api/v1/kb/documents/14/reparse HTTP/1.1" 200 OK
+19:21:14.305 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=14 chunks=35
+19:21:14.312 | INFO    | app.services.kb_service      | 知识库解析完成：doc=14 chunks=35
+INFO:     127.0.0.1:10704 - "POST /api/v1/kb/documents/15/reparse HTTP/1.1" 200 OK
+19:21:16.100 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=15 chunks=35
+19:21:16.110 | INFO    | app.services.kb_service      | 知识库解析完成：doc=15 chunks=35
+INFO:     127.0.0.1:10715 - "POST /api/v1/kb/documents/12/reparse HTTP/1.1" 200 OK
+19:21:19.020 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=12 chunks=35
+19:21:19.029 | INFO    | app.services.kb_service      | 知识库解析完成：doc=12 chunks=35
+INFO:     127.0.0.1:10725 - "POST /api/v1/kb/documents/13/reparse HTTP/1.1" 200 OK
+19:21:22.159 | INFO    | app.llm.kb.store             | 知识库写入：user=23 kb=4 doc=13 chunks=35
+19:21:22.167 | INFO    | app.services.kb_service      | 知识库解析完成：doc=13 chunks=35
+INFO:     127.0.0.1:4918 - "GET /api/v1/health HTTP/1.1" 200 OK
+
+---------------- 读数 --------------------------------
+· 6 份同时提交 → 2 份进解析（恰好等于 KB_PARSE_WORKERS=2），4 份被判 pool_busy
+· 2 份并发解析**全部成功**：doc=10 / doc=11，各 35 片段（修复前这两份双双 store_failed）
+· 4 份 pool_busy 的串行 reparse → 4/4 恢复，各 35 片段
+· **全程零 ERROR**；`GET /api/v1/health` 200（进程未被打挂）
+
+---------------- 修复前的失败形态（对照） -----------------
+那 2 份进了解析的文档双双失败（store_failed），异常分别是：
+  AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'
+  KeyError: '<vectorstore 路径>'
+根因：app/llm/kb/store.py 的 _open() 每次调用都新建 Chroma(persist_directory=...)，
+而 chromadb 的 system 是按路径缓存的进程级单例 —— 两条线程同时构造会各自重建、
+把对方的 system 释放掉。
+修法：进程级共享客户端 _shared_client(settings)（按路径做键 + 双检锁，
+chromadb.PersistentClient(path=...)），_open() 改传 client= 而不是 persist_directory=
+（两者在 langchain_chroma 里互斥）。
