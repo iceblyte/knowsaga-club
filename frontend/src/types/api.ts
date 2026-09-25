@@ -156,6 +156,14 @@ export interface HealthInfo {
   env: string
   model: string
   search_enabled: boolean
+  /**
+   * 私有知识库的总开关（由 `GET /health` 下发）。
+   *
+   * ⚠️ 它**不是**权限：`/kb/*` 路由无条件注册，关掉时接口照样能调。
+   * 它管的是「要不要让用户看见这个功能」—— 工坊的两行入口、我的页那一行、
+   * 大厅的「上传文档 / 粘贴网址」chip 都按它显隐（design D18）。
+   */
+  knowledge_base_enabled: boolean
   key_configured: boolean
 }
 

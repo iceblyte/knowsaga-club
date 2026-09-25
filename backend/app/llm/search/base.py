@@ -244,6 +244,11 @@ def build_initial_step(
             所以由调用方按请求算好传进来，本函数保持纯函数
             （`base.py` 是叶子模块，不 import 配置）。
             默认 `False` 让既有的调用点行为逐位不变。
+
+            ⚠️ 它还跟着**功能开关**走：`KNOWLEDGE_BASE_ENABLED=false` 时
+            `build_kb_tool()` 返回 `None`，实际一个 kb 工具都不会绑，
+            于是调用方算出来的也是 `False` —— 进度卡因此不会预告
+            「检索你的知识库」这件不会发生的事。
     """
     if request.has_urls and can_read_pages:
         count = len(request.urls)

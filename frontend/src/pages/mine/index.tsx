@@ -91,6 +91,7 @@ import { ARCHIVE_COMMON, PROFILE_COPY } from '../../constants/copy'
 import { useAsyncData } from '../../hooks/useAsyncData'
 import { useTabPage } from '../../hooks/useTabPage'
 import { fetchProfile } from '../../services/archive'
+import { useAppStore } from '../../store/useAppStore'
 import { goPage } from '../../utils/navigation'
 import { squareStyle, styleOf } from '../../utils/style'
 
@@ -122,6 +123,11 @@ export default function MinePage() {
   useTabPage('mine')
 
   const { status, data, reload } = useAsyncData(() => fetchProfile())
+
+  // 私有知识库的总开关（后端经 `GET /health` 下发）。关掉时下面那一行不渲染
+  // —— 它是知识库的入口，留着就是给用户指一条走不通的路（design D18）。
+  // ⚠️ 必须在下面那个 `if (!data)` 早退**之前**读：Hooks 不能在条件返回之后调用。
+  const knowledgeBaseEnabled = useAppStore((s) => s.knowledgeBaseEnabled)
 
   /** 每次「重新显示」递增，透给页内提醒让它也重新判断该不该出现 */
   const [showSeq, setShowSeq] = useState(0)
@@ -262,15 +268,18 @@ export default function MinePage() {
 
         {/* 知识库（2026-09-24）。插在「错题本」之后、「勋章墙」之前 ——
             它与上面两行都是「我的学习资产」，与下面三行（勋章 / 公会卡 / 设置）
-            那种「功能入口」在语义上不同。理由见 `PROFILE_COPY.rowKnowledgeBase`。 */}
-        <View className='li' onClick={() => goPage('/pages/workshop/kb-list/index', 'navigate')}>
-          <RowIcon name='scrolls' />
-          <View className='tx'>
-            <View className='n'>{PROFILE_COPY.rowKnowledgeBase}</View>
-            <View className='d'>{PROFILE_COPY.rowKnowledgeBaseDesc}</View>
+            那种「功能入口」在语义上不同。理由见 `PROFILE_COPY.rowKnowledgeBase`。
+            ⚠️ 功能开关关掉时整行不渲染（design D18）。 */}
+        {knowledgeBaseEnabled && (
+          <View className='li' onClick={() => goPage('/pages/workshop/kb-list/index', 'navigate')}>
+            <RowIcon name='scrolls' />
+            <View className='tx'>
+              <View className='n'>{PROFILE_COPY.rowKnowledgeBase}</View>
+              <View className='d'>{PROFILE_COPY.rowKnowledgeBaseDesc}</View>
+            </View>
+            <Text className='pill'>{PROFILE_COPY.rowView}</Text>
           </View>
-          <Text className='pill'>{PROFILE_COPY.rowView}</Text>
-        </View>
+        )}
 
         <View className='li' onClick={() => goPage('/pages/profile/badges/index', 'navigate')}>
           <RowIcon name='badges' />

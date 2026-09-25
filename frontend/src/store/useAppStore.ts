@@ -53,6 +53,19 @@ interface AppState {
   setSearchEnabled: (enabled: boolean) => void
 
   /**
+   * 后端是否开启了私有知识库。
+   * 来自 `GET /api/v1/health` 的 `knowledge_base_enabled`；启动时探测一次。
+   *
+   * ⚠️ 与 `searchEnabled` 同一层：都是**后端能力**，不是用户意愿
+   * （对比下面的 `useSearch`）。知识库那几处入口都按它显隐。
+   *
+   * 默认 `false`（与 `searchEnabled` 一致）：探测失败就当「没开」，
+   * 于是不显示入口 —— 后端都没探通，点进去也只会拿到网络错误。
+   */
+  knowledgeBaseEnabled: boolean
+  setKnowledgeBaseEnabled: (enabled: boolean) => void
+
+  /**
    * 本次召唤的**意愿**：要不要让 AI 主动联网补充。
    *
    * ⚠️ 与 `searchEnabled` 是两件事，别合并：
@@ -81,6 +94,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   searchEnabled: false,
   setSearchEnabled: (enabled) => set({ searchEnabled: enabled }),
+
+  knowledgeBaseEnabled: false,
+  setKnowledgeBaseEnabled: (enabled) => set({ knowledgeBaseEnabled: enabled }),
 
   useSearch: true,
   setUseSearch: (enabled) => set({ useSearch: enabled }),

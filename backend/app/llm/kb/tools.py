@@ -59,11 +59,25 @@ def build_kb_tool(request: SearchRequest, settings: Settings) -> Any | None:
         request: 取材请求。`request.kb` 为 `None` 时**不建工具** ——
             工具一旦绑给模型它就会去调，而这时库里没有本次要用的资料，
             用户会拿到一份莫名其妙的题。
-        settings: 配置（条数上限、向量库目录、向量化凭据）。
+        settings: 配置（条数上限、向量库目录、向量化凭据、**功能开关**）。
 
     Returns:
         `StructuredTool`，或 `None`。
+
+    ## 功能开关在这里落地（design D7 的实现点）
+
+    `KNOWLEDGE_BASE_ENABLED=false` 时**返回 `None`**，与「这次没带库」走同一条路径。
+    选在这里是因为它是**唯一的工具构造入口**（两个 Provider 都调它）：改这一处，
+    `run_search_agent` 里 `kb_tool is not None` 的判定、以及 `initial_step`
+    给出的进度名就自动一致了 —— 不必在取材链上再判一遍开关
+    （两处各判一次迟早会漂移，那正是「进度卡说检索知识库、实际一次没查」的成因）。
+
+    ⚠️ 它**不是**权限检查：`/kb/*` 路由仍无条件注册（design D18）。
+    开关关掉时上传接口照样能调，只是不再有任何入口把用户引过去。
     """
+    if not settings.knowledge_base_enabled:
+        return None
+
     scope = request.kb
     if scope is None:
         return None

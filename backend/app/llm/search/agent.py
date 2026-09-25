@@ -437,7 +437,7 @@ def run_search_agent(
     return outcome
 
 
-def describe_step(request: SearchRequest) -> StepDescriptor:
+def describe_step(request: SearchRequest, settings: Settings) -> StepDescriptor:
     """给外部（Provider）复用的第一步文案，避免两处各推一遍 `can_*`。
 
     ⚠️ 这里假定调用方**有联网能力**（它是给 `TavilySearchProvider` 用的）。
@@ -445,12 +445,16 @@ def describe_step(request: SearchRequest) -> StepDescriptor:
     Provider，带库的请求该能检索知识库、不带库的不该，所以按请求算（design D7）。
     这与 `run_search_agent` 里那份判定必须给出同一个名字，否则
     「进度卡上的名字」与「几秒后回来的 `step_name`」会对不上。
+
+    ⚠️ 知识库那一支还看**功能开关**：`build_kb_tool()` 在开关关掉时返回 `None`，
+    实际不会绑工具。这里必须跟着一起为假 —— 否则进度卡会预告
+    「检索你的知识库」而全程一次都不查（红线：文案不许说没有的能力）。
     """
     return build_initial_step(
         request,
         can_search_web=True,
         can_read_pages=True,
-        can_search_kb=request.has_kb,
+        can_search_kb=request.has_kb and settings.knowledge_base_enabled,
     )
 
 

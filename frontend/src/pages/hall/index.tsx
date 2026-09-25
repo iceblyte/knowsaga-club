@@ -123,6 +123,13 @@ function pillIsActive(mode: RetrievalMode): boolean {
   return mode === 'online' || mode === 'online-with-link'
 }
 
+/**
+ * 通向知识库的两个 chip。功能开关关掉时一并隐藏（design D18）：
+ * 它们分别去 `kb-upload` 与 `kb-source`，留着就是给用户指一条走不通的路。
+ * 「追加背景资料」不在其中 —— 它本来只是个占位 toast，与知识库无关。
+ */
+const KB_ATTACH_CHIPS: readonly string[] = ['上传文档', '粘贴网址']
+
 export default function HallPage() {
   useTabPage('hall')
 
@@ -132,6 +139,23 @@ export default function HallPage() {
   const useSearch = useAppStore((s) => s.useSearch)
   const setUseSearch = useAppStore((s) => s.setUseSearch)
   const setQuizOptions = useAppStore((s) => s.setQuizOptions)
+  // 私有知识库的总开关（后端经 `GET /health` 下发）。
+  const knowledgeBaseEnabled = useAppStore((s) => s.knowledgeBaseEnabled)
+
+  /**
+   * 该显示哪几个「追加资料」chip。
+   *
+   * ⚠️ 这是 `KNOWLEDGE_BASE_ENABLED` 前端落点之一（design D18）：关掉时滤掉
+   * 「上传文档 / 粘贴网址」，因为那两个目的地都是知识库的页面。
+   * 保留「追加背景资料」—— 它与知识库无关，本来就是占位 toast。
+   */
+  const visibleAttachChips = useMemo(
+    () =>
+      knowledgeBaseEnabled
+        ? MOCK_ATTACH_CHIPS
+        : MOCK_ATTACH_CHIPS.filter((chip) => !KB_ATTACH_CHIPS.includes(chip)),
+    [knowledgeBaseEnabled]
+  )
 
   /** 冒险者档案（原型 01 底部那张卡）。`me` 为 `null` 时卡片只出占位符 */
   const { status, data, reload } = useAsyncData(() => fetchProfile())
@@ -336,7 +360,7 @@ export default function HallPage() {
           一个是「本期还没做的多源输入」），所以不共用一个 handler。 */}
       {hasInput ? (
         <View className='row hall__chips'>
-          {MOCK_ATTACH_CHIPS.map((chip) => (
+          {visibleAttachChips.map((chip) => (
             <Text key={chip} className='chip' onClick={() => handleAttachTap(chip)}>
               {chip}
             </Text>

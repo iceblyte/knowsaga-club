@@ -16,8 +16,11 @@ function App({ children }: PropsWithChildren<any>) {
     // 失败时的提示交给那些真正需要登录态的页面 —— 它们能给出「该做什么」。
     ensureSession().catch(() => undefined)
 
-    // 启动时探测一次后端能力。目的只有一个：大厅页那个「AI 将联网补充 /
-    // 基于已有知识出题」的小胶囊要按真实配置说真话，而不是照抄原型写死联网。
+    // 启动时探测一次后端能力。目的有两个：
+    //   1. 大厅页那个「AI 将联网补充 / 基于已有知识出题」的小胶囊要按真实配置
+    //      说真话，而不是照抄原型写死联网；
+    //   2. 私有知识库那几处入口（工坊两行 / 我的 / 大厅 chip）按
+    //      `knowledge_base_enabled` 显隐 —— 值由后端给，前端不另配一份。
     //
     // 失败时**不弹提示、不阻塞启动** —— 后端没起来是开发期的常态，
     // 让启动页因为一个探测请求而报错反而更糟。真正发起请求的页面
@@ -27,6 +30,7 @@ function App({ children }: PropsWithChildren<any>) {
         const store = useAppStore.getState()
         store.setBackendReachable(true)
         store.setSearchEnabled(info.search_enabled)
+        store.setKnowledgeBaseEnabled(info.knowledge_base_enabled)
       })
       .catch(() => {
         useAppStore.getState().setBackendReachable(false)

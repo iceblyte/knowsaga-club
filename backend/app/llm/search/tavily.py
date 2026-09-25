@@ -56,7 +56,8 @@ class TavilySearchProvider:
 
     def initial_step(self, request: SearchRequest) -> StepDescriptor:
         """三态：有链接 → 「读取你给的网页」；想搜 → 「联网检索知识」；都不是 → 「理解你的输入」。"""
-        return describe_step(request)
+        # 传 settings 是因为「有没有知识库那一支」还取决于功能开关（design D7）。
+        return describe_step(request, self._settings)
 
     def gather(self, request: SearchRequest, *, on_progress: ProgressCallback | None = None) -> SearchOutcome:
         """跑一轮有界取材。

@@ -144,6 +144,25 @@ def test_tool_is_not_built_without_a_scope(settings: Settings) -> None:
     assert build_kb_tool(request, settings) is None
 
 
+def test_tool_is_not_built_when_the_feature_is_disabled(settings: Settings) -> None:
+    """**功能开关关掉 → 不建工具**（design D7 的实现点）。
+
+    这里刻意用「带了库」的请求去试：开关必须压过请求 ——
+    否则关掉开关的部署，只要请求里带了库，取材链照样会去查向量库，
+    而 `llm/kb/` 在那种部署下根本不该被加载。
+
+    为什么选在 `build_kb_tool` 这一处落地：它是**唯一的工具构造入口**
+    （Tavily 与 Noop 都调它）。改这一处就自动统一了
+    `run_search_agent` 里 `kb_tool is not None` 的判定与 `initial_step` 的进度名 ——
+    两处各判一次迟早会漂移，那正是「进度卡说检索知识库、实际一次没查」的成因。
+    """
+    off = settings.model_copy(update={"knowledge_base_enabled": False})
+    request = SearchRequest(query="监督学习", kb=KbScope(user_id=1, kb_id=1))
+
+    assert request.has_kb is True, "前提：请求确实带了库，否则这条测试就没意义了"
+    assert build_kb_tool(request, off) is None
+
+
 # -----------------------------------------------------------------------------
 # 命中
 # -----------------------------------------------------------------------------

@@ -68,12 +68,19 @@ class NoopSearchProvider:
 
         后者不算「显示没有的能力」：知识库检索依赖我们自己的向量库，
         与「配了哪个检索服务」无关，所以它是请求级的事实而不是 Provider 的能力位。
+
+        ⚠️ 但**功能开关关掉时它必须退成「理解你的输入」**：那时
+        `build_kb_tool()` 返回 `None`，一次检索都不会发生，
+        预告「检索你的知识库」等于说一件不会发生的事。
         """
+        from app.core.config import get_settings
+
+        settings = self._settings or get_settings()
         return build_initial_step(
             request,
             can_search_web=self.can_search_web,
             can_read_pages=self.can_read_pages,
-            can_search_kb=request.has_kb,
+            can_search_kb=request.has_kb and settings.knowledge_base_enabled,
         )
 
     def gather(self, request: SearchRequest, *, on_progress: object = None) -> SearchOutcome:

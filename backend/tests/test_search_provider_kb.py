@@ -41,7 +41,11 @@ PLAIN = SearchRequest(query="监督学习", use_search=False)
 
 
 def _settings(**overrides: object) -> Settings:
-    base: dict[str, object] = {"knowledge_search_enabled": False}
+    # `knowledge_base_enabled` 默认是 `False`（config 里的部署默认值）。
+    # 但**本文件整份都在「知识库已开启」的前提下**：`initial_step` 现在会读这个开关
+    # 决定说不说「检索你的知识库」（design D7），所以这里必须显式打开 ——
+    # 忘了它会让下面那两条 initial_step 断言静默地退化成「理解你的输入」。
+    base: dict[str, object] = {"knowledge_search_enabled": False, "knowledge_base_enabled": True}
     base.update(overrides)
     return Settings(_env_file=None, **base)  # type: ignore[arg-type]
 
@@ -217,6 +221,38 @@ def test_initial_step_name_matches_the_gather_outcome(fake_kb_tool: FakeTool) ->
     outcome = provider.gather(WITH_KB)
 
     assert outcome.step_name == provider.initial_step(WITH_KB).name
+
+
+def test_feature_switch_off_hides_the_kb_step_even_with_a_base() -> None:
+    """**开关关掉时，带了库也不许预告「检索你的知识库」**（design D7）。
+
+    此时 `build_kb_tool()` 返回 `None`，一次检索都不会发生。
+    还说「检索你的知识库」就是在讲一件不会发生的事 ——
+    正是红线「文案与实现冲突时改文案」要挡的那种。
+    """
+    off = _settings(knowledge_base_enabled=False)
+    provider = NoopSearchProvider(off)
+
+    assert provider.initial_step(WITH_KB).name == "理解你的输入"
+
+
+def test_feature_switch_off_does_not_search_the_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    """开关关掉时，**真的**一次 kb 工具都不绑（不只是文案变了）。
+
+    这条与上一条合起来才完整：只改文案而工具照建，用户会看到
+    「理解你的输入」的进度卡，但后台其实查了向量库 —— 更隐蔽的错。
+
+    这里**不**用 `fake_kb_tool` 替身：要验的正好是真的 `build_kb_tool` 在开关
+    关掉时返回 `None` 这条行为，替换掉它就把要验的东西替没了。
+    """
+    off = _settings(knowledge_base_enabled=False)
+    llm = FakeLLM([None])
+
+    outcome = NoopSearchProvider(off, llm=llm).gather(WITH_KB)
+
+    assert llm.bound == [], "没有任何工具可绑（kb 关掉、联网也没开）"
+    assert outcome.step_name == "理解你的输入"
+    assert outcome.degraded is True
 
 
 # ---------------------------------------------------------------- provider 工厂

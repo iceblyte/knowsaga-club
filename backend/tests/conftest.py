@@ -23,6 +23,12 @@ TEST_ENV = {
     "DEEPSEEK_MODEL": "deepseek-flash",
     "DEEPSEEK_THINKING": "false",
     "KNOWLEDGE_SEARCH_ENABLED": "false",
+    # 私有知识库同样钉死为**关**。不钉的话，本机 `.env` 里那句
+    # `KNOWLEDGE_BASE_ENABLED=true`（做端到端验收时加的）会漏进测试，
+    # 于是「默认关 ⇒ 前端看不见入口」「开关关 ⇒ 不绑工具」这些用例
+    # 在开发者机器上全都不成立 —— 这是典型的「只在本机红/绿」。
+    # 需要打开的模块用 `kb_env` 夹具显式打开（见本文件末的 KB 夹具组）。
+    "KNOWLEDGE_BASE_ENABLED": "false",
     "LOG_LEVEL": "WARNING",
     "QUIZ_TASK_TTL_SECONDS": "600",
     # ---------- 用户系统 ----------

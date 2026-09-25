@@ -1671,3 +1671,16 @@ export const KB_COMMON = {
   nameMax: 40
 } as const
 
+/**
+ * 卷轴工坊首页那张卡（原型 05）。
+ *
+ * 两种描述按 `KNOWLEDGE_BASE_ENABLED` 切换：功能关掉的部署里说
+ * 「可以把文档收进知识库」是**假话**（红线：文案与实现冲突时改文案）。
+ */
+export const WORKSHOP_COPY = {
+  title: '这一卷还在撰写中',
+  descWithKb: '现在可以把文档收进知识库、拿它出题。网页与视频的解析还在路上。',
+  /** 知识库关掉时只能说「什么都还没做」—— 那句「可以收文档」会变成空头承诺 */
+  descWithoutKb: '多源输入还在路上 —— 网页链接与视频的解析都还没做。'
+} as const
+

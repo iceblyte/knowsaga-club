@@ -28,7 +28,7 @@ from langchain_core.messages import AIMessage
 
 from app.core.config import Settings
 from app.llm.search import agent as agent_module
-from app.llm.search.agent import ToolProgress, run_search_agent
+from app.llm.search.agent import ToolProgress, describe_step, run_search_agent
 from app.llm.search.base import (
     KB_TOOL_NAME,
     KbScope,
@@ -53,6 +53,9 @@ def _settings(**overrides: object) -> Settings:
         "knowledge_search_enabled": True,
         "knowledge_search_provider": "tavily",
         "tavily_api_key": "test-key",
+        # 本文件整份都在「知识库已开启」的前提下（config 里的部署默认是关）。
+        # `describe_step` 会读它，忘掉它会让第 ⑦ 组的断言静默失去意义。
+        "knowledge_base_enabled": True,
         "search_agent_max_rounds": 3,
         "search_agent_max_tool_calls": 4,
         "search_agent_budget_seconds": 20,
@@ -382,3 +385,47 @@ def test_human_message_explains_the_kb_scope_and_priority() -> None:
     assert "自己" in human or "上传" in human, human
     assert "库" in human, human
     assert "为准" in human or "优先" in human, "要给出冲突时的取向，否则模型自己权衡"
+
+
+# ------------------------------------------- ⑦ 给 Provider 复用的第一步文案 + 开关
+def test_describe_step_names_the_base_and_honours_the_switch() -> None:
+    """`describe_step` 是 Tavily 的 `initial_step()` 唯一实现点，必须看**请求与开关**。
+
+    优先级是「链接 > 联网 > 知识库 > 理解输入」（`build_initial_step`）。
+    它硬编码了「这个 Provider 有联网能力」，所以带库的那一支只有在
+    **用户没要联网**（`use_search=False`）时才轮得到 —— 那时该说
+    「检索你的知识库」。开关关掉时必须退成「理解你的输入」：
+    那时 `build_kb_tool()` 返回 `None`，一次检索都不会发生。
+    """
+    on = _settings()
+    off = _settings(knowledge_base_enabled=False)
+
+    assert describe_step(WITH_KB_NO_WEB, on).name == "检索你的知识库"
+    assert describe_step(WITH_KB_NO_WEB, on).detail, "每一步都要有给用户看的过程说明"
+    assert describe_step(WITH_KB_NO_WEB, off).name == "理解你的输入"
+
+
+def test_describe_step_keeps_web_first_when_the_user_wants_search() -> None:
+    """用户要联网时有网可联 ⇒ 说「联网检索知识」，而不是被知识库抢了先。
+
+    这条挡的是「把知识库那一支提到最前面」这种改法 —— 那会让
+    `KNOWLEDGE_SEARCH_ENABLED=true` 的部署再也不说自己在联网。
+    """
+    assert describe_step(WITH_KB, _settings()).name == "联网检索知识"
+
+
+def test_describe_step_name_equals_the_gather_outcome_name() -> None:
+    """`initial_step()` 给的名字必须与 `gather()` 回来时盖的名字**逐字相同**。
+
+    不同名的表现是：进度卡上写着 A，几秒后结果里那一步忽然变成 B ——
+    用户会以为我们偷偷跳过了他的资料。这里用「只带库、不联网」的形状
+    （`tools=(None, None)`），因为那正是这条判定的边界所在。
+    """
+    settings = _settings()
+    llm = FakeLLM([None])
+
+    outcome = _run(
+        WITH_KB_NO_WEB, llm, kb_tool=FakeTool(KB_TOOL_NAME, _kb_hit()), settings=settings
+    )
+
+    assert outcome.step_name == describe_step(WITH_KB_NO_WEB, settings).name == "检索你的知识库"

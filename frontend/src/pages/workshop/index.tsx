@@ -21,7 +21,9 @@
 import { Text, View } from '@tarojs/components'
 
 import PhoneShell from '../../components/PhoneShell'
+import { WORKSHOP_COPY } from '../../constants/copy'
 import { useTabPage } from '../../hooks/useTabPage'
+import { useAppStore } from '../../store/useAppStore'
 import { goPage } from '../../utils/navigation'
 
 import './index.scss'
@@ -29,36 +31,45 @@ import './index.scss'
 export default function WorkshopPage() {
   useTabPage('workshop')
 
+  // 私有知识库的总开关（后端经 `GET /health` 下发）。
+  // ⚠️ 关掉时**入口与卡片文案一起变**：入口留着就是给用户指一条走不通的路，
+  // 而卡片那句「可以把文档收进知识库」在功能关掉的部署里是假话（design D18）。
+  const knowledgeBaseEnabled = useAppStore((s) => s.knowledgeBaseEnabled)
+
   return (
     <PhoneShell navTitle='卷轴工坊' showBack={false} reserveTabBar>
       <View className='card'>
-        <View className='h sm'>这一卷还在撰写中</View>
+        <View className='h sm'>{WORKSHOP_COPY.title}</View>
         <View className='sub workshop__desc'>
-          现在可以把文档收进知识库、拿它出题。网页与视频的解析还在路上。
+          {knowledgeBaseEnabled ? WORKSHOP_COPY.descWithKb : WORKSHOP_COPY.descWithoutKb}
         </View>
       </View>
 
-      <View className='li' onClick={() => goPage('/pages/workshop/kb-list/index', 'navigate')}>
-        <View className='ico'>
-          <Text className='workshop__mark'>库</Text>
-        </View>
-        <View className='tx'>
-          <View className='n'>我的知识库</View>
-          <View className='d'>上传过的文档都在这里，可以拿它们出题</View>
-        </View>
-        <Text className='tiny'>›</Text>
-      </View>
+      {knowledgeBaseEnabled && (
+        <>
+          <View className='li' onClick={() => goPage('/pages/workshop/kb-list/index', 'navigate')}>
+            <View className='ico'>
+              <Text className='workshop__mark'>库</Text>
+            </View>
+            <View className='tx'>
+              <View className='n'>我的知识库</View>
+              <View className='d'>上传过的文档都在这里，可以拿它们出题</View>
+            </View>
+            <Text className='tiny'>›</Text>
+          </View>
 
-      <View className='li' onClick={() => goPage('/pages/workshop/kb-source/index', 'navigate')}>
-        <View className='ico'>
-          <Text className='workshop__mark'>文</Text>
-        </View>
-        <View className='tx'>
-          <View className='n'>选择输入方式</View>
-          <View className='d'>一句话 / 文档 / 网页 / 视频，四种来源各是什么现状</View>
-        </View>
-        <Text className='tiny'>›</Text>
-      </View>
+          <View className='li' onClick={() => goPage('/pages/workshop/kb-source/index', 'navigate')}>
+            <View className='ico'>
+              <Text className='workshop__mark'>文</Text>
+            </View>
+            <View className='tx'>
+              <View className='n'>选择输入方式</View>
+              <View className='d'>一句话 / 文档 / 网页 / 视频，四种来源各是什么现状</View>
+            </View>
+            <Text className='tiny'>›</Text>
+          </View>
+        </>
+      )}
 
       <View className='spacer' />
     </PhoneShell>
