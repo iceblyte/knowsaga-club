@@ -216,3 +216,39 @@
         没有在真环境同时上传多份大文档压过；
       · **`.pdf` / `.docx` / `.txt` 三种真实文件**：本轮只跑了 `.md`，
         另外三种格式的真实文件解析（`pypdf` / `docx2txt` 的实际行为）未亲测。
+
+## 15. 提交后补验：多份文档并发解析
+
+- [x] 15.1 写探针脚本，用**真后端 + 真 embedding + 真 Chroma** 补掉 14.6 列的第一项缺口
+      **实测（`threading.Barrier` 让 6 份文档同时进上传接口，每份约 16000 字 / 35 片段）**：
+      2 份进了解析（刚好等于 `KB_PARSE_WORKERS=2`）、4 份**即时**被判 `pool_busy` 失败
+      —— 池满即拒、不排队，与 spec 一致；随后对那 4 份串行 `reparse`，**4/4 全部恢复成 `ready`**。
+      另证：`KB_PARSE_WORKERS=2` 的语义是「同时最多 2 份在解析」，不是「最多排 2 个」。
+      ⚠️ 探针用**新的 `device_id`** 起一个干净账号，不碰既有数据。
+- [x] 15.2 修掉并发暴露出的真 bug：chromadb 客户端在并发构造下互相拆台
+      **症状**：那 2 份**进了解析**的文档双双失败，`store_failed`，异常分别是
+      `AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'` 与
+      `KeyError: '<vectorstore 路径>'` —— 单份串行上传时从不出现，所以单测与 14.4 的第二轮
+      （只有 1 份文档）都发现不了。
+      **根因**：`app/llm/kb/store.py` 的 `_open()` 每次调用都新建
+      `Chroma(persist_directory=...)`；而 chromadb 的 system 是**按路径缓存的进程级单例**，
+      两条线程同时构造时会各自重建、把对方的 system 释放掉。**这是 chromadb 的已知语义，
+      不是我们传错参**。
+      **修法**：进程级共享客户端 `_shared_client(settings)`（按路径做键 + 双检锁，
+      `chromadb.PersistentClient(path=...)`），`_open()` 改为传 `client=` 而不是
+      `persist_directory=`（两者在 `langchain_chroma` 里互斥）。
+      **验证**：用同一个并发探针重跑 —— 2 份 `ready` / 各 35 片段、0 条 ERROR 日志；
+      `tests/test_kb_store.py` + `tests/test_kb_service.py` 全绿。
+      ⚠️ 教训（已进 `store.py` 模块头）：**涉及进程级单例的取值组合约束，只有真并发才验得出来** ——
+      与「`country` × `search_depth` 互斥」那条是同一类：单测各自都绿，端到端才暴露。
+- [x] 15.3 ⚠️ **本变更未落地的一处 design 承诺**（如实登记，已由后继变更兑现）：
+      design **D7** 写着「`can_search_kb` 取决于配置里 `KNOWLEDGE_BASE_ENABLED` 是否为真」，
+      而本变更交付时 `build_kb_tool()` **不读这个开关** —— 开关只在 `config.py` 里声明、
+      由 `kb/__init__.py` 的惰性导入「顺带」管住了 chromadb 的加载代价，
+      **取材链与前端入口两侧都没有读它**。
+      D18 说「开关的真实作用面是『要不要让用户看见这个功能』，那一层由此前端的入口与
+      `copy.ts` 承担」—— 而四个入口当时是**无条件显示**的。
+      ⇒ 这两处由后继变更补齐，不在本变更内顺手改（避免让已通过的闸门失效）。
+      ✅ **已于 2026-09-25 由 `openspec/changes/wire-knowledge-base-flag/` 兑现**：
+      `build_kb_tool()` 开关关掉时返回 `None`、`GET /health` 下发该开关、
+      前端四处入口与工坊卡片文案按它切换；并已用浏览器实测两条态（见该变更 `tasks.md`）。
