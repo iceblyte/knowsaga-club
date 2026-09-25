@@ -1,0 +1,128 @@
+私有知识库 · 真实文件格式解析验证证据
+========================================
+日期：2026-09-25
+范围：补掉「仍未验证」清单里的最后一项 —— .pdf / .docx / .txt 三种真实文件的解析
+
+背景
+----
+`add-private-knowledge-base` 交付时只实跑过 `.md`，三种真实文件格式一直挂在
+「仍未验证」里（见 .workbuddy/memory/MEMORY.md）。本次实测把它补上。
+
+本机没有 reportlab / python-docx，所以三种文件都是**现场手写**生成的合法文件：
+  · .txt  —— 直接按指定编码写字节
+  · .docx —— 手写最小 OOXML 包（docx 本质是 zip：Content_Types + rels + document.xml）
+  · .pdf  —— 手写最小合法 PDF（5 个对象 + 实时记录偏移量的 xref 表）
+
+测试对象（.workbuddy/kb-probe-files/，探针脚本 .workbuddy/kb_probe_formats.py）
+------------------------------------------------------------------------------
+| 文件              | 构造                                | 大小    |
+|-------------------|-------------------------------------|---------|
+| coffee-utf8.txt   | 中文语料，UTF-8 **带 BOM**          | 2737 B  |
+| coffee-gbk.txt    | 同一份语料，GB18030 编码            | 1845 B  |
+| coffee-book.docx  | 中文语料，手写 OOXML                | 2518 B  |
+| coffee-guide.pdf  | 英文语料，**2 页**                  | 3471 B  |
+| impostor.docx     | 纯文本冒充 .docx（反例）            | 2734 B  |
+| vector-only.pdf   | 合法 PDF，页内只有一条线段（反例）  |  603 B  |
+
+第一段：本地自检（直接调 app.llm.kb.loaders，不起服务）
+-------------------------------------------------------
+6/6 符合预期：
+
+| 文件              | 期望 | 实际 | 读数                                  |
+|-------------------|------|------|---------------------------------------|
+| coffee-utf8.txt   | ok   | ok   | chars=955, page_count=None            |
+| coffee-gbk.txt    | ok   | ok   | chars=955（与 UTF-8 那份逐字一致）    |
+| coffee-book.docx  | ok   | ok   | chars=886                             |
+| coffee-guide.pdf  | ok   | ok   | chars=2272, page_count=**2**          |
+| impostor.docx     | fail | fail | 「这份文件没能解析成功，它可能已损坏或加密」 |
+| vector-only.pdf   | fail | fail | 「未能从文件中提取到任何文字（扫描件或图片型内容无法解析）」 |
+
+**GB18030 兜底分支的证据**（这条不能只看「解析成功」就算过 —— UTF-8 也可能是
+「碰巧能解开」）：
+  · coffee-gbk.txt 用 utf-8 解码 → UnicodeDecodeError:
+    'utf-8' codec can't decode byte 0xbf in position 0
+  ⇒ 必然走了 `_TEXT_ENCODINGS` 里的第三个 gb18030。
+  · coffee-utf8.txt 前 3 字节是 b'\xef\xbb\xbf'（BOM），utf-8-sig 解出的首行是
+    「咖啡烘焙笔记」—— BOM 被吃掉，没留成片段开头的不可见字符。
+
+第二段：HTTP 全链路（真后端 + 真上传接口 + 真 DashScope embedding）
+-------------------------------------------------------------------
+账号 user_id=24、库 kb_id=5（探针自建，不碰既有数据）。
+**串行**上传（KB_PARSE_WORKERS=2 池满会把后到的直接判失败，串行才看得到解析结果）。
+
+| 文件              | status | chunks | page_count | 上传响应快照 |
+|-------------------|--------|--------|------------|--------------|
+| coffee-utf8.txt   | ready  | 2      | 0          | pending      |
+| coffee-gbk.txt    | ready  | 2      | 0          | pending      |
+| coffee-book.docx  | ready  | 2      | 0          | pending      |
+| coffee-guide.pdf  | ready  | **5**  | **2**      | pending      |
+| impostor.docx     | failed | 0      | 0          | pending      |
+| vector-only.pdf   | failed | 0      | 0          | pending      |
+
+断言 6/6 通过（正向的必须 ready 且 chunks>0；反例的必须 failed 且有可展示文案）。
+
+后端日志：**0 ERROR**；3 条 WARNING 全部是设计内的解析失败 ——
+  · app.llm.kb.loaders    解析失败：impostor.docx（BadZipFile: File is not a zip file）
+    ← 技术细节进日志，用户看到的是那句写好的中文（loaders 的承诺被兑现）
+  · app.services.kb_service  知识库解析失败：doc=20 code=parse_failed
+  · app.services.kb_service  知识库解析失败：doc=21 code=parse_failed
+
+第三段：离线读回向量库（后端已停，直接开 Chroma）
+-------------------------------------------------
+为什么必须做：`chunk_count > 0` 只能证明「切出了片段」，**证明不了「切出来的是
+正确的中文」** —— 乱码照样能被向量化、照样有片段、状态照样 ready。
+
+读回片段共 **11 条**，全部为正常中文/英文，**无 U+FFFD 替换字符**：
+
+| 文件              | 片段数 | 关键词断言                          |
+|-------------------|--------|-------------------------------------|
+| coffee-utf8.txt   | 2      | 「美拉德反应」✅                     |
+| coffee-gbk.txt    | 2      | 「美拉德反应」✅                     |
+| coffee-book.docx  | 2      | 「美拉德反应」✅                     |
+| coffee-guide.pdf  | 5      | 「Maillard」✅                       |
+
+`coffee-gbk.txt` 落库的首片段是「咖啡烘焙笔记 / 第 1 条 烘焙的第一阶段是脱水。…」
+—— 与 UTF-8 那份**逐字一致**，没有乱码。
+
+真实语义检索（走 DashScope text-embedding-v4）：
+  · query「咖啡因含量和烘焙度有关系吗」
+    → 命中 4 条，来自 ['coffee-book.docx', 'coffee-gbk.txt', 'coffee-utf8.txt']
+    （top1: coffee-book.docx#1 dist=0.306）
+  · query「Maillard reaction and aroma precursors」
+    → 命中 4 条，来自 ['coffee-book.docx', 'coffee-gbk.txt', 'coffee-guide.pdf',
+      'coffee-utf8.txt']（top1: coffee-guide.pdf#0 dist=0.393）
+  ⇒ 中文查询命中了中文三份；英文查询把 PDF 排到了第一。跨语言/跨格式都能召回。
+
+顺带发现（不在本次任务范围内，如实登记，**未改代码**）
+------------------------------------------------------
+`app/services/kb_repository.py` 的 `mark_failed` docstring 写着：
+
+    `page_count` **不动**：PDF 的页数是文件本身的事实，与解析成不成功无关
+    （扫描件 PDF 能数出 20 页）。把它清零等于抹掉一条真实信息。
+
+但实测 **兑现不了**：本次 `vector-only.pdf` 是**1 页**的合法 PDF，解析失败后
+`page_count` 是 **0**，不是 1。原因是页数只在 `LoadedDocument` 里带出来，而扫描件/
+无文字 PDF 在 `loaders.load_document()` 就抛 `DocumentParseError` 了 —— 那个对象
+根本没返回，服务层无从知道页数。`mark_failed` 的三个调用点
+（`source_missing` / `pool_busy` / 解析异常）也都只传 `code` + `message`。
+
+落在库里的结果是 0（DB 列是 `UINT NOT NULL DEFAULT 0`，见 `db/tables.py`），
+与 `models/kb.py` 那句「不适用时为 0」的对外口径一致 ——
+所以**用户可见行为没错**，只是那句括号注释描述了一个不存在的实现。
+按项目红线（注释会被当成契约读），建议把这句括号删掉或改成实况描述；
+若要真做到「失败也记页数」，那是行为变更，需另立变更。
+
+环境与可复现
+------------
+· 后端：uvicorn app.main:app --port 8000（.env 里 KNOWLEDGE_BASE_ENABLED=true）
+· 探针：./backend/.venv/Scripts/python.exe .workbuddy/kb_probe_formats.py gen|check|upload
+        ./backend/.venv/Scripts/python.exe .workbuddy/kb_probe_inspect.py   （须停后端后跑）
+· 测试文件保留在 .workbuddy/kb-probe-files/，原始 JSON 读数在
+  .workbuddy/.tmp_kb_format_out.json
+· 落库数据：user_id=24 / kb_id=5（6 条文档记录、11 条片段），未清理，便于复查
+
+仍未覆盖
+--------
+· 加密 PDF 的分支（写好了「这份 PDF 有密码保护，无法解析」，本次没造加密样本）
+· .docx 里图片/表格/页眉页脚等复杂结构（本次是纯段落的最小 OOXML）
+· 超大文件（本次最大 3.5 KB）
