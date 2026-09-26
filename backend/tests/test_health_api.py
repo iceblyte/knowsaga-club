@@ -89,9 +89,15 @@ def test_health_discloses_the_image_generation_flag(client: TestClient) -> None:
 def test_health_image_flag_tracks_credentials(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """打开开关但**不给凭据**时，对外仍必须是 `False`（能力而非意愿）。"""
+    """打开开关但**不给凭据**时，对外仍必须是 `False`（能力而非意愿）。
+
+    ⚠️ 这里**显式**把 COS 凭据清空，而不是依赖基线为空：本机 `.env` 做端到端验收时
+    是真配了 COS 凭据的，不清的话这条用例会随本机环境红/绿（2026-09-26 实锤过一次）。
+    """
     from app.core.config import get_settings
 
+    for key in ("COS_SECRET_ID", "COS_SECRET_KEY", "COS_REGION", "COS_BUCKET"):
+        monkeypatch.setenv(key, "")
     monkeypatch.setenv("IMAGE_GENERATION_ENABLED", "true")
     get_settings.cache_clear()
 

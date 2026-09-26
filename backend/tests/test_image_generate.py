@@ -137,8 +137,13 @@ def test_total_failure_is_not_an_exception(image_env, monkeypatch: pytest.Monkey
 
 
 def test_budget_aborts_remaining(image_env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """总预算耗尽 ⇒ 放弃剩余、立刻返回，而不是把界面按住等图片。"""
-    settings = image_env().model_copy(update={"image_budget_seconds": 0})
+    """总预算耗尽 ⇒ 放弃剩余、立刻返回，而不是把界面按住等图片。
+
+    ⚠️ 这里**显式**要 3 个 worker：用例断言「三道题都提交了」，
+    而那要求池能同时装下这三道题 —— 池小于题量时排队的那些压根不会开始跑，
+    `renderer.calls` 自然少于 3（这条断言曾经隐性依赖本机 `.env` 的取值而红过）。
+    """
+    settings = image_env(IMAGE_MAX_WORKERS="3").model_copy(update={"image_budget_seconds": 0})
     questions = _questions(3)
     renderer = _install(monkeypatch, _Renderer(delay=0.3))
 

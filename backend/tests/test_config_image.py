@@ -60,7 +60,11 @@ def test_image_defaults() -> None:
     assert "*" in s.image_size
 
     # 并发/超时/预算三者都必须有界
-    assert s.image_max_workers >= 1
+    # 并发默认 **2**（2026-09-26 由 3 下调，design D17）：实测该百炼账号约 2 rps，
+    # 「并发 3 必挂 1 个 429」而「并发 2 连跑 4 轮 8 张全过」；且 client **没有重试**，
+    # 429 就等于那道题没图 ⇒ 默认值取**验证过的 2**，而不是当初拍脑袋的 3。
+    # ⚠️ 别把它理解成「2 是上游硬限制」——那是账号配额，换账号前先重测。
+    assert s.image_max_workers == 2
     assert s.image_timeout_seconds > 0
     assert s.image_budget_seconds > s.image_timeout_seconds
 

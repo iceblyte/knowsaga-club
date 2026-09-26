@@ -34,6 +34,23 @@ TEST_ENV = {
     # 「开关关 ⇒ 带 generate_images 的请求被拒」这些用例只在本机红/绿。
     # 需要打开的模块用 `image_env` 夹具显式打开。
     "IMAGE_GENERATION_ENABLED": "false",
+    # 生图并发同样要钉住（2026-09-26 补）：`IMAGE_MAX_WORKERS` 是会被读进线程池大小的
+    # 取值。不钉的话，任何隐性依赖「池能同时装下几道题」的用例都会随本机 `.env` 红/绿：
+    # `test_budget_aborts_remaining` 就是这么红的（它断言 3 道题都提交了，
+    # 池只有 2 个 worker 时就只有 2 道跑起来）。
+    # 钉成**代码默认值**（2026-09-26 由 3 下调至 2 后同步），
+    # 要别的值的用例自己 `image_env(IMAGE_MAX_WORKERS=...)` 显式声明。
+    "IMAGE_MAX_WORKERS": "2",
+    # COS 五项也必须钉**空**（2026-09-26 补，同一个坑第二次）：`/health` 对外下发的
+    # 是**派生能力** `image_generation_available` =（开关 && 百炼 key && COS 四键齐备）。
+    # 本机 `.env` 为了做端到端验收把 COS 凭据真配上了，不钉的话它会漏进测试 ——
+    # `test_health_image_flag_tracks_credentials`（开开关、期望因缺凭据而为 False）
+    # 就会随本机环境红/绿。要凭据的模块用 `image_env` 夹具显式注入假值。
+    "COS_SECRET_ID": "",
+    "COS_SECRET_KEY": "",
+    "COS_REGION": "",
+    "COS_BUCKET": "",
+    "COS_PUBLIC_BASE_URL": "",
     "LOG_LEVEL": "WARNING",
     "QUIZ_TASK_TTL_SECONDS": "600",
     # ---------- 用户系统 ----------
