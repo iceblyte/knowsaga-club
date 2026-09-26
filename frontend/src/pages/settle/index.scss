@@ -62,9 +62,26 @@
     flex: none;
   }
 
-  &__action-secondary {
+  // 两个次级出口并排（再来一局 / 返回大厅）。`flex: none` 是必需的：
+  // `.screen` 是定高 flex 列，不放这行的话这一格会被压缩（见 base.scss `.btn` 的说明）
+  &__actions {
     flex: none;
     margin-top: $sp-4;
+
+    // ⚠️ 必须归零这个「相邻按钮间距」—— Taro H5 复刻了微信小程序 button 的默认行为，
+    // 运行时注入一条 `taro-button-core + taro-button-core { margin-top: 15px }`
+    // （不在任何 .css 产物里，只在 JS 注入的样式表里，grep dist 找不到）。
+    //
+    // 本行是 grid **两列并排**，相邻选择器只命中右格 ⇒ 右格被顶下去 15px、
+    // 行高又被撑到 91.56px ⇒ 实测左 91.56 / 右 76.56，两颗不等高。
+    // 排查时先怀疑「文字换行」和「grid 单元格分配」都是错的：A/B 交换两格文字后
+    // 左格恒 91.56、右格恒 76.56，与文字内容无关；真正的差异只在 margin-top。
+    //
+    // 只作用于这一个并排行，不碰全局按钮语法（别提到 base.scss —— 其它页面是
+    // 竖排堆叠，那 15px 正是它们之间的间距，动了会改版式）。
+    .btn {
+      margin-top: 0;
+    }
   }
 
   &--empty {

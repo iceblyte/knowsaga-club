@@ -4,9 +4,16 @@
  * ## 这一页没有导览栏，也没有返回键 —— 这是原型的决定
  *
  * 原型这一屏只有状态栏 + 48px 空档 + 内容区，没有 `.nav`。理由说得通：
- * 结算之后回到答题页没有任何意义（题目已经全部作答），而唯一合理的两个
- * 出口就在页面上（查看冒险日志 / 再来一局）。所以这里 `showNav={false}`，
- * 并自己补一段与原型的 `height:48px` 等高的空档维持版式节奏。
+ * 结算之后回到答题页没有任何意义（题目已经全部作答），所以这里
+ * `showNav={false}`，并自己补一段与原型的 `height:48px` 等高的空档维持版式节奏。
+ *
+ * 出口有**三个**（2026-09-26 起补了第三个，见下）：
+ * 「查看冒险日志」/「再来一局」/「返回社团大厅」。
+ *
+ * 前两个是原型画的。第三个是人工上报的 Bug：只有那两个出口时，用户打完一局
+ * 想去大厅换个领域再练**根本出不去** —— 「查看冒险日志」通向日志页、
+ * 「再来一局」通向召唤页，都不是大厅。原型没画不等于不需要：
+ * 回大厅 ≠ 回答题页，这是一条死路的修复，不是新增功能。
  *
  * ## 口径：本地先算，服务端说了算
  *
@@ -174,6 +181,21 @@ export default function SettlePage() {
     goPage('/pages/summon/index', 'redirect')
   }
 
+  /**
+   * 第三个出口：回大厅（2026-09-26 人工上报的 Bug 修复）。
+   *
+   * 原来这一屏只有「查看冒险日志 / 再来一局」—— 用户打完一局想去大厅换个
+   * 领域再练，没有任何入口能出去。原型这一屏只画了两个按钮，但「回不去」
+   * 是一条实打实的死路，补这一个出口是修缺陷，不是加功能（见 `SETTLE_COPY.backToHall`）。
+   *
+   * 同样先 `reset()`：大厅里随时可能开始新的一局，留着上一局的判定结果
+   * 会在新一局的首题上闪一下「已作答」。
+   */
+  const handleBackToHall = () => {
+    reset()
+    goTab('/pages/hall/index')
+  }
+
   return (
     <PhoneShell showNav={false} screenClassName='settle'>
       <View className='settle__nav-gap' />
@@ -238,9 +260,19 @@ export default function SettlePage() {
       <Button className='btn settle__action' onClick={handleViewReport}>
         {SETTLE_COPY.viewReport}
       </Button>
-      <Button className='btn ghost settle__action-secondary' onClick={handlePlayAgain}>
-        {SETTLE_COPY.playAgain}
-      </Button>
+
+      {/* 两个次级出口并排。原来三个按钮竖排堆叠时，第三颗会把内容顶出屏幕
+          （实测内容高 921px / 视口 844px，用户得先滚 77px 才看得到「返回大厅」）——
+          而「找不到出口」正是本次要修的那个 Bug，不能修完还得靠滚动才能发现它。
+          并排后总高回到一屏以内（见修复报告）。 */}
+      <View className='grid2 settle__actions'>
+        <Button className='btn ghost' onClick={handlePlayAgain}>
+          {SETTLE_COPY.playAgain}
+        </Button>
+        <Button className='btn ghost' onClick={handleBackToHall}>
+          {SETTLE_COPY.backToHall}
+        </Button>
+      </View>
     </PhoneShell>
   )
 }
