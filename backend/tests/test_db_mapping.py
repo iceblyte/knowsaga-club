@@ -27,6 +27,9 @@ EXPECTED_TABLES = {
     # 私有知识库（`sql/07_knowledge_base.sql`）。两张表而不是一张的理由见该 DDL 文件头。
     "knowledge_bases",
     "knowledge_documents",
+    # 题目配图的日额度（`sql/08_question_image.sql`）。不放在 `user_settings` 上：
+    # 额度要按天重置、要原子自增，与「用户偏好」是两种读写模式。
+    "image_quota_usage",
 }
 
 #: 方案设计 §9.1 实测的外键数量（13），Phase D 新增 1 个：
@@ -34,11 +37,13 @@ EXPECTED_TABLES = {
 #: `sql/02_questions_origin.sql`）。
 #: 私有知识库再新增 3 个（见 `sql/07_knowledge_base.sql`）：
 #: `fk_knowledge_bases_user`、`fk_knowledge_documents_kb`、`fk_knowledge_documents_user`。
-EXPECTED_FK_COUNT = 17
+#: 题目配图再新增 1 个（见 `sql/08_question_image.sql`）：`fk_image_quota_usage_user`。
+#: （`questions.image_url` 只是一个可空的字符串列，**不引入外键**。）
+EXPECTED_FK_COUNT = 18
 
 
-def test_twelve_tables_defined() -> None:
-    assert len(ALL_TABLES) == 12
+def test_thirteen_tables_defined() -> None:
+    assert len(ALL_TABLES) == 13
     assert {t.__tablename__ for t in ALL_TABLES} == EXPECTED_TABLES
 
 
@@ -184,6 +189,49 @@ def test_json_default_for_reminder_days(test_engine) -> None:  # noqa: ANN001
     assert default is not None and "1" in str(default)
 
 
+def test_questions_image_url_column(test_engine) -> None:  # noqa: ANN001
+    """`questions.image_url`：可空、够长、位置紧跟 `difficulty`。
+
+    三件事都要验：
+    - **可空**是「这道题没有配图」的表达方式（生图失败 / 没勾选 / 未启用都落到 NULL），
+      设成 NOT NULL 会让「没生成出图」变成写入失败，把降级路径直接堵死；
+    - 长度必须装得下我们自己拼的 COS URL（桶名 + 键），768 只是防御；
+    - 位置与 `test_column_order_matches_database` 有关：DDL 用的是 `AFTER difficulty`，
+      ORM 里也必须插在同一处，否则顺序断言会红。
+    """
+    columns = inspect(test_engine).get_columns("questions")
+    names = [c["name"] for c in columns]
+    col = next(c for c in columns if c["name"] == "image_url")
+
+    assert col["nullable"] is True
+    assert col["type"].length == 512
+    assert "image_url" in names
+    assert names.index("image_url") == names.index("difficulty") + 1
+
+
+def test_image_quota_usage_shape(test_engine) -> None:
+    """额度表的结构：业务日 + 复合主键 + 级联删除。
+
+    复合主键 `(user_id, biz_date)` 不只是唯一约束，它就是「查某人今天用量」
+    的索引 —— 少了它这个查询会走全表扫描，而这句查询每次出题都要跑。
+    """
+    inspector = inspect(test_engine)
+    columns = {c["name"]: c for c in inspector.get_columns("image_quota_usage")}
+
+    assert set(columns) == {"user_id", "biz_date", "used_count", "created_at", "updated_at"}
+    assert columns["biz_date"]["type"].__class__.__name__ == "DATE"
+    assert columns["used_count"]["nullable"] is False
+
+    pk = inspector.get_pk_constraint("image_quota_usage")
+    assert sorted(pk["constrained_columns"]) == ["biz_date", "user_id"]
+
+    fks = inspector.get_foreign_keys("image_quota_usage")
+    assert len(fks) == 1
+    assert fks[0]["referred_table"] == "users"
+    # 用户被删时额度行一并消失（它是纯计数行，没有留档价值）
+    assert fks[0]["options"].get("ondelete", "").upper() == "CASCADE"
+
+
 def test_session_is_clean_between_tests(db_session) -> None:  # noqa: ANN001
     """确认清表真的生效：如果这条失败，说明用例之间会互相污染。"""
     from app.db.tables import User
@@ -203,6 +251,7 @@ def test_session_is_clean_between_tests(db_session) -> None:  # noqa: ANN001
         "reports",
         "knowledge_bases",
         "knowledge_documents",
+        "image_quota_usage",
     ],
 )
 def test_created_at_and_updated_at_present(test_engine, table_name: str) -> None:  # noqa: ANN001

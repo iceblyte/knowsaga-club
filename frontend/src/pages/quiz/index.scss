@@ -21,6 +21,32 @@
     font-weight: 600;
   }
 
+  // 题目配图（`add-question-image-generation`）。位置在题型胶囊与题干之间。
+  //
+  // ⚠️ `height: auto` **不是可选项** —— 2026-09-25 真浏览器实测挖出来的：
+  // Taro H5 给组件宿主元素（`<taro-image-core>`）带了一条默认样式
+  //     taro-image-core { width: 320px; height: 240px; overflow: hidden; }
+  // 这是它给 `<img>` 的 4:3 占位盒。只写 `width: 100%` 的话宽度被改掉、
+  // **高度仍是 240px**，而内层真实图片是「宽度撑满 + 按原图比例」算高的 ——
+  // 512×512 的方图在 308px 宽下自然高 308px，于是底部 68px（约 22%）
+  // 被宿主的 `overflow: hidden` 直接裁掉，且**没有任何报错**。
+  //
+  // 实测读数（390 宽，同一次构建内现场改样式做 A/B）：
+  //   默认          宿主 308.1×240   内层图 308.1×308.1   裁掉 68.1px
+  //   height:auto   宿主 308.1×308.1 内层图 308.1×308.1   裁掉 0
+  //   复原          宿主 308.1×240   内层图 308.1×308.1   裁掉 68.1px
+  //
+  // 小程序端不受影响（`<image mode="widthFix">` 本来就会自动算高），
+  // 这条声明在那边是惰性的。
+  &__figure {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: $sp-4;
+    border-radius: $r-opt;
+    overflow: hidden;
+  }
+
   // 判断题的两张大卡：原型 `gap:10px`，卡内上下居中
   &__judge {
     gap: $sp-5;

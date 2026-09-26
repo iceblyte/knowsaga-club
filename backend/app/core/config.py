@@ -188,6 +188,70 @@ class Settings(BaseSettings):
     # 用户要空等两轮才看得到状态变化。
     kb_doc_poll_interval_ms: int = 2000
 
+    # ---------- 题目配图（生图 + 对象存储）----------
+    # 用户勾选「生成配图」时，出题链会为每道题生成一张与题目内容相关的图片，
+    # 转存到腾讯云 COS 之后把**永久 URL** 写进题目（上游返回的临时链接只有 24 小时）。
+    # 实现见 app/llm/image/，接链见 app/services/quiz_service.py。
+    # 【默认 false】与 `knowledge_search_enabled` / `knowledge_base_enabled` 同一条纪律：
+    # 新能力不该在部署方不知情时开始消耗生图额度与对象存储。
+    image_generation_enabled: bool = False
+
+    # 生图模型。取 `z-image-turbo`（2026-09-26 由 `qwen-image-2.0` 换过来），三个理由：
+    #   ① 便宜、② 快（官方定位「轻量模型，快速生图」；实测 512*512 约 1.4s）；
+    #   ③ 官方写明「图像张数：**固定 1 张**」—— 与下面的实现天然契合。
+    # ⚠️ 我们**不用** `n>1`：一次调用只带一个 prompt，`n=5` 得到的是同一主题的
+    # 5 张近似图，做不到「每道题配与自己相关的图」。实现取「每题一次调用 + 并发」。
+    # 与 qwen 系列同属 DashScope 的 `MultiModalConversation` 家族、响应路径一致，
+    # 所以换模型不需要改 `llm/image/` 的代码。
+    image_model: str = "z-image-turbo"
+    # 图片尺寸。⚠️ 分隔符是 **`*`**（DashScope 协议，如 `512*512`），不是 `x`。
+    # z-image-turbo 的限制：总像素须落在 [512*512, 2048*2048]，**默认值是 1024*1536**；
+    # 官方推荐区间是 [1024*1024, 1536*1536]（原话「出图效果更佳」）。
+    # 取 512*512 是**允许的下限**：够用于记忆辅助、更省额度也更快，但清晰度明显低于
+    # 推荐区间，想提质量改这里即可（代码不动）。
+    image_size: str = "512*512"
+    # 并发线程数。与出题链共用进程，**必须有界**（理由同 `_executor` 的注释）。
+    image_max_workers: int = 3
+    # 单张生图的超时（秒）。生图比检索慢得多，所以比 `search_tool_timeout_seconds` 宽。
+    image_timeout_seconds: int = 20
+    # 整段生图的**总时间预算**（秒）。超出即放弃剩余图片、直接收尾 ——
+    # 与 `quiz_generation_budget_seconds` 同一个理由：宁可少几张图，
+    # 也不能让「副本召唤中」空转两分钟。
+    image_budget_seconds: int = 45
+    # 每人每天可生成的张数。**默认 20**（需求给定）。
+    # 落库在 `image_quota_usage` 表上（按业务日 + 用户原子自增），**不复用**
+    # `core/ratelimit.py`：那是进程内滑动窗口，重启即清零、多实例各算各的。
+    image_daily_quota: int = 20
+    # 单张图下载（上游 → 本地内存）的字节上限。超过即判该张失败，
+    # 不把一张来路不明的大文件塞进内存再传上云。
+    image_download_max_bytes: int = 8 * 1024 * 1024
+    # 交给生图模型的负向提示词（可留空）。主要的「不泄题」约束由提示词构建器
+    # 以**正向约束**保证（见 app/llm/image/prompt.py 的「画面中不得出现任何文字」）。
+    # ⚠️ 别把它读成一道有效护栏：`z-image-turbo` 的官方参数表里**没有** `negative_prompt`
+    # （只列了 size / prompt_extend / seed）。实测（2026-09-26）带上它仍返回 200，
+    # **但上游是否真的采用它，未经验证** —— 现状是「发了，可能被忽略」。
+    image_negative_prompt: str = "文字, 汉字, 字母, 水印, 标志, 低质量, 模糊"
+    # 要不要让上游模型自动润色提示词。**默认关**：我们的提示词已经足够具体，
+    # 润色会把「与题干匹配」这件事改跑偏。对应请求参数 `prompt_extend`。
+    image_prompt_extend: bool = False
+    # 是否给生成的图加水印。**默认关** —— 水印是画面上的文字，
+    # 与我们「画面不出现文字」的自我约束冲突。
+    # ⚠️ 同 `image_negative_prompt`：`z-image-turbo` 官方参数表里没有 `watermark`，
+    # 实测带上仍返回 200，**是否被采用未经验证**。
+    image_watermark: bool = False
+
+    # 对象存储（腾讯云 COS）。申请：https://console.cloud.tencent.com/cam/capi
+    # ⚠️ SecretId / SecretKey 是**密钥**，只允许存在于根 `.env`（已被 gitignore），
+    #    `.env.example` 里必须留空。提交前跑 `python tools/scan_secrets.py`。
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    # 地域，形如 `ap-guangzhou`（创建存储桶时选的区域）。
+    cos_region: str = ""
+    # 存储桶名，**必须带 appid 后缀**，形如 `knowsaga-1250000000`。
+    cos_bucket: str = ""
+    # 自定义 CDN / 加速域名。留空则按 `https://{bucket}.cos.{region}.myqcloud.com` 拼。
+    cos_public_base_url: str = ""
+
     # ---------- 异步任务 ----------
     quiz_task_ttl_seconds: int = 600
     quiz_task_poll_interval_ms: int = 1200
@@ -330,6 +394,51 @@ class Settings(BaseSettings):
         挂出去了）。文档是用户私有内容，绝不能被匿名 URL 取到（design D10）。
         """
         return self.uploads_path / "kb"
+
+    # ---------- 题目配图派生 ----------
+    @property
+    def has_image_credentials(self) -> bool:
+        """对象存储（COS）凭据是否齐备。
+
+        四项缺一不可：缺 bucket 或 region 拼不出访问地址，缺 SecretId/SecretKey 传不上去。
+        `cos_public_base_url`（自定义域名）**不算必需** —— 它有默认拼法。
+        """
+        return all(
+            v.strip()
+            for v in (self.cos_secret_id, self.cos_secret_key, self.cos_region, self.cos_bucket)
+        )
+
+    @property
+    def image_generation_available(self) -> bool:
+        """题目配图能力**对外是否可用** —— 前端入口显隐与接口准入的唯一判据。
+
+        ⚠️ 它是「开关 && 凭据齐备」的合取，**不是**只看开关：
+        开关打开但缺百炼 key 或 COS 配置时，这里必须是 `False` ——
+        否则前端会显示一个点下去必然失败的按钮（红线：不给假入口）。
+
+        百炼 key 与私有知识库的向量化**复用同一个** `DASHSCOPE_API_KEY`
+        （同一个账号平台），所以这里读的是同一个字段。
+        """
+        return (
+            self.image_generation_enabled
+            and bool(self.dashscope_api_key.strip())
+            and self.has_image_credentials
+        )
+
+    @property
+    def cos_url_prefix(self) -> str:
+        """对象存储的公开访问前缀（末尾不含 `/`）。
+
+        配了自定义域名就用它；否则按腾讯云默认域名拼。
+        输入不全时返回空串 —— 调用方（`llm/image/store.py`）据此判定「用不了」。
+        """
+        if self.cos_public_base_url.strip():
+            return self.cos_public_base_url.strip().rstrip("/")
+        bucket = self.cos_bucket.strip()
+        region = self.cos_region.strip()
+        if not (bucket and region):
+            return ""
+        return f"https://{bucket}.cos.{region}.myqcloud.com"
 
     @property
     def effective_test_database_url(self) -> str:

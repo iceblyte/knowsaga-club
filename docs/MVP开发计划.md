@@ -488,7 +488,15 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 
 ### 7.1 健康检查
 
-`GET /api/v1/health` → `data: {status, version, model, search_enabled}`
+`GET /api/v1/health` → `data: {status, version, env, model, search_enabled, knowledge_base_enabled, image_generation_enabled, key_configured}`
+
+> 后三个是**能力开关**，前端据此决定「要不要让用户看见这个功能」。
+> 它们都**不是权限位** —— 不改变路由注册状态、也不会 403。
+> 但**别把「不是权限位」读成「关掉也照样能用」**：`image_generation_enabled` 为假时，
+> 带 `generate_images=true` 的请求会被 **4001 拒掉**（不带该参数的出题请求不受影响）。
+> `image_generation_enabled`（2026-09-25 新增）是**派生值**：
+> 只有「开关打开 **且** dashscope key 非空 **且** COS 五项凭据齐全」才为 `true`。
+> 前端只看它这一个字段，为假时配图那两处入口整块不渲染。
 
 ### 7.2 创建出题任务
 
@@ -577,6 +585,29 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 4. **前端的 `user_input` 由 `kb-generate` 页构造**（`学习「{库名}」中的内容`），
    因为 `user_input` 有 8 字下限而那一页没有输入框。**不放宽 `MIN_INPUT_LEN`**。
 
+### 7.2.3 `POST /quiz/generate` 的 `generate_images` 入参（2026-09-25）
+
+请求体再多一个**可选**字段 `generate_images: bool = False`（默认**关**）：
+
+```json
+{ "user_input": "什么是 Harness Engineering", "question_count": 5,
+  "difficulty": "mixed", "use_search": true, "generate_images": true }
+```
+
+四条契约（完整决策见 `openspec/changes/add-question-image-generation/design.md`）：
+
+1. **默认 `false` ⇒ 不传该字段的调用方行为逐位不变**（含既有测试与 `scripts/verify_*.py`）。
+   它是**这一次召唤**的选项，与 `use_search` 同一层，不是账号级偏好。
+2. **超额的错误码是 `4290`**（→ HTTP 429），不是 4001 —— 4001 在本项目码表里是
+   「输入内容不合规」，拿它表示「今天的配图额度用完了」会让那张表变成假话。
+   前端 `ERROR_FALLBACK_TEXT` 未登记 4290，所以后端那句友好文案**原样透出**。
+   额度耗尽在建任务**之前**判，用户不必等十几秒才知道没图。
+3. **开关关闭 / 缺 dashscope key / 缺 COS 凭据时，传 `true` 会被拒（4001）**；
+   但正常路径下前端走不到这里 —— 能力由 `/health` 的 `image_generation_enabled`
+   下发，为假时两处入口都不渲染。
+4. **生图失败不影响出题**：单张失败只是该题没有图，整段失败则全部没有图，
+   `quiz` 照常落库、任务照常 `succeeded`。失败只进日志与第二步的 `detail`。
+
 ### 7.4 取消任务
 
 `POST /api/v1/tasks/{task_id}/cancel` → `data: {status:"cancelled"}`
@@ -597,6 +628,7 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 | 4001 | 输入内容不合规（过短 / 过长 / 命中敏感词） |
 | 4004 | 任务不存在或已过期 |
 | 4090 | 任务不可取消（已结束） |
+| **4290** | **请求过于频繁（→ HTTP 429）。配图配额耗尽走这个码**，前端未登记 ⇒ 后端文案原样透出（2026-09-25） |
 | 5000 | 服务内部错误 |
 | 5001 | AI 生成失败（已重试仍失败） |
 | 5030 | AI 服务超时 |
@@ -625,8 +657,14 @@ $rare:     #6D4BC4;  // 稀有 / 连击
 { "id": "q1", "type": "single|multiple|judge", "stem": "题干",
   "options": [{ "key": "A", "text": "选项A" }],
   "answer": ["A"], "explanation": "详细讲解",
-  "knowledge_point": "知识点标签", "difficulty": "easy|medium|hard" }
+  "knowledge_point": "知识点标签", "difficulty": "easy|medium|hard",
+  "image_url": null }
 ```
+
+> `image_url`（2026-09-25 新增）：配图的**永久**地址（后端已从 24 小时有效的上游
+> 链接转存到 COS），没有配图时为 `null` —— 而 `null` 是**常态**
+> （用户没勾 / 生图失败 / 超预算），前端据此**什么都不画**（不占位）。
+> 它只能由服务端写入：模型自己吐的该字段会被 `draft_to_quiz` 强制清空。
 
 ### 8.3 AnswerRecord
 

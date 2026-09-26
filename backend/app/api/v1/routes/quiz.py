@@ -67,13 +67,23 @@ class QuizGenerateRequest(BaseModel):
     # 是最糟的处理 —— 用户以为自己选了某个库，结果出题用的是默认库。
     kb_id: int | None = Field(default=None, ge=1, description="知识库 id；不传则不使用知识库")
 
+    # 本次召唤要不要给题目配图。**默认关闭**，与 `use_search` 的默认恰好相反 ——
+    # 理由不同：联网是「几乎总能帮上忙」，而配图会额外花钱（生图 + 对象存储），
+    # 所以该由用户主动要。默认 `false` 还有个硬作用：不传该字段的调用方
+    # （含所有既有测试与 `scripts/verify_*.py`）行为逐位不变。
+    #
+    # ⚠️ 它是**意愿**，不是能力。开关关着 / 缺百炼 key / 缺 COS 凭据时，
+    # 传 `true` 会被 4001 拒掉（而不是默默忽略）—— 默默忽略更糟：
+    # 用户以为开了配图，拿到题目才发现一张图都没有，界面还不给任何解释。
+    generate_images: bool = Field(default=False, description="是否给题目生成配图")
+
 
 @router.post("/quiz/generate", summary="创建出题任务")
 def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser, db: DbSession) -> dict:
     """校验输入并创建异步出题任务，立刻返回 `task_id` 与轮询间隔。
 
-    `db` 只用于 `kb_id` 的归属校验（design D13）—— 校验通过后，
-    真正取资料发生在后台线程里（那时另有自己的会话）。
+    `db` 只用于 `kb_id` 的归属校验与配图额度的预扣（design D13 / D6）——
+    校验与预扣通过后，真正取资料与生图都发生在后台线程里（那时另有自己的会话）。
     """
     submission = quiz_service.submit_quiz_request(
         user_id=int(user.id),
@@ -82,6 +92,7 @@ def create_quiz_task(payload: QuizGenerateRequest, user: CurrentUser, db: DbSess
         difficulty=payload.difficulty,
         use_search=payload.use_search,
         kb_id=payload.kb_id,
+        generate_images=payload.generate_images,
         session=db,
     )
     return ok(submission.as_data())

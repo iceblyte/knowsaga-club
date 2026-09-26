@@ -33,13 +33,16 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError, ErrorCode, DEFAULT_MESSAGES
 from app.core.logging import get_logger
 from app.db.session import session_scope
+from app.llm import image as image_flow
 from app.llm import quiz_chain
+from app.llm.image import ImageOutcome
 from app.llm.search import SearchProvider, SearchRequest, get_search_provider
 from app.llm.search import collector
 from app.llm.search.agent import ToolProgress
 from app.llm.search.base import KbScope, ReferenceCaps, SearchOutcome
 from app.models.quiz import Quiz
-from app.services import quiz_repository, task_service
+from app.services import image_quota_service, quiz_repository, task_service
+from app.services.image_quota_service import QuotaHold
 from app.services.task_service import TaskRecord, TaskStep
 from app.utils.content_filter import check_content
 from app.utils.links import extract_urls
@@ -58,6 +61,11 @@ _PROGRESS_RETRIEVE = 25
 _PROGRESS_GENERATE_DONE = 85
 _PROGRESS_VALIDATE = 90
 _PROGRESS_DONE = 100
+
+#: 配图段在第二步内部推进的起点（= 取完材、刚出完题的时刻）。
+#: 配图**不新增第四步**：原型的三步是界面裁决依据，生图只是「生成闯关题目」
+#: 这件事的延伸，所以它借用第二步的 detail 与进度区间（design D10）。
+_PROGRESS_IMAGE_START = _PROGRESS_RETRIEVE + 5
 
 #: 后台执行器。**有界**是关键：无界的线程创建会让一次流量高峰把进程打穿。
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="quiz-gen")
@@ -286,6 +294,139 @@ def _finish_failed(task_id: str, code: int, message: str, *, step_key: str = STE
 
 
 # -----------------------------------------------------------------------------
+# 题目配图（额度 + 生图段）
+# -----------------------------------------------------------------------------
+# 这一段的全部设计都围绕两条硬约束：
+#
+# 1. **生图失败绝不影响到手的题库**（需求 8 / design D8）。所以这里每一个
+#    对外部世界的调用都被兜在段内，且配额收尾自己再兜一次 —— 配额出问题
+#    也不许把一次成功的出题变成失败。
+# 2. **配额必须收干净**：预扣之后无论走哪条出口（成功 / 失败 / 取消 /
+#    提前返回 / 未预期异常），持有量都必须落成「结算」或「退还」二选一，
+#    不允许出现「扣了但没人管」。
+#
+# 配额的三次操作各自开一个 `_open_session()`（后台线程没有请求级会话）。
+# ⚠️ 每新增一个会在后台线程里写库的服务，都要记得加进 `conftest.db_scope`；
+# 本模块已经在里面了。
+
+
+def _reserve_image_quota(
+    *, user_id: int, count: int, settings: Settings
+) -> QuotaHold:
+    """在建任务**之前**预扣（design D6）。
+
+    Raises:
+        AppError: 4290 当天额度不足（文案说明还剩几张、怎么继续）。
+    """
+    with _open_session() as session:
+        return image_quota_service.reserve(
+            session, user_id=user_id, count=count, settings=settings
+        )
+
+
+def _settle_image_quota(hold: QuotaHold, *, succeeded: int) -> None:
+    """按实际成功张数结算。**自己兜住异常** —— 收尾失败不该把出题搞挂。"""
+    try:
+        with _open_session() as session:
+            image_quota_service.settle(session, hold=hold, succeeded=succeeded)
+    except Exception:  # noqa: BLE001
+        logger.exception("配额结算失败（用户 %s，预扣 %s 张）", hold.user_id, hold.reserved)
+
+
+def _release_image_quota(hold: QuotaHold) -> None:
+    """全额退还。同样自己兜住异常。"""
+    try:
+        with _open_session() as session:
+            image_quota_service.release(session, hold=hold)
+    except Exception:  # noqa: BLE001
+        logger.exception("配额退还失败（用户 %s，预扣 %s 张）", hold.user_id, hold.reserved)
+
+
+def _generate_detail(question_count: int) -> str:
+    """不配图时的第二步完成文案。
+
+    单独抽成函数只为一件事：**接入配图后它与接入前必须一字不差**，
+    而它在两处被拼（进行中 / 完成）。散着写就会出现「某个分支少了个空格」。
+    """
+    return f"已生成 {question_count} 道题"
+
+
+def _image_running_detail(question_count: int, done: int, total: int) -> str:
+    return f"已生成 {question_count} 道题 · 正在配图 {done} / {total}"
+
+
+def _image_done_detail(question_count: int, outcome: ImageOutcome) -> str:
+    """配图段的收尾文案。
+
+    「要了但一张都没跑到」与「跑了但没成」必须分开说：前者是能力中途不可用了
+    （`attempted == 0`），说「配图 0 / 5」会像是 5 张全失败。
+    """
+    if outcome.attempted == 0:
+        return f"已生成 {question_count} 道题 · 未生成配图"
+    return f"已生成 {question_count} 道题 · 配图 {outcome.succeeded} / {question_count}"
+
+
+def _image_progress(done: int, total: int) -> int:
+    """把配图完成比例映射到第二步的进度区间（30 → 85）。"""
+    if total <= 0:
+        return _PROGRESS_GENERATE_DONE
+    span = _PROGRESS_GENERATE_DONE - _PROGRESS_IMAGE_START
+    return _PROGRESS_IMAGE_START + int(span * done / total)
+
+
+def _render_images(
+    quiz: Quiz, *, task_id: str, settings: Settings
+) -> tuple[Quiz, ImageOutcome]:
+    """给题目配上图，返回**带图的新题库**与生图段的结果。
+
+    **这个函数不抛异常**：任何失败都降级成「这些题没有图」，题库照常返回。
+
+    ⚠️ 这里对 `generate_for_questions` 再兜一层 try：它的契约是不抛异常，
+    但「契约说不会抛」不等于「真不会抛」，而这一段跑在后台线程里 ——
+    漏出去就是任务永远停在 running（前端一直转圈到超时）。
+    """
+    total = len(quiz.questions)
+    _advance(
+        task_id,
+        STEP_GENERATE,
+        status="running",
+        detail=_image_running_detail(total, 0, total),
+        progress=_PROGRESS_IMAGE_START,
+    )
+
+    def report(done: int, count: int) -> None:
+        _advance(
+            task_id,
+            STEP_GENERATE,
+            status="running",
+            detail=_image_running_detail(total, done, count),
+            progress=_image_progress(done, count),
+        )
+
+    try:
+        outcome = image_flow.generate_for_questions(
+            quiz.questions, settings=settings, on_progress=report
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("配图段出现未预期异常，本次不配图")
+        return quiz, ImageOutcome(urls={}, attempted=0, succeeded=0)
+
+    if not outcome.urls:
+        return quiz, outcome
+
+    # 按题目 id 回填（outcome.urls 的键就是题目 id，见 `llm/image` 的说明）。
+    # 用 `model_copy` 而不是原地改：`Quiz` / `Question` 都是不可变的契约对象，
+    # 原地改会让「谁在什么时候改了它」变得难查。
+    questions = [
+        question.model_copy(update={"image_url": outcome.urls.get(question.id)})
+        if question.id in outcome.urls
+        else question
+        for question in quiz.questions
+    ]
+    return quiz.model_copy(update={"questions": questions}), outcome
+
+
+# -----------------------------------------------------------------------------
 # 后台出题
 # -----------------------------------------------------------------------------
 def run_quiz_generation(
@@ -299,6 +440,7 @@ def run_quiz_generation(
     generate: Callable[..., Quiz] | None = None,
     search_provider: SearchProvider | None = None,
     search_request: SearchRequest | None = None,
+    image_hold: QuotaHold | None = None,
 ) -> None:
     """后台出题主流程。**这个函数不抛异常** —— 任何失败都落到任务的 `failed` 状态上。
 
@@ -310,6 +452,9 @@ def run_quiz_generation(
         search_provider: 注入检索 Provider（测试用）；不传则按配置取。
         search_request: 取材请求（链接 + 意愿）。不传则按 `user_input` 兜底组装 ——
             传进来才能保证「建任务时展示的第一步」与「真正取材时用的请求」是同一份。
+        image_hold: 提交时预扣的配图额度凭据。`None` = 这次不要配图
+            （行为与接入配图之前逐位一致）。非 `None` 时本函数**保证**在
+            每个出口把它落成「结算」或「全额退还」二选一。
     """
     s = settings or get_settings()
     provider = search_provider or get_search_provider(s)
@@ -317,10 +462,26 @@ def run_quiz_generation(
     # 用 module 属性现取，这样测试 monkeypatch `quiz_chain.generate_quiz` 才会生效
     generate_quiz = generate or quiz_chain.generate_quiz
 
+    image_result: ImageOutcome | None = None
+    quota_closed = False
+
+    def close_quota(*, succeeded: int | None) -> None:
+        """收尾配额。`succeeded=None` 表示走退还。**幂等**（重复调用只生效一次）。"""
+        nonlocal quota_closed
+        if image_hold is None or quota_closed:
+            return
+        quota_closed = True
+        if succeeded is None:
+            _release_image_quota(image_hold)
+        else:
+            _settle_image_quota(image_hold, succeeded=succeeded)
+
     record = task_service.get_task_or_none(task_id)
     if record is None or task_service.is_finished(record.status):
         # 任务已过期或已被取消 —— 不要再开工，也不要覆盖任何东西
         logger.info("出题任务 %s 已结束或不存在，跳过执行", task_id)
+        # 但预扣是真的扣过了：不退还的话用户会白丢一次额度
+        close_quota(succeeded=None)
         return
 
     try:
@@ -345,7 +506,7 @@ def run_quiz_generation(
             STEP_GENERATE,
             status="running",
             detail=f"正在生成第 1 / {question_count} 题",
-            progress=_PROGRESS_RETRIEVE + 5,
+            progress=_PROGRESS_IMAGE_START,
         )
         quiz = generate_quiz(
             user_input=user_input,
@@ -359,6 +520,7 @@ def run_quiz_generation(
         if record is None or record.status == "cancelled":
             # 用户已经放弃这次召唤：结果丢掉，不写回任务
             logger.info("出题任务 %s 已被取消，丢弃生成结果", task_id)
+            close_quota(succeeded=None)
             return
 
         # 概念数现在才真正知道，把第一步的详情修正为真值。
@@ -371,13 +533,26 @@ def run_quiz_generation(
             status="done",
             detail=outcome.first_step(concept_count=concept_count).detail,
         )
-        _advance(
-            task_id,
-            STEP_GENERATE,
-            status="done",
-            detail=f"已生成 {len(quiz.questions)} 道题",
-            progress=_PROGRESS_GENERATE_DONE,
-        )
+        # ---- 第二步（续）：配图 ----
+        # 用户在生成设置页勾了配图才会有 `image_hold`。没勾就整段跳过，
+        # 连 detail 都不碰 —— 那条路径必须与接入配图之前逐位一致。
+        if image_hold is not None:
+            quiz, image_result = _render_images(quiz, task_id=task_id, settings=s)
+            _advance(
+                task_id,
+                STEP_GENERATE,
+                status="done",
+                detail=_image_done_detail(len(quiz.questions), image_result),
+                progress=_PROGRESS_GENERATE_DONE,
+            )
+        else:
+            _advance(
+                task_id,
+                STEP_GENERATE,
+                status="done",
+                detail=_generate_detail(len(quiz.questions)),
+                progress=_PROGRESS_GENERATE_DONE,
+            )
 
         # ---- 第三步：校验 ----
         # 走到这里就说明 `QuizDraft` + `Quiz` 的 Pydantic 校验已经全部通过了。
@@ -417,22 +592,37 @@ def run_quiz_generation(
             progress=_PROGRESS_DONE,
         )
 
+        # 配额结算放在**任务真正成功之后**（design D6「任务成功后按实际成功张数结算」）。
+        # 放在这里而不是生图刚结束：若这一步之后落库失败了，用户拿到的是
+        # 一个失败的出题任务，按 D6 的口径应当**全额退还**，而不是为几张
+        # 他根本看不到的图买单。
+        close_quota(
+            succeeded=image_result.succeeded if image_result is not None else 0
+        )
+
         task_service.update_task(task_id, status="succeeded", quiz=quiz)
 
     except AppError as exc:
         logger.warning("出题任务 %s 失败：code=%s detail=%s", task_id, exc.code, exc.detail)
+        close_quota(succeeded=None)
         _finish_failed(task_id, exc.code, exc.message)
 
     except Exception as exc:  # noqa: BLE001
         # 后台线程里的意外异常必须在这里被兜住。否则它会静默死在线程里，
         # 而任务永远停在 running —— 前端只能一直转圈到超时。
         logger.exception("出题任务 %s 出现未预期异常", task_id)
+        close_quota(succeeded=None)
         _finish_failed(
             task_id,
             int(ErrorCode.INTERNAL_ERROR),
             DEFAULT_MESSAGES[ErrorCode.INTERNAL_ERROR],
         )
         logger.debug("未预期异常详情：%r", exc)
+
+    finally:
+        # 兜底：将来若有人在上面插了一条新的提前返回，配额也不会漏在外面。
+        # 已经结算/退还过时 `close_quota` 是空操作（幂等）。
+        close_quota(succeeded=None)
 
 
 # -----------------------------------------------------------------------------
@@ -479,22 +669,27 @@ def submit_quiz_request(
     search_provider: SearchProvider | None = None,
     use_search: bool = True,
     kb_id: int | None = None,
+    generate_images: bool = False,
     session: Session | None = None,
 ) -> QuizSubmission:
     """校验输入并创建出题任务（同步返回，不等出题）。
 
-    **校验顺序是「先长度、后内容、最后库归属」**：长度检查便宜且无需加载词表，
+    **校验顺序是「先长度、后内容、最后库归属 / 额度」**：长度检查便宜且无需加载词表，
     而一段连 8 个字都不到的输入本来就该先提示「再多说一点」，
-    不必走到敏感词判断；库归属要查库，放在最后。
+    不必走到敏感词判断；库归属与配图额度要查库，放在最后。
 
     Args:
         user_id: 任务的归属用户。任务表不再允许匿名（见 `task_service.get_task_for_user`）。
         kb_id: 本次出题要用的知识库。`None` = 不带库，行为与接入前逐位一致。
+        generate_images: 要不要给题目配图。默认 `False` ⇒ 完全不碰配额表，
+            行为与接入前逐位一致。
         session: 请求级会话；接口路径传入，用于 `kb_id` 的归属校验。
 
     Raises:
         AppError: 4001 内容过短 / 过长 / 命中敏感词或提示词注入；
-            4005 `kb_id` 对应的库不存在或不属于该用户（**在建任务之前**）。
+            4005 `kb_id` 对应的库不存在或不属于该用户（**在建任务之前**）；
+            4001 要了配图但能力不可用（开关关 / 缺百炼 key / 缺 COS 凭据）；
+            4290 当天配图额度不足（**同样在建任务之前**）。
     """
     s = settings or get_settings()
 
@@ -504,9 +699,28 @@ def submit_quiz_request(
     scope = _resolve_kb_scope(kb_id, user_id=user_id, session=session)
     provider = search_provider or get_search_provider(s)
     request = _build_search_request(cleaned, s, use_search=use_search, kb=scope)
-    record = task_service.create_task(
-        "quiz", user_id=user_id, steps=_initial_steps(provider, request, question_count)
-    )
+
+    hold: QuotaHold | None = None
+    if generate_images:
+        _require_image_capability(s)
+        # 预扣放在建任务之前：额度不足时用户**立刻**知道，
+        # 而不是建了任务、看十几秒进度条、最后收到一个注定失败的结局。
+        hold = _reserve_image_quota(
+            user_id=user_id, count=question_count, settings=s
+        )
+
+    try:
+        record = task_service.create_task(
+            "quiz",
+            user_id=user_id,
+            steps=_initial_steps(provider, request, question_count),
+        )
+    except Exception:
+        # 建任务失败（进程内操作，正常不会）⇒ 预扣必须退回去，
+        # 否则就变成「扣了额度、什么也没发生」。
+        if hold is not None:
+            _release_image_quota(hold)
+        raise
 
     _submit(
         lambda: run_quiz_generation(
@@ -518,6 +732,7 @@ def submit_quiz_request(
             settings=s,
             search_provider=provider,
             search_request=request,
+            image_hold=hold,
         )
     )
 
@@ -527,6 +742,33 @@ def submit_quiz_request(
         poll_interval_ms=s.quiz_task_poll_interval_ms,
         estimated_seconds=estimate_seconds(question_count),
     )
+
+
+def _require_image_capability(settings: Settings) -> None:
+    """要配图但能力不可用 ⇒ 4001 直接拒掉，**不默默忽略**。
+
+    为什么是 4001 而不是别的码：本项目的约定是「4001 的提示语是给用户看的」
+    （见 `api/v1/routes/quiz.py` 的注释与 `exceptions.py` 的码表）。
+
+    为什么不默默忽略：用户以为自己开了配图，拿到题目才发现一张图都没有，
+    而界面不会给任何解释 —— 那是比一句错误提示更差的结果。
+
+    正常情况下前端**根本不会**显示这个开关（`/health` 下发的是派生能力），
+    所以走到这里基本只有两种可能：老版本客户端，或者绕过前端直接调接口。
+    """
+    if settings.image_generation_available:
+        return
+    raise AppError(
+        ErrorCode.INVALID_INPUT,
+        "配图功能暂时不可用，关掉配图后仍可照常出题",
+        detail=(
+            "IMAGE_GENERATION_ENABLED="
+            f"{settings.image_generation_enabled} "
+            f"has_image_credentials={settings.has_image_credentials} "
+            f"has_dashscope_key={bool(settings.dashscope_api_key)}"
+        ),
+    )
+
 
 
 def shutdown_executor(wait: bool = False) -> None:

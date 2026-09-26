@@ -53,6 +53,18 @@ export interface QuizQuestion {
   explanation: string
   knowledge_point: string
   difficulty: Difficulty
+  /**
+   * 配图的**永久**地址（后端已把上游那张 24 小时有效的图转存到 COS）。
+   *
+   * `null` 是**常态之一**，不是异常：用户没勾配图、开关关着、生图失败、
+   * 上游超预算 —— 任何一种都会让这道题没有图。所以渲染时
+   * **没有图就什么都不画**（不占位、不出骨架屏）：一个永远填不上的占位框
+   * 会让人以为「图马上就来」。
+   *
+   * ⚠️ 它**只能由后端写入**：模型自己吐的 `image_url` 会在
+   * `draft_to_quiz` 里被强制清空（design D11），否则会冒出假图片链接。
+   */
+  image_url?: string | null
 }
 
 /** 题型构成。由后端从 questions 派生，前端**不做二次计算**。 */
@@ -148,6 +160,20 @@ export interface QuizGeneratePayload {
    * ⚠️ 知识库检索**不受 `use_search` 影响** —— 关掉联网也能「只用我自己的资料出题」。
    */
   kb_id?: string
+  /**
+   * 本次召唤要不要给题目生成配图。
+   *
+   * 不带时后端按 **false** 处理 ⇒ 所有既有调用方（含脚本）行为逐位不变。
+   *
+   * ⚠️ 它是**这一次召唤**的选项，不是账号级偏好（与 `use_search` 同一层，
+   * 见 `useAppStore` 里 `QuizOptions` 的说明）。
+   *
+   * ⚠️ 后端在「开关关闭 / 缺 dashscope key / 缺 COS 凭据」三种情况下会拒掉
+   * 传了 `true` 的请求（4001 + 友好文案）。正常路径下前端**根本走不到**那里：
+   * 能力由 `/health` 的 `image_generation_enabled` 下发，为假时开关与 pill
+   * 都不渲染（design D7）—— 宁可少一个入口，也不给一个点下去必然失败的按钮。
+   */
+  generate_images?: boolean
 }
 
 export interface HealthInfo {
@@ -164,6 +190,17 @@ export interface HealthInfo {
    * 大厅的「上传文档 / 粘贴网址」chip 都按它显隐（design D18）。
    */
   knowledge_base_enabled: boolean
+  /**
+   * 题目配图能力是否可用（由 `GET /health` 下发）。
+   *
+   * ⚠️ 这是**派生值**，不是 `.env` 里那个开关本身：只有「开关打开 **且**
+   * dashscope key 非空 **且** COS 五项关键凭据齐全」时后端才下发 `true`。
+   * 所以前端只看这一个字段，**不要**再自己去拼别的开关。
+   *
+   * 为 `false` 时，生成设置页那张「生成配图」卡与大厅的配图 pill
+   * **整块不渲染**（与 `knowledgeBaseEnabled` 同一套做法，design D7）。
+   */
+  image_generation_enabled: boolean
   key_configured: boolean
 }
 
@@ -714,6 +751,12 @@ export interface ScrollQuestionItem {
   explanation: string
   earned_xp: number
   max_xp: number
+  /**
+   * 当年这一局的配图。与题干同一性质 —— 它在 `questions` 表里是快照，
+   * 所以回看时看到的就是**当时那张图**，不受后续重新出题影响。
+   * 没有配图时为 `null`，此时不渲染、不占位。
+   */
+  image_url?: string | null
 }
 
 /** `GET /users/me/scrolls/{attempt_id}`。 */

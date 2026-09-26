@@ -29,6 +29,11 @@ TEST_ENV = {
     # 在开发者机器上全都不成立 —— 这是典型的「只在本机红/绿」。
     # 需要打开的模块用 `kb_env` 夹具显式打开（见本文件末的 KB 夹具组）。
     "KNOWLEDGE_BASE_ENABLED": "false",
+    # 题目配图同样钉死为**关**。不钉的话，本机 `.env` 里做端到端验收时打开的
+    # `IMAGE_GENERATION_ENABLED=true` 会漏进测试，于是「默认关 ⇒ 前端看不见入口」
+    # 「开关关 ⇒ 带 generate_images 的请求被拒」这些用例只在本机红/绿。
+    # 需要打开的模块用 `image_env` 夹具显式打开。
+    "IMAGE_GENERATION_ENABLED": "false",
     "LOG_LEVEL": "WARNING",
     "QUIZ_TASK_TTL_SECONDS": "600",
     # ---------- 用户系统 ----------
@@ -614,4 +619,45 @@ def kb_harness(kb_env, kb_fake_embeddings, kb_session_scope):  # noqa: ANN001, A
 
     yield kb_env()
     kb_service.shutdown(wait=True)
+
+
+# -----------------------------------------------------------------------------
+# 题目配图夹具
+# -----------------------------------------------------------------------------
+# 与 KB 夹具组同一套理由：这一组会把 `IMAGE_GENERATION_ENABLED` 打开、
+# 把凭据换成假值，那会改变「钉默认值」类用例的前提，所以**不 autouse**，
+# 由各配图测试模块显式请求。
+
+#: 一套齐备的**假**凭据。它们从不会真的发请求 —— 生图与上传在测试里都被替身换掉，
+#: 这里只是为了让 `image_generation_available` 判定为真。
+FAKE_IMAGE_CREDENTIALS = {
+    "DASHSCOPE_API_KEY": "sk-fake-for-tests",
+    "COS_SECRET_ID": "AKIDtest-not-real",
+    "COS_SECRET_KEY": "test-not-real-secret",
+    "COS_REGION": "ap-guangzhou",
+    "COS_BUCKET": "knowsaga-1250000000",
+}
+
+
+@pytest.fixture
+def image_env(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """开启配图能力并注入假凭据（配图不落本地磁盘，无需临时目录）。
+
+    返回一个小工厂：用例要改上限（如把日配额压到 2 来验超限）时不必各自清缓存。
+    """
+
+    def _configure(**env: object):  # noqa: ANN202
+        from app.core.config import get_settings
+
+        baseline = {"IMAGE_GENERATION_ENABLED": "true", **FAKE_IMAGE_CREDENTIALS}
+        baseline.update({key: str(value) for key, value in env.items()})
+        for key, value in baseline.items():
+            monkeypatch.setenv(key, value)
+        get_settings.cache_clear()
+        return get_settings()
+
+    yield _configure
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
 

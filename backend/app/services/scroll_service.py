@@ -205,6 +205,7 @@ def scroll_detail(session: Session, user: User, attempt_id: int) -> ScrollDetail
             seq=int(question.seq),
             type=question.type,
             stem=str(question.stem),
+            image_url=question.image_url,
             options=[Option.model_validate(option) for option in (question.options or [])],
             answer=[str(key) for key in (question.answer or [])],
             selected=[str(key) for key in (answer.selected or [])],

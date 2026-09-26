@@ -83,6 +83,25 @@ docx2txt==0.9
 #    检索传 query），兼容端点没有这个概念，走它会把这个区分丢掉（design D4）。
 dashscope==1.27.7
 
+# --- 题目配图（对象存储）---
+# 腾讯云 COS：把生出来的图转存成永久 URL（上游返回的临时链接只有 24 小时有效期）。
+#
+# ⚠️ **必须用 `--no-deps` 安装，否则会降级两个关键依赖**（2026-09-25 实测）：
+#   本包 1.9.44 的元数据写着 `certifi<=2021.10.8` 与 `requests<=2.27.1`，
+#   正常安装会把 certifi 从 2026.07.22 降到 2021.10.8、requests 从 2.34.2 降到 2.27.1。
+#   而 certifi 是 **httpx 的 CA 包**（微信接口、以及所有 https 调用都走它）——
+#   把它退回 2021 年的根证书集是有实际风险的静默破坏。这两个上限是上游的过度保守声明，
+#   实测 1.9.44 与 requests 2.34.2 / certifi 2026.07.22 一起工作正常。
+#
+#   正确装法（缺的那几个依赖单独装，版本由我们定）：
+#     pip install cos-python-sdk-v5==1.9.44 --no-deps
+#     pip install xmltodict crcmod pycryptodome
+#   `six` 已在环境中（上面没有、但 SDK 会 import 它，故此处显式声明以免环境重建时漏装）。
+cos-python-sdk-v5==1.9.44
+xmltodict==1.0.4
+crcmod==1.7
+pycryptodome==3.23.0
+
 # --- 测试 ---
 pytest==9.1.1
 pytest-asyncio==1.4.0

@@ -23,6 +23,27 @@
   margin-top: rpx(6);
 }
 
+// 题目配图（`add-question-image-generation`，题干上方）。
+//
+// 与答题页 `.quiz__figure` 同一套属性、同一个理由 —— 两页的差异只在间距
+// （这一页的题干上边距是 6px，原型给的）。
+//
+// ⚠️ `height: auto` 在这里**同样是必需的**：Taro H5 给组件宿主元素
+// `<taro-image-core>` 带了默认 `height: 240px` + `overflow: hidden`，
+// 不盖掉的话宽高比不是 4:3 的图会被**静默裁掉底部**。
+// 实测读数与完整来龙去脉见 `pages/quiz/index.scss` 里 `.quiz__figure` 的注释。
+//
+// ⚠️ 图**不出现在收起态之外的任何分支里**：它是题干的一部分，
+// 与「讲解」那个可展开块无关，收起讲解时图照样在。
+.detail__figure {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: rpx(6);
+  border-radius: $r-opt;
+  overflow: hidden;
+}
+
 // 原型 `<div class="tiny" style="margin-top:8px">`
 .detail__answer {
   margin-top: rpx(8);

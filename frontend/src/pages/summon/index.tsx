@@ -161,12 +161,17 @@ export default function SummonPage() {
     // 中途根本切不到，多那个依赖只会引入「重新生成时用旧意愿」这类歧义。
     const wantSearch = useAppStore.getState().useSearch
     /**
-     * 出题参数（题量 / 难度 / 取材的知识库）同样在这一刻定下。
+     * 出题参数（题量 / 难度 / 取材的知识库 / 配图意愿）同样在这一刻定下。
      *
      * ⚠️ 这一页**不判**「有没有知识库」：带库与不带库走的是同一个接口、
      * 同一条链路，差别只在请求体里多不多一个 `kb_id`。而 `kb_id` 为空时
      * **整个字段都不发** —— 后端那侧是 `int | None`，发一个空串会直接被
      * 参数校验拒掉（4000），而「不取材」本来就是合法且默认的形态。
+     *
+     * ⚠️ `generate_images` 与它相反：**总是发**，且总是一个布尔值。
+     * 后端那侧默认就是 `false`（Pydantic 给了默认值），所以发 `false`
+     * 与不发在语义上完全一样 —— 显式发出去是为了让「这次到底要不要配图」
+     * 在请求体里看得见，排查时不必再去猜前端当时的 store 是什么。
      */
     const options = useAppStore.getState().quizOptions
     if (topic.length < INPUT_MIN_LEN) {
@@ -195,6 +200,7 @@ export default function SummonPage() {
           question_count: options.questionCount,
           difficulty: options.difficulty,
           use_search: wantSearch,
+          generate_images: options.generateImages,
           // 只有真的带库时才出现这个键（见上面 `options` 的说明）
           ...(options.kbId ? { kb_id: options.kbId } : {})
         })

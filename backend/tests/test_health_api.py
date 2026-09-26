@@ -5,7 +5,7 @@
 - 统一响应结构 `{code, message, data}`
 - `code == 0`
 - `data` 字段完整性：status / version / model / search_enabled / knowledge_base_enabled /
-  key_configured
+  image_generation_enabled / key_configured
 - **不泄漏密钥**（响应体中不得出现 sk- 开头的字符串）
 
 ## 为什么 `knowledge_base_enabled` 要从健康检查下发
@@ -49,12 +49,14 @@ def test_health_data_fields(client: TestClient) -> None:
         "model",
         "search_enabled",
         "knowledge_base_enabled",
+        "image_generation_enabled",
         "key_configured",
     ):
         assert field in data, f"缺少字段 {field}"
     assert data["status"] == "healthy"
     assert isinstance(data["search_enabled"], bool)
     assert isinstance(data["knowledge_base_enabled"], bool)
+    assert isinstance(data["image_generation_enabled"], bool)
     assert isinstance(data["key_configured"], bool)
 
 
@@ -67,6 +69,35 @@ def test_health_discloses_the_knowledge_base_flag(client: TestClient) -> None:
     data = client.get("/api/v1/health").json()["data"]
 
     assert data["knowledge_base_enabled"] is False, "基线环境没开知识库，不许谎报为 True"
+
+
+def test_health_discloses_the_image_generation_flag(client: TestClient) -> None:
+    """配图能力同样要**如实**下发，而且它下发的必须是**派生能力**而不是裸开关。
+
+    `image_generation_enabled` 取的是 `image_generation_available` ——
+    「开关打开 **且** 百炼 key **且** COS 五项齐全」三者同时成立才为真。
+    只下发裸开关的话，会出现「开关是 true 但缺 COS 凭据」⇒ 前端显示开关 ⇒
+    用户点下去必然失败（design D7：宁可少一个入口，也不给一个点了必失败的按钮）。
+
+    测试基线三项都不满足，所以期望 `False`。
+    """
+    data = client.get("/api/v1/health").json()["data"]
+
+    assert data["image_generation_enabled"] is False, "基线环境没有配图凭据，不许谎报为 True"
+
+
+def test_health_image_flag_tracks_credentials(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """打开开关但**不给凭据**时，对外仍必须是 `False`（能力而非意愿）。"""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("IMAGE_GENERATION_ENABLED", "true")
+    get_settings.cache_clear()
+
+    data = client.get("/api/v1/health").json()["data"]
+
+    assert data["image_generation_enabled"] is False, "缺 COS 凭据时不该对外宣告可用"
 
 
 def test_health_reports_configured_model(client: TestClient) -> None:

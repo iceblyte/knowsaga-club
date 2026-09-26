@@ -8,8 +8,15 @@
  * 在这一页再写一遍就等于开第二条出题链：两边的轮询上限、降级、进度文案
  * 迟早会不一致，而用户看到的是「从大厅出题」与「从知识库出题」两种脾气。
  *
- * 所以这里只把三件事写进 store，然后 `goPage('/pages/summon/index')`：
- * 学习需求（`userInput`）、出题参数（题量 / 难度 / 知识库）、联网意愿。
+ * 所以这里只把四件事写进 store，然后 `goPage('/pages/summon/index')`：
+ * 学习需求（`userInput`）、出题参数（题量 / 难度 / 知识库 / 配图意愿）、联网意愿。
+ *
+ * ## 「生成配图」那一张卡是 2026-09-25 新增的（原型没有配图这件事）
+ *
+ * 它**按能力显隐**：`/health` 的 `image_generation_enabled` 为假时整张卡不渲染
+ * （开关关 / 缺 dashscope key / 缺 COS 凭据三种情况都会让它为假）。
+ * 与上面那张「联网补充」卡的处理不同 —— 那张卡的版位是原型画好的，
+ * 能力关时必须留在原地，只是换成中性文案。理由与判据见 design D7。
  *
  * ## 学习需求是**前端构造**的（design D14）
  *
@@ -73,6 +80,20 @@ export default function KbGeneratePage() {
   const searchEnabled = useAppStore((s) => s.searchEnabled)
   const useSearch = useAppStore((s) => s.useSearch)
   const setUseSearch = useAppStore((s) => s.setUseSearch)
+  /**
+   * 配图那两格（`add-question-image-generation`）：
+   * - `imageGenerationEnabled` 是**能力**（后端 `/health` 给的派生值）—— 决定这
+   *   张卡显不显示；
+   * - `generateImages` 是**意愿**，放在 `quizOptions` 里，与 `useSearch` 一样
+   *   直接读写 store 而不是本地 `useState`。
+   *
+   * ⚠️ 为什么不像题量 / 难度那样用本地 state：那两个是**这一页的选择**，
+   * 而配图意愿可能是在**大厅**那枚 pill 上先设好的。用本地 state 且默认 false，
+   * 会让「在大厅勾了配图、又拐进知识库出题」的用户在**没碰任何开关**的情况下
+   * 被静默改成不配图。读同一份 store 就不存在这个不一致。
+   */
+  const imageGenerationEnabled = useAppStore((s) => s.imageGenerationEnabled)
+  const generateImages = useAppStore((s) => s.quizOptions.generateImages)
 
   const { status, data, error, reload } = useAsyncData(
     () => fetchBaseDetail(kbId),
@@ -93,6 +114,17 @@ export default function KbGeneratePage() {
       return
     }
     setUseSearch(!useSearch)
+  }
+
+  /**
+   * 翻转配图意愿。
+   *
+   * 与 `toggleSearch` 不同，这里**没有「能力关时只提示」的分支** ——
+   * 整张卡在能力为假时就不渲染（见下面的渲染处），所以进不到这个函数。
+   * 留一个到不了的分支只会让人以为「有办法点到」。
+   */
+  const toggleImages = () => {
+    setQuizOptions({ ...useAppStore.getState().quizOptions, generateImages: !generateImages })
   }
 
   if (notFound) {
@@ -134,8 +166,10 @@ export default function KbGeneratePage() {
     if (!canAsk) return
     // 1 · 学习需求（≥10 字，稳过 8 字下限；同时是知识库检索的查询语义）
     setUserInput(KB_GENERATE_COPY.inputOf(base.name))
-    // 2 · 出题参数（题量 / 难度 / 取材的库）
-    setQuizOptions({ questionCount, difficulty, kbId: base.id })
+    // 2 · 出题参数（题量 / 难度 / 取材的库 / 配图意愿）。
+    //     ⚠️ 四个字段必须一次写全：`setQuizOptions` 是整对象替换，
+    //     漏掉哪个都会让上一页留下的值静默生效（`kbId` 尤其严重）。
+    setQuizOptions({ questionCount, difficulty, kbId: base.id, generateImages })
     // 3 · 联网意愿：沿用这一页上那只 pill 的当前值
     setUseSearch(useSearch)
     // 出题链从召唤页走 —— 这一页的使命到此为止，用 redirect 推进流程
@@ -190,13 +224,34 @@ export default function KbGeneratePage() {
         <View className='between'>
           <View className='kb-generate__label'>{KB_GENERATE_COPY.searchLabel}</View>
           <Text
-            className={`pill${searchOn ? ' blue' : ''}`}
+            className={`pill kb-generate__toggle${searchOn ? ' blue' : ''}`}
             onClick={toggleSearch}
           >
             {searchOn ? KB_GENERATE_COPY.searchOn : KB_GENERATE_COPY.searchOff}
           </Text>
         </View>
       </View>
+
+      {/* ---- 题目配图（`add-question-image-generation`）----
+          整张卡按**能力**显隐：后端没配好（开关关 / 缺 key / 缺 COS）时
+          后端 `/health` 就下发 `false`，这里便什么都不渲染 ——
+          宁可少一个入口，也不给一个点下去必然失败的按钮（design D7）。
+          这与上面那张「联网补充」卡不同：那张卡的版位是原型画好的，
+          所以能力关时仍然留着、只是换成中性文案。 */}
+      {imageGenerationEnabled ? (
+        <View className='card'>
+          <View className='between'>
+            <View className='kb-generate__label'>{KB_GENERATE_COPY.imageLabel}</View>
+            <Text
+              className={`pill kb-generate__toggle${generateImages ? ' blue' : ''}`}
+              onClick={toggleImages}
+            >
+              {generateImages ? KB_GENERATE_COPY.imageOn : KB_GENERATE_COPY.imageOff}
+            </Text>
+          </View>
+          <View className='tiny kb-generate__image-hint'>{KB_GENERATE_COPY.imageHint}</View>
+        </View>
+      ) : null}
 
       <View className='spacer' />
 

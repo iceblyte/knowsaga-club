@@ -212,6 +212,8 @@ class ScrollQuestionItem(BaseModel):
     seq: int
     type: QuestionType
     stem: str
+    #: 配图永久地址；无配图时为 `None`（历史卷轴也照样能回看当年那张图）
+    image_url: str | None = None
     options: list[Option]
     #: 正确答案（用户答错时前端要显示它）
     answer: list[str]

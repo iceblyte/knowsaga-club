@@ -29,7 +29,7 @@ from app.core.exceptions import ErrorCode
 from app.db.tables import Attempt, Answer, User, UserKnowledgeStat, WrongQuestion
 from app.models.quiz import Quiz
 from app.services import quiz_repository
-from app.utils.timeutil import business_date, utcnow
+from app.utils.timeutil import business_date, to_timestamp_ms, utcnow
 
 ATTEMPT_URL = "/api/v1/attempts"
 
@@ -95,8 +95,17 @@ def _answer(question_id: str, selected: list[str], spent_ms: int = 1000) -> dict
 
 
 def _submit_body(quiz: Quiz, answers: list[dict], **overrides) -> dict:
-    """组一份合法的交卷请求体。默认整局用时 100 秒。"""
-    now_ms = int(utcnow().timestamp() * 1000)
+    """组一份合法的交卷请求体。默认整局用时 100 秒。
+
+    ⚠️ 时间戳必须走 `to_timestamp_ms()`，**不要**写回 `utcnow().timestamp()`：
+    `utcnow()` 是 naive datetime，Python 的 `.timestamp()` 会把 naive **当本地时间**
+    解释，于是一整串时间戳早了 8 小时（UTC+8 偏移）。在**本地 00:00–08:00** 这段，
+    这个偏移会把 `finished_at` 压回**前一天** ⇒ 服务端算出的 `business_date()`
+    比用例里的 `business_date()` 小一天。症状很隐蔽：`test_streak_boundaries` 的
+    「昨天 / 前天」两条断言刚好**互换**（前者期望 2 得 1、后者期望 1 得 2），
+    而白天跑全绿 —— 2026-09-26 凌晨实测暴露。
+    """
+    now_ms = to_timestamp_ms(utcnow())
     body = {
         "quiz_id": quiz.quiz_id,
         "client_token": str(uuid.uuid4()),
@@ -424,7 +433,7 @@ def test_results_follow_quiz_order_not_request_order(
 
 def test_duration_and_average_are_recorded(db_client, auth_headers, submitted_quiz) -> None:
     quiz, _ = submitted_quiz()
-    now_ms = int(utcnow().timestamp() * 1000)
+    now_ms = to_timestamp_ms(utcnow())
     body = _submit_body(
         quiz, _all_correct(quiz), started_at=now_ms - 120_000, finished_at=now_ms
     )
@@ -439,7 +448,7 @@ def test_duration_and_average_are_recorded(db_client, auth_headers, submitted_qu
 def test_absurd_duration_is_clamped_not_rejected(db_client, auth_headers, submitted_quiz) -> None:
     """用时超上限只夹取、不拒绝 —— 答题记录比这个数字重要。"""
     quiz, _ = submitted_quiz()
-    now_ms = int(utcnow().timestamp() * 1000)
+    now_ms = to_timestamp_ms(utcnow())
     # 开始时刻远早于结束时刻（37 天），但仍晚于 2020 年
     body = _submit_body(
         quiz, _all_correct(quiz), started_at=now_ms - 37 * 24 * 3600_000, finished_at=now_ms
@@ -553,7 +562,7 @@ def test_duplicate_question_in_payload_returns_4000(
 
 def test_finished_before_started_returns_4000(db_client, auth_headers, submitted_quiz) -> None:
     quiz, _ = submitted_quiz()
-    now_ms = int(utcnow().timestamp() * 1000)
+    now_ms = to_timestamp_ms(utcnow())
 
     resp = db_client.post(
         ATTEMPT_URL,
@@ -569,7 +578,7 @@ def test_seconds_used_as_milliseconds_returns_4000(
 ) -> None:
     """「秒当毫秒传」是最容易犯的错，必须在入口挡住，否则看板会多一根 1970 的柱子。"""
     quiz, _ = submitted_quiz()
-    now_ms = int(utcnow().timestamp() * 1000)
+    now_ms = to_timestamp_ms(utcnow())
 
     resp = db_client.post(
         ATTEMPT_URL,
@@ -598,8 +607,8 @@ def test_non_numeric_quiz_id_returns_4000(db_client, auth_headers) -> None:
         json={
             "quiz_id": "quiz_test",
             "client_token": str(uuid.uuid4()),
-            "started_at": int(utcnow().timestamp() * 1000) - 1000,
-            "finished_at": int(utcnow().timestamp() * 1000),
+            "started_at": to_timestamp_ms(utcnow()) - 1000,
+            "finished_at": to_timestamp_ms(utcnow()),
             "answers": [],
         },
         headers=auth_headers,

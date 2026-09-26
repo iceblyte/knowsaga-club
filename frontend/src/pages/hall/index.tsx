@@ -24,6 +24,13 @@
  * 3. 底部那张冒险者档案卡（等级 / 累计 XP / 连续天数）原本是写死的演示数据，
  *    现在读 `GET /users/me`。它是这一屏唯一需要联网的东西，所以它自己
  *    承担加载态 —— 读不到时只出占位符，整屏不因此变成空页面。见 `HALL_PROFILE_COPY`。
+ * 4. **第二枚 pill「题目配图」（2026-09-25 新增）。** 原型里没有配图这件事，
+ *    所以它不是「改文案」而是**新增元素**：与联网那枚并排，共用 `.pill` 样式。
+ *    两枚的差别只有三点 —— 显隐判据（能力）、文案（`HALL_IMAGE_COPY`）、
+ *    以及**默认值**（联网默认开、配图默认关，都与后端默认对齐）。
+ *    ⚠️ 并排两枚 pill 是**布局敏感**的：`.pill` 本身没有 `flex: none`，
+ *    在 `between` 那一行里会被压扁。所以外面多包了一层 `.hall__pills`，
+ *    由它承担换行与不压缩（见 `index.scss`）—— **改完必须量一次**。
  *
  * ## 预设问题 = 只填进输入框，不直接召唤（2026-09-23 按用户要求改回）
  *
@@ -66,6 +73,7 @@ import Sprite from '../../components/Sprite'
 import {
   ARCHIVE_COMMON,
   COMMON_COPY,
+  HALL_IMAGE_COPY,
   HALL_PROFILE_COPY,
   HALL_SEARCH_COPY
 } from '../../constants/copy'
@@ -141,6 +149,13 @@ export default function HallPage() {
   const setQuizOptions = useAppStore((s) => s.setQuizOptions)
   // 私有知识库的总开关（后端经 `GET /health` 下发）。
   const knowledgeBaseEnabled = useAppStore((s) => s.knowledgeBaseEnabled)
+  /**
+   * 题目配图那两格（`add-question-image-generation`）：
+   * `imageGenerationEnabled` 是**能力**（决定第二枚 pill 显不显示），
+   * `generateImages` 是**意愿**（决定它是蓝是灰）。
+   */
+  const imageGenerationEnabled = useAppStore((s) => s.imageGenerationEnabled)
+  const generateImages = useAppStore((s) => s.quizOptions.generateImages)
 
   /**
    * 该显示哪几个「追加资料」chip。
@@ -220,6 +235,21 @@ export default function HallPage() {
   }
 
   /**
+   * 点第二枚 pill = 翻转「这次要不要配图」。
+   *
+   * 与联网那只的**唯一**差别：这里没有「能力关时只提示」的分支 ——
+   * 这枚 pill 在能力为假时整块不渲染（见渲染处），所以根本点不到。
+   * 留一个到不了的分支，只会让读代码的人以为「还有办法点到」。
+   *
+   * 写的是 `quizOptions.generateImages`（请求级参数），不是单独一格 store：
+   * 这样它顺带被 `handleSubmit` 里那次「显式写回默认参数」管着，
+   * 不会像 `kbId` 那样跨局串味。
+   */
+  const handleImagePillTap = () => {
+    setQuizOptions({ ...useAppStore.getState().quizOptions, generateImages: !generateImages })
+  }
+
+  /**
    * 点预设问题 = **填进输入框**（2026-09-23 按用户要求改回；两次改动的取舍见文件头）。
    *
    * 只做两件事，**不跳转**：把问题写进输入框，等用户自己点「召唤副本」。
@@ -288,8 +318,14 @@ export default function HallPage() {
      * 不重置的话，用户从知识库出过题之后回到大厅用一句话召唤，
      * 这一局仍然会在**上一个知识库里取材** —— 而他刚刚完全没有提到那个库。
      * 题量与难度同理（知识库那页可以选 3 题，大厅这一路一直是 5 题）。
+     *
+     * ⚠️ 配图意愿是**唯一**一个要跟着这一页自己的 pill 走、而**不能**归零的
+     * 字段：它在大厅是**可见可改**的（那枚 pill 就在输入框下面），
+     * 用户看着它点下了「召唤副本」。归零会让界面与请求体当场矛盾 ——
+     * 明明蓝着，却没给这次召唤配图。其余三个字段在大厅**没有控件**，
+     * 所以必须回到默认值（否则就是替用户做了一个他看不见的选择）。
      */
-    setQuizOptions(DEFAULT_QUIZ_OPTIONS)
+    setQuizOptions({ ...DEFAULT_QUIZ_OPTIONS, generateImages })
     goPage('/pages/summon/index', 'navigate')
   }
 
@@ -339,12 +375,29 @@ export default function HallPage() {
           />
           <View className='between'>
             {hasInput ? (
-              <Text
-                className={`pill${pillBlue ? ' blue' : ''}`}
-                onClick={handlePillTap}
-              >
-                {pillLabel}
-              </Text>
+              // ⚠️ 两枚 pill 必须包在 `.hall__pills` 里：这一行是 `between`，
+              // 直接并排两个 flex 子项的话它们会被分别拉扯到两端，
+              // 中间空出一大截（看上去像两个不相关的东西）。
+              <View className='row hall__pills'>
+                <Text
+                  className={`pill${pillBlue ? ' blue' : ''}`}
+                  onClick={handlePillTap}
+                >
+                  {pillLabel}
+                </Text>
+                {/* 第二枚：题目配图。按**能力**显隐 —— 不是灰着摆一个
+                    「点了只弹提示」的空位（联网那只必须留着，因为它占的是
+                    原型画好的版位；这枚是新增的，没有版位要守）。
+                    判据与文案见 `HALL_IMAGE_COPY`。 */}
+                {imageGenerationEnabled ? (
+                  <Text
+                    className={`pill${generateImages ? ' blue' : ''}`}
+                    onClick={handleImagePillTap}
+                  >
+                    {generateImages ? HALL_IMAGE_COPY.on : HALL_IMAGE_COPY.off}
+                  </Text>
+                ) : null}
+              </View>
             ) : (
               <View />
             )}

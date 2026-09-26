@@ -27,7 +27,7 @@
  * 理由是没有「下一题」用户根本走不下去，而讲解卡撑满只是视觉习惯。
  */
 
-import { Button, Text, View } from '@tarojs/components'
+import { Button, Image, Text, View } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 
 import PhoneShell from '../../components/PhoneShell'
@@ -217,6 +217,15 @@ export default function QuizPage() {
       {/* 题干 */}
       <View className='card parch'>
         <Text className='pill'>{QUESTION_TYPE_LABEL[question.type]}</Text>
+        {/* 配图（`add-question-image-generation`）：放在题型胶囊与题干之间，
+            位置固定、**没有图就什么都不画**（不占位、不出骨架屏）——
+            `image_url` 为 `null` 是常态（用户没勾 / 生图失败 / 上游超预算），
+            留一个空框会让用户以为「图马上就来」。
+            宽度撑满卡片、高度按原图比例（`widthFix`）：后端默认出 512×512 的方图，
+            但那是配置项，写死高度会在改配置后把图裁掉。 */}
+        {question.image_url ? (
+          <Image className='quiz__figure' src={question.image_url} mode='widthFix' />
+        ) : null}
         <View className='quiz__stem'>{question.stem}</View>
       </View>
 

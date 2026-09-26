@@ -75,12 +75,21 @@ def draft_to_quiz(
     """
     from app.utils.id_generator import new_quiz_id
 
+    # 配图只能由服务端生图段写入。`Question.image_url` 是**已声明**的字段，
+    # 而 `Question` 是 `extra="ignore"` —— 「ignore」只管未声明的字段，
+    # 已声明的字段模型一旦给了就会被收下。所以这里显式清空（design D11）：
+    # 不清的话，模型可以编一个图片地址进来，而那是最难查的一类假数据
+    # （不报错、界面照常显示一张与本题无关的图）。
+    stripped = [
+        question.model_copy(update={"image_url": None}) for question in draft.questions
+    ]
+
     return build_quiz(
         quiz_id=quiz_id or new_quiz_id(),
         title=draft.title,
         summary=draft.summary,
         source_type=source_type,  # type: ignore[arg-type]
         user_input=user_input,
-        questions=draft.questions,
+        questions=stripped,
         knowledge_points=draft.knowledge_points,
     )

@@ -1,4 +1,4 @@
-"""10 张表的 ORM 映射。
+"""13 张表的 ORM 映射。
 
 **这份定义必须与 `backend/sql/01_schema.sql` 逐列一致** —— 那份 SQL 是表结构的
 权威来源（表已由它建好），这里只是让代码能安全地读写它。测试里有一条
@@ -171,6 +171,13 @@ class QuestionRecord(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     knowledge_point: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False, default="easy")
+    #: 题目配图的**永久**地址（`sql/08_question_image.sql`）。
+    #:
+    #: ⚠️ 存的是我们自己转存到 COS 之后的地址，**不是**上游生图返回的那个 ——
+    #: 上游链接只有 24 小时有效期，而题目是永久保存的。用 NULL 表达「这道题没有配图」：
+    #: 生图失败、用户没勾选、或能力未启用，都落到同一个值上（对界面而言没有区别）。
+    #: 512 是列宽上限，写入时按它截断（见 `quiz_repository` 的截断说明）。
+    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     #: 复习关卡的**副本题**指回原错题；原题为 `NULL`。
     #:
     #: 见 `sql/02_questions_origin.sql` 的说明：错题本按
@@ -443,6 +450,38 @@ class KnowledgeDocument(Base):
     parsed_at: Mapped[datetime | None] = mapped_column(DT3, nullable=True)
 
 
+# -----------------------------------------------------------------------------
+# 13. image_quota_usage —— 每人每天的生图额度消耗
+# -----------------------------------------------------------------------------
+class ImageQuotaUsage(Base):
+    """一个用户在某一个**业务日**里消耗掉的生图张数（`sql/08_question_image.sql`）。
+
+    为什么是表而不是内存计数：`app/core/ratelimit.py` 那种进程内滑动窗口
+    重启即清零、多实例各算各的 —— 对「每人每天 20 张」这种要花钱的配额不可接受。
+
+    ⚠️ `biz_date` 是**业务时区**（`APP_TIMEZONE`）下的自然日，与「连续天数」
+    「错题到期」同一口径。写 UTC 日期的表现是「额度在早上 8 点重置」。
+
+    ⚠️ 联合主键 `(user_id, biz_date)` 同时承担索引职责：查「某人今天的用量」
+    正好命中主键前缀，不需要第二个索引。
+
+    只有**真正生成成功**的张数才留在 `used_count` 上：预扣 → 成功后按实际张数结算，
+    任务整体失败/取消时全额退回（`services/image_quota_service.py`）。
+    """
+
+    __tablename__ = "image_quota_usage"
+
+    user_id: Mapped[int] = mapped_column(
+        PK,
+        ForeignKey("users.id", name="fk_image_quota_usage_user", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    biz_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    used_count: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 #: 全部表（供测试与迁移核对）
 ALL_TABLES = (
     User,
@@ -457,4 +496,5 @@ ALL_TABLES = (
     UserBadge,
     KnowledgeBase,
     KnowledgeDocument,
+    ImageQuotaUsage,
 )

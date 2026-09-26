@@ -33,7 +33,7 @@ from app.db.tables import Report as ReportRow
 from app.models.quiz import Quiz
 from app.models.report import ReportDraft
 from app.services import quiz_repository
-from app.utils.timeutil import utcnow
+from app.utils.timeutil import to_timestamp_ms, utcnow
 
 REPORT_URL = "/api/v1/report/generate"
 
@@ -77,7 +77,7 @@ def _answer(question_id: str, selected: list[str], spent_ms: int = 1000) -> dict
 
 
 def _submit_body(quiz: Quiz, answers: list[dict], **overrides) -> dict:
-    now_ms = int(utcnow().timestamp() * 1000)
+    now_ms = to_timestamp_ms(utcnow())
     body = {
         "quiz_id": quiz.quiz_id,
         "client_token": str(uuid.uuid4()),

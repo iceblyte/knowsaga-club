@@ -158,4 +158,7 @@ def _copy_of(row: QuestionRecord) -> Question:
         explanation=row.explanation,
         knowledge_point=row.knowledge_point,
         difficulty=row.difficulty,
+        # 副本是**同一道题**的另一份，配图当然也跟着走 ——
+        # 不带的话用户会看到「原题有图、复习时同一道题没了图」。
+        image_url=row.image_url,
     )

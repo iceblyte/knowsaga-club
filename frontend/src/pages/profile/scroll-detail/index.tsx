@@ -30,7 +30,7 @@
  * 所以空参数直接短路，不去碰网络。
  */
 
-import { Button, Text, View } from '@tarojs/components'
+import { Button, Image, Text, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState } from 'react'
 
@@ -187,6 +187,15 @@ export default function ScrollDetailPage() {
               </Text>
               <Text className={tone.pill}>{tone.label}</Text>
             </View>
+
+            {/* 当年那一局的配图（`add-question-image-generation`）。
+                与答题页同一版位（题干上方），也同一条规矩：没有图就什么都不画 ——
+                `image_url` 为 `null` 是常态，留空框等于承诺一张不会来的图。
+                这里是**回看**，图与题干一样来自 `questions` 的快照，
+                所以看到的正是当时那张。 */}
+            {item.image_url ? (
+              <Image className='detail__figure' src={item.image_url} mode='widthFix' />
+            ) : null}
 
             <View className='body sm detail__stem'>{item.stem}</View>
 

@@ -54,6 +54,11 @@ DIFFICULTY_MAX = 16
 SEARCH_STATE_MAX = 16
 HASH_LEN = 64
 KNOWLEDGE_POINT_MAX = 64
+#: 与 `sql/08_question_image.sql` 的 `questions.image_url VARCHAR(512)` 一致。
+#: 超出就截断：我们的地址由 `llm/image/store.py` 拼出来，正常只有百来字符，
+#: 但**不截断的话** MySQL 严格模式会直接报错、整次出题白跑 ——
+#: 而截断只影响这一张图的地址，题目本身照常可用。
+IMAGE_URL_MAX = 512
 
 #: 摘要为空时的占位。`summary` 列 NOT NULL DEFAULT ''，而 `Quiz.summary`
 #: 是 NonEmptyStr —— 读回来必须补一个非空值，否则模型校验直接炸。
@@ -138,6 +143,9 @@ def persist_quiz(
             explanation=question.explanation,
             knowledge_point=_clip(question.knowledge_point, KNOWLEDGE_POINT_MAX),
             difficulty=question.difficulty,
+            # 空串归一成 NULL：「没有配图」只有一种表示。
+            # 若存成 ""，前端判空、以后按有无配图做的查询都要多写一种情况。
+            image_url=_clip(question.image_url or "", IMAGE_URL_MAX) or None,
             origin_question_id=origins[seq - 1] if origins is not None else None,
         )
         session.add(question_row)
@@ -215,6 +223,7 @@ def build_quiz(row: QuizRecord, questions: Sequence[QuestionRecord]) -> Quiz:
                 explanation=item.explanation,
                 knowledge_point=item.knowledge_point,
                 difficulty=item.difficulty,
+                image_url=item.image_url,
             )
             for item in questions
         ],

@@ -80,6 +80,16 @@ class Question(BaseModel):
     explanation: NonEmptyStr = Field(description="解析讲解")
     knowledge_point: NonEmptyStr = Field(description="知识点标签")
     difficulty: Difficulty = Field(description="难度")
+    #: 配图的**永久**地址（对象存储），`None` = 这道题没有配图。
+    #:
+    #: 两条硬规矩：
+    #: 1. 它**只能**由服务端生图段写入 —— `draft_to_quiz` 会把模型产出的同名字段
+    #:    强制清空。否则模型可以编一个地址进来，点开是一张与本题无关的图，
+    #:    而这类假数据不报错、只在界面上静静显示错东西。
+    #: 2. 存的永远是**转存后**的地址：百炼返回的临时链接只有 24 小时有效期。
+    image_url: str | None = Field(
+        default=None, description="配图永久地址；无配图时为 null"
+    )
 
     @model_validator(mode="after")
     def _validate_answer_consistency(self) -> "Question":

@@ -30,3 +30,23 @@
   text-align: center;
   margin-top: rpx(6);
 }
+
+// 配图卡下方的说明（新增，原型没有配图这件事）。
+// 上面加一条虚线，把它与「开关」那一行分开 —— 它是**解释**而不是开关本身，
+// 贴在一起会被读成胶囊的附注、进而被略过。
+.kb-generate__image-hint {
+  margin-top: rpx(8);
+  padding-top: rpx(8);
+  border-top: 1PX dashed $stroke-line-dash;
+  line-height: 1.6;
+}
+
+// 右侧胶囊（联网 / 配图）是**开关**，不能被左边那行说明文字挤扁。
+//
+// ⚠️ 选择器必须挂在这一页自己的类上：Taro 的页面样式是**全局**的
+// （见 `scroll-detail/index.scss` 里那条同名提醒），写 `.card .between > .pill`
+// 会漏到报告页、我的页去。这里给两处开关胶囊加了 `kb-generate__toggle`。
+.kb-generate__toggle {
+  flex: none;
+  white-space: nowrap;
+}

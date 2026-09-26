@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from app.core.constants import SCROLL_PAGE_SIZE_MAX
 from app.utils.timeutil import business_date
-from tests.helpers import at, current_user_id, make_quiz, settle
+from tests.helpers import at, current_user_id, make_quiz, questions_of, settle
 
 SCROLLS = "/api/v1/users/me/scrolls"
 
@@ -39,6 +39,11 @@ SCROLLS = "/api/v1/users/me/scrolls"
 #: 0 点是业务日里唯一**无论几点运行都已过去**的整点，又仍属于「今天」，
 #: 所以它可以承载「今天 HH:MM」这类精确断言。
 TODAY_EARLY = at(0, hour=0)
+
+#: 一张「转存后的永久图片地址」样本（真实形态是
+#: `https://<bucket>.cos.<region>.myqcloud.com/quiz-images/<user>/<hash>.png`）。
+#: 这里只关心它**原样透出**，不关心域名真假 —— 所以用 example.com 即可。
+COS_URL = "https://cos.example.com/quiz-images/1/abc123.png"
 
 
 def _scrolls(client, headers, **params) -> dict:
@@ -291,6 +296,38 @@ def test_scroll_detail_returns_every_question_with_the_users_answer(
     assert second["answer"] == ["T"], "判断题的正确答案是 T/F"
     assert second["earned_xp"] == 0
     assert second["max_xp"] > 0
+
+
+def test_scroll_detail_carries_the_question_image(
+    db_client, db_session, auth_headers
+) -> None:
+    """配图随卷轴详情带出（design D11 的五处下发面之一）。
+
+    `scroll_service` 里 `Quiz → ScrollQuestionItem` 是**逐字段手抄**的映射 ——
+    以后谁给题目加字段、漏抄了这一处，**不会有任何报错**，表现只是
+    「答题时题上有图、回看历史卷轴时图没了」。所以这条走真实写入路径 + 真实接口，
+    把它钉住；并且**只给第一题配图**，用来证明不是「有图就整片透传」。
+    """
+    user_id = current_user_id(db_client, auth_headers)
+    quiz = make_quiz(db_session, user_id, kps=("甲", "乙"), types=("single", "judge"))
+
+    settled = settle(
+        db_client, auth_headers, db_session, quiz,
+        outcomes=("correct", "wrong"), finished_at=TODAY_EARLY,
+    )
+
+    # 直接从库里给第一题补上图（生图本身的链路由 test_quiz_image_flow.py 覆盖，
+    # 这条只关心「已有图能否被详情接口带出去」）
+    rows = sorted(questions_of(db_session, quiz), key=lambda row: row.seq)
+    rows[0].image_url = COS_URL
+    db_session.commit()
+
+    body = _detail(db_client, auth_headers, settled["attempt_id"]).json()["data"]
+    first, second = body["questions"]
+
+    assert first["image_url"] == COS_URL
+    # 无图的题必须是 `null`（不是缺键、也不是串了别人的图）
+    assert second["image_url"] is None
 
 
 def test_scroll_detail_is_not_found_for_another_users_attempt(

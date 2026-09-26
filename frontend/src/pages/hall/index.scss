@@ -121,3 +121,26 @@
   height: rpx(8);
   flex: none;
 }
+
+// 输入框那一行左端的胶囊组（联网 + 配图，后者 2026-09-25 新增）。
+//
+// 为什么不能把两枚 `.pill` 直接放进 `.between`：`between` 是
+// `justify-content: space-between`，两个子项会被推到左右两端，中间空出一大截。
+//
+// ⚠️ `.pill` 自己没有 `flex: none`（它平时总是单独出现，压不压得不出来）。
+// 并排之后就压得出来了 —— 所以这里补 `flex: none` + `nowrap`，
+// 并且允许换行：真到了放不下的时候，**换行**比**把字压成两行**好读
+// （`.pill` 是 10.5px 的胶囊，压成两行会变成一个方块）。
+//
+// ⚠️ 选择器挂 `.hall__pills` 而不是直接改 `.pill`：`.pill` 是全站共用的
+// （报告页 / 我的页 / 结算页都有），在基座里加 `flex: none` 会同时改掉
+// 那些版面 —— 那属于「零视觉漂移」要防的那类顺手改动。
+.hall__pills {
+  flex-wrap: wrap;
+  gap: rpx(6); // 比基座 `.row` 的 8px 紧一点，两枚胶囊才像一组
+
+  .pill {
+    flex: none;
+    white-space: nowrap;
+  }
+}
