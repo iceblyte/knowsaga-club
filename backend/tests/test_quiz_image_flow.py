@@ -47,6 +47,8 @@ from app.db.tables import QuestionRecord
 from app.llm import image as image_flow
 from app.llm import quiz_chain
 from app.llm.image import ImageOutcome
+from app.llm.image import selector as image_select
+from app.llm.image.selector import ImageSelection
 from app.llm.output_schemas import QuizDraft, draft_to_quiz
 from app.models.quiz import Question, Quiz
 from app.services import (
@@ -77,12 +79,17 @@ def image_harness(
     与 KB 夹具组同一套理由（见 `conftest.py`）：**不**做成全局 autouse，
     但在本文件里是显式的 —— 这里的每一条都在验这条能力。
 
-    ⚠️ 顺手把出题链与生图段都钉成替身。这不是多余的：本文件有走 HTTP 的用例，
-    而 `POST /quiz/generate` 会把任务丢进**真的后台线程**。若某条用例忘了
-    替换它们，那一跑就会真的去请求 DeepSeek / 百炼 —— 实测踩过一次
-    （日志里一串 `401 Authorization Required`，那是真实请求，红线）。
+    ⚠️ 顺手把出题链、配图判断与生图段**三个**外部调用点都钉成替身。
+    这不是多余的：本文件有走 HTTP 的用例，而 `POST /quiz/generate` 会把任务丢进
+    **真的后台线程**。若某条用例忘了替换它们，那一跑就会真的去请求 DeepSeek / 百炼 ——
+    实测踩过一次（日志里一串 `401 Authorization Required`，那是真实请求，红线）。
     默认替身让「忘了替换」不再有后果；个别用例仍可用自己的 `monkeypatch`
     覆盖它（monkeypatch 按注册逆序还原，不会互相干扰）。
+
+    ⚠️ 配图判断（`app/llm/image/selector.py`，2026-09-26 加）是**另一个**调用点：
+    生图走百炼，判断走 DeepSeek，而本机 `.env` 里的 `DEEPSEEK_API_KEY` 是真的。
+    所以这里必须显式钉住，否则本文件每条用例都会真的发一次模型请求。
+    钉成「全都配」（`ids=None`）⇒ 既有用例的语义与接入判断之前**逐位一致**。
     """
     image_env()
     stub = Quiz.model_validate(
@@ -94,6 +101,13 @@ def image_harness(
         "generate_for_questions",
         lambda questions, *, settings, on_progress=None: ImageOutcome(
             urls={}, attempted=0, succeeded=0
+        ),
+    )
+    monkeypatch.setattr(
+        image_select,
+        "select_for_images",
+        lambda questions, *, settings, llm_factory=None: ImageSelection(
+            ids=None, reason=image_select.REASON_FALLBACK
         ),
     )
 
@@ -567,6 +581,241 @@ def test_progress_detail_reports_image_counts(
     steps = {step.key: step for step in task_service.get_task(task_id).steps}
     assert len(steps) == 3, "生图不许新增一步（原型的三步是裁决依据）"
     assert "配图 3 / 5" in steps["generate"].detail
+
+
+# -----------------------------------------------------------------------------
+# 四之二、AI 挑图：只给挑中的题生成（2026-09-26 新增，design D18）
+# -----------------------------------------------------------------------------
+class SpySelect:
+    """配图判断的替身。`ids=None` 表示「全都配」（未判成 / 开关关着）。"""
+
+    def __init__(self, *, ids, reason, explode: bool = False) -> None:  # noqa: ANN001
+        self.calls: list[list[str]] = []
+        self._ids = None if ids is None else frozenset(ids)
+        self._reason = reason
+        self._explode = explode
+
+    def __call__(self, questions, *, settings, llm_factory=None):  # noqa: ANN001, ANN202
+        self.calls.append([question.id for question in questions])
+        if self._explode:
+            raise RuntimeError("判断替身故意爆炸：验第二道兜底")
+        return ImageSelection(ids=self._ids, reason=self._reason)
+
+
+@pytest.fixture
+def spy_select(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """替换配图判断并留档。
+
+    `image_harness` 已经装了一个「全都配」的默认替身，这里覆盖它 ——
+    monkeypatch 按注册逆序还原，两者不会互相干扰。
+    """
+
+    def _install(  # noqa: ANN202
+        ids,  # noqa: ANN001
+        *,
+        reason=image_select.REASON_JUDGED,  # noqa: ANN001
+        explode: bool = False,
+    ) -> SpySelect:
+        spy = SpySelect(ids=ids, reason=reason, explode=explode)
+        monkeypatch.setattr(image_select, "select_for_images", spy)
+        return spy
+
+    return _install
+
+
+def test_selection_narrows_the_targets(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """判断只挑中 2 道 ⇒ 生图段**只拿到这 2 道**，其余题目保持无图。
+
+    这是省钱这件事的**唯一**证据：光有判断结果、却仍然把 5 道都丢给生图段，
+    钱照样花掉，而且从外部看不出来。
+    """
+    spy = spy_images()
+    sel = spy_select(["q1", "q3"])
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    task = task_service.get_task(task_id)
+    assert task.status == "succeeded"
+    # 判断看得到**全部**题目（否则它没法比较哪些更值得配）
+    assert sel.calls == [["q1", "q2", "q3", "q4", "q5"]]
+    # 生图段只拿到被挑中的那两道（这里的 id 是**落库前**的原始题号）
+    assert spy.asked == ["q1", "q3"]
+    assert task.quiz is not None
+    # ⚠️ 按**位置**断言，不能按 id：落库之后题目 id 会被改写成数据库主键的
+    # 字符串形式（见 `quiz_repository` 的模块说明），回读时已经是 "1" / "3"。
+    urls = [q.image_url for q in task.quiz.questions]
+    assert [url is not None for url in urls] == [True, False, True, False, False]
+
+
+def test_empty_selection_generates_nothing(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """判断认为一道都不需要 ⇒ **一次生图都不该发生**，且任务照常成功。
+
+    收尾文案必须是「没有需要配图的题」而不是「配图 0 / 5」——
+    后者看起来像 5 张全失败，而这里根本没打算配。
+    """
+    spy = spy_images()
+    spy_select([])
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    task = task_service.get_task(task_id)
+    assert task.status == "succeeded", "没人要图不等于出题失败"
+    assert spy.calls == 0, "判断说都不需要 ⇒ 生图段一次都不该被调用"
+    assert task.quiz is not None
+    assert all(q.image_url is None for q in task.quiz.questions)
+
+    steps = {step.key: step for step in task.steps}
+    assert "没有需要配图的题" in steps["generate"].detail
+
+    # 预扣的 5 张必须全额退回（一张都没生成）
+    db_session.rollback()
+    assert _used(db_session, user_id=quota_user.id) == 0
+
+
+def test_selection_failure_falls_back_to_every_question(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """判断没成 ⇒ 回退到「全都配」，而不是「全都不配」（design D18 第 2 条契约）。"""
+    spy = spy_images()
+    spy_select(None, reason=image_select.REASON_FALLBACK)
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    assert spy.asked == ["q1", "q2", "q3", "q4", "q5"]
+    task = task_service.get_task(task_id)
+    assert task.quiz is not None
+    assert all(q.image_url for q in task.quiz.questions)
+
+
+def test_selection_exception_does_not_break_the_quiz(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """判断替身**抛异常**也不能把出题搞挂 —— 它是后台线程里的第二道兜底。
+
+    契约上 `selector.select_for_images` 不抛，但「契约说不会抛」不等于
+    「真不会抛」。这一条与 `test_generator_exception_does_not_break_the_quiz`
+    是同一个理由，只是换成了判断那一步。
+
+    兜底策略取 selector 自己的降级语义 —— **回退「全部配图」**：
+    用户是主动勾了配图的，判断器坏掉不该变成「一张都没有」。
+    """
+    spy = spy_images()
+    spy_select(None, explode=True)
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    task = task_service.get_task(task_id)
+    assert task.status == "succeeded"
+    assert spy.calls == 1, "判断炸了 ⇒ 回退全部配图，所以生图段仍然要被跑一次"
+    assert spy.asked == ["q1", "q2", "q3", "q4", "q5"]
+    assert task.quiz is not None
+    assert all(q.image_url for q in task.quiz.questions)
+
+
+def test_progress_detail_uses_the_selected_count_as_denominator(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """挑中 2 道、成了 2 张 ⇒ 文案是「配图 2 / 2」，不是「2 / 5」。
+
+    分母写总题数会让用户以为还有 3 张在路上。
+    """
+    spy_images()
+    spy_select(["q2", "q5"])
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    steps = {step.key: step for step in task_service.get_task(task_id).steps}
+    assert "配图 2 / 2" in steps["generate"].detail
+
+
+def test_quota_counts_only_the_selected_and_succeeded(
+    db_scope, db_session, settings, sample_quiz_payload, quota_user, spy_images, spy_select
+) -> None:  # noqa: ANN001
+    """预扣 5、挑中 2、成 1 ⇒ 用量是 **1**（挑图省下的钱必须体现在额度上）。"""
+    spy_images(succeed=1)
+    spy_select(["q2", "q4"])
+    quiz = _fake_quiz(sample_quiz_payload)
+    hold = _hold_for(db_session, user_id=quota_user.id, count=5, settings=settings)
+    task_id = _start_task(
+        user_id=quota_user.id, settings=settings, question_count=len(quiz.questions)
+    )
+
+    _run_quiz(
+        task_id=task_id,
+        user_id=quota_user.id,
+        settings=settings,
+        quiz=quiz,
+        image_hold=hold,
+    )
+
+    db_session.rollback()
+    assert _used(db_session, user_id=quota_user.id) == 1
+
+
+def test_selecting_detail_text() -> None:
+    """判断这一步有自己的文案：先显示「正在配图 0 / 5」再跳成「0 / 2」会像进度回退。"""
+    assert (
+        quiz_service._image_selecting_detail(5) == "已生成 5 道题 · 正在挑选值得配图的题目"
+    )
 
 
 # -----------------------------------------------------------------------------

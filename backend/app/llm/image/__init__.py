@@ -66,12 +66,17 @@ def shutdown_pool(wait: bool = False) -> None:
 
 
 #: 调用方用来把「本段发生了什么」说给用户看的取值。
-#: `""` = 全部成功；其余四种都表示「有题没拿到图」。
+#: `""` = 全部成功；`no_need` = 判断后确认**一道都不需要**配图；
+#: 其余四种都表示「有题没拿到图」。
 REASON_DONE = ""
 REASON_DISABLED = "disabled"
 REASON_BUDGET = "budget"
 REASON_PARTIAL = "partial"
 REASON_ERROR = "error"
+#: 「判断认为这一批题都不需要配图」，**由上层**（`quiz_service`）在选题结果为空时
+#: 用它构造 `ImageOutcome`。它不是生图段自己的产物，但取值域归这里管 ——
+#: 让上层自己编字符串，收尾文案就再也找不到全部可能的取值。
+REASON_NO_NEED = "no_need"
 
 
 @dataclass(frozen=True)
@@ -224,6 +229,7 @@ __all__ = [
     "REASON_DISABLED",
     "REASON_DONE",
     "REASON_ERROR",
+    "REASON_NO_NEED",
     "REASON_PARTIAL",
     "ImageOutcome",
     "generate_for_questions",

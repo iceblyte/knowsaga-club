@@ -36,11 +36,12 @@ from app.db.session import session_scope
 from app.llm import image as image_flow
 from app.llm import quiz_chain
 from app.llm.image import ImageOutcome
+from app.llm.image import selector as image_select
 from app.llm.search import SearchProvider, SearchRequest, get_search_provider
 from app.llm.search import collector
 from app.llm.search.agent import ToolProgress
 from app.llm.search.base import KbScope, ReferenceCaps, SearchOutcome
-from app.models.quiz import Quiz
+from app.models.quiz import Question, Quiz
 from app.services import image_quota_service, quiz_repository, task_service
 from app.services.image_quota_service import QuotaHold
 from app.services.task_service import TaskRecord, TaskStep
@@ -351,19 +352,36 @@ def _generate_detail(question_count: int) -> str:
     return f"已生成 {question_count} 道题"
 
 
+def _image_selecting_detail(question_count: int) -> str:
+    """配图段的第一步文案：正在判断哪几道题值得配图。
+
+    单独一句话，而不是先显示「正在配图 0 / 总题数」再跳成「0 / 选中数」——
+    那个分母中途会变小，看上去像进度回退了。
+    """
+    return f"已生成 {question_count} 道题 · 正在挑选值得配图的题目"
+
+
 def _image_running_detail(question_count: int, done: int, total: int) -> str:
+    """进行中的文案。`total` 是**要配图的题数**（判断结果），不是总题数。"""
     return f"已生成 {question_count} 道题 · 正在配图 {done} / {total}"
 
 
 def _image_done_detail(question_count: int, outcome: ImageOutcome) -> str:
     """配图段的收尾文案。
 
-    「要了但一张都没跑到」与「跑了但没成」必须分开说：前者是能力中途不可用了
-    （`attempted == 0`），说「配图 0 / 5」会像是 5 张全失败。
+    三种情形必须分开说，否则用户只能猜：
+
+    - `REASON_NO_NEED`：判断认为**这几道题都不需要图**。说「配图 0 / 5」
+      会像是 5 张全失败了，而这里根本没打算配。
+    - `attempted == 0`：能力中途不可用了（没开始跑）。同理不能说成失败。
+    - 其余：按**实际配了图的题数**报（分母是 `attempted`，不是总题数）——
+      用户不关心「本来有 5 道题」，他关心「勾了配图的那几道拿到没有」。
     """
+    if outcome.reason == image_flow.REASON_NO_NEED:
+        return f"已生成 {question_count} 道题 · 没有需要配图的题"
     if outcome.attempted == 0:
         return f"已生成 {question_count} 道题 · 未生成配图"
-    return f"已生成 {question_count} 道题 · 配图 {outcome.succeeded} / {question_count}"
+    return f"已生成 {question_count} 道题 · 配图 {outcome.succeeded} / {outcome.attempted}"
 
 
 def _image_progress(done: int, total: int) -> int:
@@ -374,10 +392,27 @@ def _image_progress(done: int, total: int) -> int:
     return _PROGRESS_IMAGE_START + int(span * done / total)
 
 
+def _select_image_targets(quiz: Quiz, *, settings: Settings) -> list[Question]:
+    """挑出这次真要配图的题目（2026-09-26 新增，design D18）。
+
+    判断本身在 `llm/image/selector` 里，且那一步**不抛异常**：
+    判断失败 / 开关关着时它返回「全都配」，正是接入本功能之前的行为。
+    这里只负责把那两种「全都配」的表示翻译成题目列表。
+    """
+    selection = image_select.select_for_images(quiz.questions, settings=settings)
+    if selection.ids is None:
+        return list(quiz.questions)
+    return [question for question in quiz.questions if question.id in selection.ids]
+
+
 def _render_images(
     quiz: Quiz, *, task_id: str, settings: Settings
 ) -> tuple[Quiz, ImageOutcome]:
     """给题目配上图，返回**带图的新题库**与生图段的结果。
+
+    两步：**先判断哪几道值得配**（design D18），再对挑出来的那几道生图。
+    判断认为一道都不需要时直接收尾，一张都不生成 —— 收尾文案必须
+    说清这是「不需要」而不是「失败了」（见 `_image_done_detail`）。
 
     **这个函数不抛异常**：任何失败都降级成「这些题没有图」，题库照常返回。
 
@@ -390,9 +425,24 @@ def _render_images(
         task_id,
         STEP_GENERATE,
         status="running",
-        detail=_image_running_detail(total, 0, total),
+        detail=_image_selecting_detail(total),
         progress=_PROGRESS_IMAGE_START,
     )
+
+    try:
+        targets = _select_image_targets(quiz, settings=settings)
+    except Exception:  # noqa: BLE001
+        # 与下面生图段那一层同一个理由：契约说「不抛异常」不等于「真不会抛」，
+        # 而这一段跑在后台线程里 —— 漏出去就是任务永远停在 running。
+        # 兜底策略取 selector 自己的降级语义：回退「全部配图」。
+        logger.exception("配图判断出现未预期异常，本次按全部配图处理")
+        targets = list(quiz.questions)
+
+    if not targets:
+        logger.info("配图判断认为 %d 道题都不需要配图，跳过生图段", total)
+        return quiz, ImageOutcome(
+            urls={}, attempted=0, succeeded=0, reason=image_flow.REASON_NO_NEED
+        )
 
     def report(done: int, count: int) -> None:
         _advance(
@@ -405,7 +455,7 @@ def _render_images(
 
     try:
         outcome = image_flow.generate_for_questions(
-            quiz.questions, settings=settings, on_progress=report
+            targets, settings=settings, on_progress=report
         )
     except Exception:  # noqa: BLE001
         logger.exception("配图段出现未预期异常，本次不配图")

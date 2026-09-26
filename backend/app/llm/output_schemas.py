@@ -56,6 +56,22 @@ class QuizDraft(BaseModel):
         return self
 
 
+class ImageSelectionDraft(BaseModel):
+    """配图判断题的模型输出（`add-question-image-generation` 第 18 组）。
+
+    ⚠️ `ids` **没有默认值**，这是刻意的：模型偶尔会漏字段，若给它 `[]` 兜底，
+    「模型漏了字段」就会被解读成「一道都不需要配图」—— 用户勾了配图却一张都
+    拿不到，而且不报错。现在漏字段会撞 `ValidationError`，
+    `selector` 据此回退成「全部配图」（安全的一侧）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    ids: list[str] = Field(
+        description="需要配图的题号列表；一道都不需要时为空数组"
+    )
+
+
 def draft_to_quiz(
     draft: QuizDraft,
     *,

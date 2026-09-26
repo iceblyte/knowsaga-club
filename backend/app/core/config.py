@@ -250,6 +250,20 @@ class Settings(BaseSettings):
     # 实测带上仍返回 200，**是否被采用未经验证**。
     image_watermark: bool = False
 
+    # 要不要在生图**之前**先让模型判断「哪几道题值得配图」（2026-09-26 新增，design D18）。
+    # 【默认 true】这是**省钱**手段：一套 5 道题里往往 2–3 道是抽象概念或纯文字题，
+    # 画出来对理解没有增益（人眼验收里被画成花 / 枫叶 / 灯泡）。判断本身是出题用的
+    # 那个 DeepSeek，一次很便宜的调用，省下的却是按张计费的图。
+    # 关掉 = 回到接入本功能之前的行为（每道题都配）。留着这个开关是为了
+    # 判断器出问题、或上游配额需要腾挪时能一键退回 —— **别把它当权限位**。
+    # ⚠️ 它**不参与** `image_generation_available`：判断是可选优化，
+    # 不是「配图能力可用」的条件。
+    image_select_enabled: bool = True
+    # 判断这一步的超时（秒）。**刻意比 `image_timeout_seconds`(20) 与
+    # `quiz_timeout_seconds`(30) 都短**：它失败只是「多花几张图的钱」，
+    # 不值得让用户为它多等 —— 超时即回退「全部配图」（`llm/image/selector.py`）。
+    image_select_timeout_seconds: int = 12
+
     # 对象存储（腾讯云 COS）。申请：https://console.cloud.tencent.com/cam/capi
     # ⚠️ SecretId / SecretKey 是**密钥**，只允许存在于根 `.env`（已被 gitignore），
     #    `.env.example` 里必须留空。提交前跑 `python tools/scan_secrets.py`。

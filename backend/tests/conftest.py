@@ -41,6 +41,14 @@ TEST_ENV = {
     # 钉成**代码默认值**（2026-09-26 由 3 下调至 2 后同步），
     # 要别的值的用例自己 `image_env(IMAGE_MAX_WORKERS=...)` 显式声明。
     "IMAGE_MAX_WORKERS": "2",
+    # 配图判断（`IMAGE_SELECT_ENABLED`）同样钉住（2026-09-26 补，第三个同源坑）：
+    # 它会被读进「要不要先调一次模型判断哪些题值得配图」这条分支。钉成**代码默认值**
+    # （`true`），于是配图用例的语义不依赖本机 `.env`；要验「关掉判断 ⇒ 全部配图」的
+    # 用例自己 `image_env(IMAGE_SELECT_ENABLED="false")` 显式声明。
+    # ⚠️ 更要紧的一点：`test_quiz_image_flow.py` 的 autouse 夹具必须把判断器**整段**
+    # 换成替身。本机 `.env` 里的 `DEEPSEEK_API_KEY` 是真的，漏一个调用点就会让
+    # 每条用例都真发一次模型请求（该文件里已经写明这条红线）。
+    "IMAGE_SELECT_ENABLED": "true",
     # COS 五项也必须钉**空**（2026-09-26 补，同一个坑第二次）：`/health` 对外下发的
     # 是**派生能力** `image_generation_available` =（开关 && 百炼 key && COS 四键齐备）。
     # 本机 `.env` 为了做端到端验收把 COS 凭据真配上了，不钉的话它会漏进测试 ——
