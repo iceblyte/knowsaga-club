@@ -1,0 +1,10 @@
+# Dockerfile / .dockerignore 钉成 LF。
+#
+# 为什么只钉这两个文件名：本机 core.autocrlf=true，检出时会把 LF 转成 CRLF。
+# Dockerfile 用反斜杠续行（本项目有 6 处：apt 安装、pip 三步装依赖、4 条构建期自检），
+# 一旦续行末尾变成 "\<CR>"，\r 会混进命令 —— 轻则 RUN 链断掉、重则被解析器判成
+# unknown instruction。这类失败只在「重新 clone / git checkout」之后才出现，
+# 本机现在看到的 LF 工作副本掩盖了它。
+# 只写这两个名字（不含 `* text=auto`），不改变仓库里其他任何文件的换行。
+Dockerfile text eol=lf
+.dockerignore text eol=lf
