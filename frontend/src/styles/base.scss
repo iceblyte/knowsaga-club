@@ -91,7 +91,7 @@ scroll-view {
   flex: none;
   box-shadow:
     inset 0 0 0 1PX $stroke-knob-strong,
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    inset 0 1px 0 var(--k-hi-inset, rgba(255, 255, 255, 0.7));
 
   &.plain {
     background: $paper-plain;
@@ -101,23 +101,23 @@ scroll-view {
   }
   &.blue {
     background: $paper-blue;
-    box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.32);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-magic-32, rgba(47, 107, 216, 0.32));
   }
   &.ok {
     background: $paper-ok;
-    box-shadow: inset 0 0 0 1PX rgba(47, 125, 79, 0.34);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-ok-34, rgba(47, 125, 79, 0.34));
   }
   &.bad {
     background: $paper-bad;
-    box-shadow: inset 0 0 0 1PX rgba(166, 58, 46, 0.34);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-bad-34, rgba(166, 58, 46, 0.34));
   }
   &.gold {
     background: $paper-gold;
-    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.36);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-gold-36, rgba(200, 145, 42, 0.36));
   }
   &.rare {
     background: $paper-rare;
-    box-shadow: inset 0 0 0 1PX rgba(109, 75, 196, 0.32);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-rare-32, rgba(109, 75, 196, 0.32));
   }
 
   &.grow {
@@ -135,7 +135,7 @@ scroll-view {
   flex: none;
   position: relative;
   box-shadow:
-    2px 3px 0 rgba(120, 92, 48, 0.2),
+    2px 3px 0 var(--k-shadow-slip, rgba(120, 92, 48, 0.2)),
     0 0 0 1PX $stroke-edge;
 }
 
@@ -238,7 +238,9 @@ scroll-view {
 }
 
 .c-blue {
-  color: $magic;
+  // 当文字用的是 `$magic-ink`，不是当填充用的 `$magic` —— 浅色品牌（青柠）
+  // 的填充色太亮、当文字读不清，两者必须分开。默认主题里它们同值。
+  color: $magic-ink;
 }
 .c-gold {
   color: $gold-d;
@@ -299,7 +301,7 @@ scroll-view {
     background: $paper;
     color: $ink2;
     border: 1PX solid $stroke-ghost;
-    border-bottom: 3PX solid rgba(150, 120, 72, 0.3);
+    border-bottom: 3PX solid var(--k-stroke-knob, rgba(150, 120, 72, 0.3));
   }
   &.sm {
     padding: $sp-4 0;
@@ -337,7 +339,7 @@ scroll-view {
   border-radius: $r-slide;
   background: $paper2;
   color: $ink2;
-  border: 1PX solid rgba(150, 120, 72, 0.32);
+  border: 1PX solid var(--k-stroke-32, rgba(150, 120, 72, 0.32));
   white-space: nowrap;
 
   // 选中态（原型 07·6 的提醒时间 / 提醒日）。
@@ -498,7 +500,9 @@ scroll-view {
 
     .k {
       background: $ok;
-      color: $on-magic;
+      // 深底上的字单给一份令牌：浅色品牌的 `$ok` 为了当文字被求解压暗，
+      // 压暗后原先那层 `$on-magic`（青柠是深字）就不够读了。
+      color: $on-ok;
       box-shadow: none;
     }
   }
@@ -510,7 +514,7 @@ scroll-view {
 
     .k {
       background: $bad;
-      color: $on-magic;
+      color: $on-bad;
       box-shadow: none;
     }
   }
@@ -524,16 +528,16 @@ scroll-view {
   height: $size-avatar;
   border-radius: 50%;
   background: $paper-blue;
-  box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.34);
+  box-shadow: inset 0 0 0 1PX var(--k-edge-magic-34, rgba(47, 107, 216, 0.34));
   flex: none;
 
   &.gold {
     background: $paper-gold;
-    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.42);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-gold-42, rgba(200, 145, 42, 0.42));
   }
   &.rare {
     background: $paper-rare;
-    box-shadow: inset 0 0 0 1PX rgba(109, 75, 196, 0.36);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-rare-36, rgba(109, 75, 196, 0.36));
   }
   &.sm {
     width: $size-avatar-sm;
@@ -580,7 +584,7 @@ scroll-view {
 // -----------------------------------------------------------------------------
 .field {
   background: $paper2;
-  border: 1PX dashed rgba(150, 120, 72, 0.52);
+  border: 1PX dashed var(--k-stroke-dash-52, rgba(150, 120, 72, 0.52));
   border-radius: $r-opt;
   padding: $sp-6;
   flex: none;
@@ -615,8 +619,8 @@ scroll-view {
     bottom: -7PX;
     width: $sp-7; // 14
     border-radius: 999px;
-    background: #e8d2a0;
-    box-shadow: inset 0 0 0 1PX #c4a874;
+    background: var(--k-rod, #e8d2a0);
+    box-shadow: inset 0 0 0 1PX var(--k-rod-edge, #c4a874);
   }
   &::before {
     left: -7PX;
@@ -627,7 +631,7 @@ scroll-view {
 
   .inner {
     background: $paper;
-    border: 1PX dashed rgba(150, 120, 72, 0.44);
+    border: 1PX dashed var(--k-stroke-dash-44, rgba(150, 120, 72, 0.44));
     border-radius: $r-slide;
     padding: $sp-6;
     min-height: 100%;
@@ -665,7 +669,7 @@ scroll-view {
   gap: $sp-5;
   padding: $sp-5 $sp-1;
   background: transparent;
-  border-bottom: 1PX dashed rgba(150, 120, 72, 0.34);
+  border-bottom: 1PX dashed var(--k-stroke-knob-strong, rgba(150, 120, 72, 0.34));
 
   &:last-child {
     border-bottom: 0;
@@ -730,7 +734,7 @@ scroll-view {
   display: flex;
   flex-direction: column;
   gap: $sp-6;
-  box-shadow: 0 -3PX 0 rgba(120, 92, 48, 0.18);
+  box-shadow: 0 -3PX 0 var(--k-shadow-sheet, rgba(120, 92, 48, 0.18));
   z-index: 101;
 }
 
@@ -792,7 +796,7 @@ scroll-view {
     bottom: $sp-6;
     left: $sp-6;
     border-radius: 50%;
-    border: 1.5PX solid rgba(47, 107, 216, 0.42);
+    border: 1.5PX solid var(--k-edge-magic-42, rgba(47, 107, 216, 0.42));
   }
 
   .core {
@@ -817,7 +821,7 @@ scroll-view {
   height: $size-badge;
   border-radius: 50%;
   background: $paper-gold;
-  box-shadow: inset 0 0 0 1.5PX rgba(200, 145, 42, 0.5);
+  box-shadow: inset 0 0 0 1.5PX var(--k-edge-gold-50, rgba(200, 145, 42, 0.5));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -829,12 +833,12 @@ scroll-view {
 
   &.off {
     background: $paper2;
-    box-shadow: inset 0 0 0 1.5PX rgba(150, 120, 72, 0.34);
+    box-shadow: inset 0 0 0 1.5PX var(--k-stroke-knob-strong, rgba(150, 120, 72, 0.34));
     color: $ink3;
   }
   &.rare {
     background: $paper-rare;
-    box-shadow: inset 0 0 0 1.5PX rgba(109, 75, 196, 0.44);
+    box-shadow: inset 0 0 0 1.5PX var(--k-edge-rare-44, rgba(109, 75, 196, 0.44));
     color: $rare;
   }
 }

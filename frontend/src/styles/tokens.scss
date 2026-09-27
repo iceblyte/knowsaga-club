@@ -26,40 +26,40 @@ $PX_RATIO: 2.2590;
 // -----------------------------------------------------------------------------
 // 颜色 · 纸与墨
 // -----------------------------------------------------------------------------
-$board: #f1e8d0; // 公告板 / 桌底：明亮但黄调明确
-$paper: #fefcf6; // 纸面：接近白，保证阅读明亮度
-$paper2: #f5edd8; // 次级纸面 / 压痕（承载控件与标签）
-$paper3: #eadfc4; // 深压痕 / 纸边
-$line: #c9b48d; // 纸上的线
-$ink: #2a2018; // 墨 · 正文
-$ink2: #6b5a45; // 淡墨
-$ink3: #9a8870; // 更淡墨
+$board: var(--k-board, #f1e8d0); // 公告板 / 桌底：明亮但黄调明确
+$paper: var(--k-paper, #fefcf6); // 纸面：接近白，保证阅读明亮度
+$paper2: var(--k-paper-2, #f5edd8); // 次级纸面 / 压痕（承载控件与标签）
+$paper3: var(--k-paper-3, #eadfc4); // 深压痕 / 纸边
+$line: var(--k-line, #c9b48d); // 纸上的线
+$ink: var(--k-ink, #2a2018); // 墨 · 正文
+$ink2: var(--k-ink-2, #6b5a45); // 淡墨
+$ink3: var(--k-ink-3, #9a8870); // 更淡墨
 
 // -----------------------------------------------------------------------------
 // 颜色 · 功能色
 // -----------------------------------------------------------------------------
-$seal: #a63a2e; // 朱砂：印章专用
-$magic: #2f6bd8; // 魔法蓝：主操作
-$magic-d: #1f4694; // 魔法蓝深：按钮底边
-$gold: #c8912a; // 黄铜：XP
-$gold-d: #9c6e15; // 黄铜深：数字
-$ok: #2f7d4f; // 正确 / 通过
-$bad: #a63a2e; // 错误（与朱砂同值，语义不同）
-$rare: #6d4bc4; // 稀有 / 连击
+$seal: var(--k-seal, #a63a2e); // 朱砂：印章专用
+$magic: var(--k-magic, #2f6bd8); // 魔法蓝：主操作
+$magic-d: var(--k-magic-d, #1f4694); // 魔法蓝深：按钮底边
+$gold: var(--k-gold, #c8912a); // 黄铜：XP
+$gold-d: var(--k-gold-d, #9c6e15); // 黄铜深：数字
+$ok: var(--k-ok, #2f7d4f); // 正确 / 通过
+$bad: var(--k-bad, #a63a2e); // 错误（与朱砂同值，语义不同）
+$rare: var(--k-rare, #6d4bc4); // 稀有 / 连击
 
 // 纸面状态底（原型 `.card.*` 的 background）
-$paper-plain: #fffdf6;
-$paper-blue: #e7effb;
-$paper-ok: #e6f2e9;
-$paper-bad: #f8e9e6;
-$paper-gold: #f8efd6;
-$paper-rare: #ede8fa;
+$paper-plain: var(--k-paper-plain, #fffdf6);
+$paper-blue: var(--k-paper-blue, #e7effb);
+$paper-ok: var(--k-paper-ok, #e6f2e9);
+$paper-bad: var(--k-paper-bad, #f8e9e6);
+$paper-gold: var(--k-paper-gold, #f8efd6);
+$paper-rare: var(--k-paper-rare, #ede8fa);
 
 // 选项四态底（原型 `.opt` / `.opt.sel` / `.opt.ok` / `.opt.bad`）
 $opt-default: $paper2; // #F5EDD8
-$opt-selected: #dce9fb; // 已选
-$opt-correct: #dff0e4; // 答对
-$opt-wrong: #f7e3df; // 答错
+$opt-selected: var(--k-opt-selected, #dce9fb); // 已选
+$opt-correct: var(--k-opt-correct, #dff0e4); // 答对
+$opt-wrong: var(--k-opt-wrong, #f7e3df); // 答错
 $opt-sel-border: $magic;
 $opt-ok-border: $ok;
 $opt-bad-border: $bad;
@@ -70,27 +70,62 @@ $opt-bad-border: $bad;
 // 提醒时间 / 提醒日 chips 用的是更浅的一档蓝（`#7FA9D8`），因为它们是
 // 「表单里勾了这个」，而 `.opt` 是「这个答案被选中了」，后者需要更强的语气。
 // 逐字取自 `prototype/07-会员与设置.html` 的内联样式。
-$chip-sel-border: #7fa9d8;
+$chip-sel-border: var(--k-chip-sel-border, #7fa9d8);
 
 // 按钮底边（物理按键的暗面）
 $btn-magic-edge: $magic-d; // #1F4694
 $btn-gold-edge: $gold-d; // #9C6E15
-$btn-ok-edge: #1f5a38;
-$btn-dis-edge: #d3c29f;
+$btn-ok-edge: var(--k-btn-ok-edge, #1f5a38);
+$btn-dis-edge: var(--k-btn-dis-edge, #d3c29f);
 
 // 描边（原型里出现频率最高的 5 个透明度）
-$stroke-knob: rgba(150, 120, 72, 0.3); // 控件默认内描边
-$stroke-knob-strong: rgba(150, 120, 72, 0.34); // 纸面内描边
-$stroke-edge: rgba(120, 92, 48, 0.36); // 纸片外描边
-$stroke-line-dash: rgba(150, 120, 72, 0.45); // 虚线分隔
-$stroke-ghost: rgba(150, 120, 72, 0.38); // 次级按钮边框
+$stroke-knob: var(--k-stroke-knob, rgba(150, 120, 72, 0.3)); // 控件默认内描边
+$stroke-knob-strong: var(--k-stroke-knob-strong, rgba(150, 120, 72, 0.34)); // 纸面内描边
+$stroke-edge: var(--k-stroke-edge, rgba(120, 92, 48, 0.36)); // 纸片外描边
+$stroke-line-dash: var(--k-stroke-line-dash, rgba(150, 120, 72, 0.45)); // 虚线分隔
+$stroke-ghost: var(--k-stroke-ghost, rgba(150, 120, 72, 0.38)); // 次级按钮边框
 
 // 浅色文字（深底上的字）
-$on-magic: #fff9ea; // 魔法蓝底上的字
-$on-gold: #3d2a05; // 黄铜底上的字
+$on-magic: var(--k-on-magic, #fff9ea); // 魔法蓝底上的字
+$on-gold: var(--k-on-gold, #3d2a05); // 黄铜底上的字
 
 // 遮罩
-$mask: rgba(42, 32, 24, 0.44);
+$mask: var(--k-mask, rgba(42, 32, 24, 0.44));
+
+// -----------------------------------------------------------------------------
+// 颜色 · 主题化补充
+// -----------------------------------------------------------------------------
+// 下面这些原本是散在 base.scss 与各页面里的**字面量**（本次才被起名）；
+// 前三个（magic-ink / on-ok / on-bad）是「当文字用」的那一份语义色 ——
+// 浅色品牌做不到「填充与文字共用一个值」，理由见 scripts/lib/ui-theme-recipe.mjs。
+// 默认值一律等于原字面量 ⇒ 默认主题零视觉变化。
+$magic-ink: var(--k-magic-ink, #2f6bd8); // 主色当文字用。默认主题里与 $magic 同值（中间调，两件事都能干），浅色品牌两者必须分开
+$on-ok: var(--k-on-ok, #fff9ea); // 正确色实心块上的字（`.opt.ok .k` 的题号方块）
+$on-bad: var(--k-on-bad, #fff9ea); // 错误色实心块上的字（`.opt.bad .k`）
+$stroke-32: var(--k-stroke-32, rgba(150, 120, 72, 0.32)); // 描边档位 0.32（`.field` 的实边）
+$stroke-dash-44: var(--k-stroke-dash-44, rgba(150, 120, 72, 0.44)); // 描边档位 0.44（虚线）
+$stroke-dash-52: var(--k-stroke-dash-52, rgba(150, 120, 72, 0.52)); // 描边档位 0.52（虚线，最深那档）
+$shadow-slip: var(--k-shadow-slip, rgba(120, 92, 48, 0.2)); // 纸片投影
+$shadow-sheet: var(--k-shadow-sheet, rgba(120, 92, 48, 0.18)); // 底部弹层投影
+$grad-hi: var(--k-grad-hi, rgba(255, 255, 255, 0.55)); // 整页背景左上白高光（暗色主题要换成极淡的白）
+$grad-lo: var(--k-grad-lo, rgba(120, 88, 38, 0.1)); // 整页背景右下暖暗
+$hi-inset: var(--k-hi-inset, rgba(255, 255, 255, 0.7)); // 卡片内高光 `inset 0 1px 0`
+$edge-magic-32: var(--k-edge-magic-32, rgba(47, 107, 216, 0.32)); // 主色描边 32%
+$edge-magic-34: var(--k-edge-magic-34, rgba(47, 107, 216, 0.34)); // 主色描边 34%（头像圆底）
+$edge-magic-42: var(--k-edge-magic-42, rgba(47, 107, 216, 0.42)); // 主色描边 42%
+$edge-ok-34: var(--k-edge-ok-34, rgba(47, 125, 79, 0.34)); // 正确色描边 34%
+$edge-bad-34: var(--k-edge-bad-34, rgba(166, 58, 46, 0.34)); // 错误色描边 34%
+$edge-gold-36: var(--k-edge-gold-36, rgba(200, 145, 42, 0.36)); // 黄铜描边 36%
+$edge-gold-42: var(--k-edge-gold-42, rgba(200, 145, 42, 0.42)); // 黄铜描边 42%
+$edge-gold-50: var(--k-edge-gold-50, rgba(200, 145, 42, 0.5)); // 黄铜描边 50%（勋章）
+$edge-rare-32: var(--k-edge-rare-32, rgba(109, 75, 196, 0.32)); // 稀有色描边 32%
+$edge-rare-36: var(--k-edge-rare-36, rgba(109, 75, 196, 0.36)); // 稀有色描边 36%
+$edge-rare-44: var(--k-edge-rare-44, rgba(109, 75, 196, 0.44)); // 稀有色描边 44%
+$rod: var(--k-rod, #e8d2a0); // 卷轴两侧木轴的轴体
+$rod-edge: var(--k-rod-edge, #c4a874); // 木轴的轮廓
+$line-ring: var(--k-line-ring, #e6d6b4); // 正确率圆环的轨道
+$bar-past: var(--k-bar-past, #b9d5f2); // 冒险日志柱状图的「已往」档
+$glow-gold: var(--k-glow-gold, rgba(200, 145, 42, 0.12)); // 知识树冠的金色辉光
 
 // -----------------------------------------------------------------------------
 // 纸浆颗粒：让底色读作「纸」而不是「奶油色」
@@ -101,8 +136,8 @@ $grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width=
 @mixin board-bg {
   background-color: $board;
   background-image:
-    radial-gradient(130% 90% at 10% -10%, rgba(255, 255, 255, 0.55), transparent 58%),
-    radial-gradient(110% 80% at 92% 108%, rgba(120, 88, 38, 0.1), transparent 62%),
+    radial-gradient(130% 90% at 10% -10%, var(--k-grad-hi, rgba(255, 255, 255, 0.55)), transparent 58%),
+    radial-gradient(110% 80% at 92% 108%, var(--k-grad-lo, rgba(120, 88, 38, 0.1)), transparent 62%),
     $grain;
   background-attachment: fixed;
 }

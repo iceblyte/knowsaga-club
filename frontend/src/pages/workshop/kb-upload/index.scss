@@ -13,7 +13,7 @@
 // 所以不套 `.field`（那个类自带 6px 内边距与另一种边框色）。
 .kb-upload__dropzone {
   background: $paper2;
-  border: 1PX dashed rgba(150, 120, 72, 0.52);
+  border: 1PX dashed var(--k-stroke-dash-52, rgba(150, 120, 72, 0.52));
   border-radius: $r-opt;
   padding: $sp-10 $sp-7;
   display: flex;

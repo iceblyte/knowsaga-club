@@ -18,7 +18,7 @@
   padding: $sp-4 $sp-6;
   border-radius: $r-card;
   background: $paper-blue;
-  box-shadow: inset 0 0 0 1PX rgba(47, 107, 216, 0.32);
+  box-shadow: inset 0 0 0 1PX var(--k-edge-magic-32, rgba(47, 107, 216, 0.32));
 
   &__tx {
     // 与 `.li .tx` 同一个理由：flex 子项默认 `min-width:auto`，

@@ -23,7 +23,7 @@ $dot: 14;
   // 解析的，所以 padding 里这部分高度也算数，坐标能直接用。
   padding-top: math.div($canopy-h, $canopy-w) * 100%;
   // 中心一团暖光：把散落的点读作「一株」而不是「一堆」
-  background: radial-gradient(circle at 50% 52%, rgba(200, 145, 42, 0.12), transparent 68%);
+  background: radial-gradient(circle at 50% 52%, var(--k-glow-gold, rgba(200, 145, 42, 0.12)), transparent 68%);
 }
 
 .tree__dot {
@@ -102,13 +102,13 @@ $dot: 14;
 
   &--lit {
     background: $paper-ok;
-    box-shadow: inset 0 0 0 1PX rgba(47, 125, 79, 0.34);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-ok-34, rgba(47, 125, 79, 0.34));
     color: $ok;
   }
 
   &--growing {
     background: $paper-gold;
-    box-shadow: inset 0 0 0 1PX rgba(200, 145, 42, 0.36);
+    box-shadow: inset 0 0 0 1PX var(--k-edge-gold-36, rgba(200, 145, 42, 0.36));
     color: $gold-d;
   }
 

@@ -8,3 +8,11 @@
 // —— SCSS 变量与函数不会产生 CSS 输出，因此不会重复打包。
 
 @use "./styles/base" as *;
+
+// UI 主题自选：四套非默认主题的 `--k-*` 令牌表（生成物，见
+// `shared/ui-themes.json` + `scripts/gen_theme_scss.mjs`）。
+//
+// 这里只输出四个类选择器 —— 挂载点在 PhoneShell 根与自定义 tabBar 根上，
+// 由 `utils/ui-theme.ts` 加/摘 `ui-theme--<id>`。默认主题（paper）没有类：
+// 它的值就是 tokens.scss 里 var() 的兜底字面量，摘掉类即回到默认。
+@use "./styles/themes";

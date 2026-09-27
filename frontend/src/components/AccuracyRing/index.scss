@@ -12,7 +12,7 @@
     bottom: 0;
     left: 0;
     border-radius: 50%;
-    border: 8px solid #e6d6b4; // 原型 stroke-width=8，与画布同一坐标系
+    border: 8px solid var(--k-line-ring, #e6d6b4); // 原型 stroke-width=8，与画布同一坐标系
   }
 
   &__canvas {
