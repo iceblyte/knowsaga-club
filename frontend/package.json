@@ -17,7 +17,9 @@
     "dev:h5": "npm run build:h5 -- --watch",
     "type-check": "tsc --noEmit",
     "check:scoring": "node scripts/check_scoring_parity.mjs",
-    "check:links": "node scripts/check_links_parity.mjs"
+    "check:links": "node scripts/check_links_parity.mjs",
+    "gen:theme": "node scripts/gen_theme_scss.mjs",
+    "check:theme": "node scripts/check_theme_parity.mjs"
   },
   "browserslist": [
     "defaults and fully supports es6-module",

@@ -1,0 +1,116 @@
+{
+  "$comment": [
+    "UI 主题色值真源。默认主题 paper 刻意不在此文件里 —— 它的色值就是",
+    "frontend/src/styles/tokens.scss 里 var() 的兜底字面量（见 design.md D5）。",
+    "此文件只放「核心色」，其余派生令牌（描边 / 淡底 / 状态边 / 装饰）由",
+    "frontend/scripts/lib/ui-theme-recipe.mjs 按固定配方算出，再由",
+    "gen_theme_scss.mjs 渲染成 src/styles/_themes.scss（生成物入库）。",
+    "改色只改这里；改完跑 `npm run check:theme`（体检 + 一致性）。"
+  ],
+  "themes": [
+    {
+      "id": "indigo",
+      "name": "宣纸靛墨",
+      "mode": "light",
+      "source": ".workbuddy/design-preview/redesign-v4/index.html 的实验室 A（[data-skin=\"A\"]）",
+      "core": {
+        "board": "#EBE8E2",
+        "paper": "#FFFFFF",
+        "paper2": "#F4F1EC",
+        "paper3": "#E7E3DB",
+        "ink": "#1B1815",
+        "ink2": "#57534E",
+        "ink3": "#8B8378",
+        "magic": "#1E4B8F",
+        "magicDark": "#16386D",
+        "seal": "#A63A2E",
+        "gold": "#B0821F",
+        "goldDark": "#7A5A0E",
+        "ok": "#2C6A46",
+        "bad": "#A63A2E",
+        "rare": "#6C4AA8",
+        "onMagic": "#FFFFFF",
+        "onGold": "#3B2703"
+      },
+      "stroke": { "base": "#1B1815", "scale": 0.3 }
+    },
+    {
+      "id": "vermilion",
+      "name": "素白墨朱",
+      "mode": "light",
+      "source": ".workbuddy/design-preview/redesign-v4/index.html 的实验室 B（[data-skin=\"B\"]）",
+      "core": {
+        "board": "#EDEDEF",
+        "paper": "#FFFFFF",
+        "paper2": "#F6F6F7",
+        "paper3": "#E8E8EA",
+        "ink": "#18181B",
+        "ink2": "#52525B",
+        "ink3": "#8B8B93",
+        "magic": "#18181B",
+        "magicDark": "#000000",
+        "seal": "#B4322A",
+        "gold": "#A87A16",
+        "goldDark": "#7A5A0E",
+        "ok": "#2A6B45",
+        "bad": "#B4322A",
+        "rare": "#6E4AA6",
+        "onMagic": "#FFFFFF",
+        "onGold": "#3B2703"
+      },
+      "stroke": { "base": "#18181B", "scale": 0.3 }
+    },
+    {
+      "id": "midnight",
+      "name": "夜航公会",
+      "mode": "dark",
+      "source": ".workbuddy/design-preview/redesign-v4/index.html 的实验室 C（[data-skin=\"C\"]）",
+      "core": {
+        "board": "#0D0F14",
+        "paper": "#1D212B",
+        "paper2": "#272C38",
+        "paper3": "#333947",
+        "ink": "#ECEDF1",
+        "ink2": "#A2A8B4",
+        "ink3": "#6E7480",
+        "magic": "#E0A455",
+        "magicDark": "#B8813A",
+        "seal": "#E2604E",
+        "gold": "#E0A455",
+        "goldDark": "#EFBE7C",
+        "ok": "#54C08A",
+        "bad": "#E2604E",
+        "rare": "#B79CE8",
+        "onMagic": "#241A08",
+        "onGold": "#241A08"
+      },
+      "stroke": { "base": "#FFFFFF", "scale": 0.26 }
+    },
+    {
+      "id": "lime",
+      "name": "青柠",
+      "mode": "light",
+      "source": ".workbuddy/design-preview/theme-lab-v3/index.html 的 ①青柠（[data-skin=\"lime\"]）；已按 WCAG 求解过",
+      "core": {
+        "board": "#F5F5F5",
+        "paper": "#FFFFFF",
+        "paper2": "#F7F7F7",
+        "paper3": "#EBEBEB",
+        "ink": "#323232",
+        "ink2": "#595959",
+        "ink3": "#6D6D6D",
+        "magic": "#70C000",
+        "magicDark": "#487B00",
+        "seal": "#70C000",
+        "gold": "#C27C09",
+        "goldDark": "#996207",
+        "ok": "#599900",
+        "bad": "#FF3052",
+        "rare": "#7A4FA8",
+        "onMagic": "#323232",
+        "onGold": "#33210A"
+      },
+      "stroke": { "base": "#323232", "scale": 0.3 }
+    }
+  ]
+}

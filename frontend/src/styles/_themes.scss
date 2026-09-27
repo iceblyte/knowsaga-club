@@ -1,0 +1,300 @@
+// ⚠️ 生成物，请勿手改。
+//
+// 真源：shared/ui-themes.json（只写核心色）
+// 配方：frontend/scripts/lib/ui-theme-recipe.mjs（派生其余令牌）
+// 生成：frontend/scripts/gen_theme_scss.mjs
+//
+// 改色 → 改 JSON → `npm run gen:theme`。改完跑 `npm run check:theme`
+// 验「体检达标 + 生成物最新」。
+//
+// 默认主题（paper）刻意不在这里：它的色值是 tokens.scss 里 var() 的兜底字面量，
+// 切回默认主题靠摘掉 `ui-theme--<id>` 这个类，而不是套另一个类。
+// 共 4 套：indigo（宣纸靛墨·light）、vermilion（素白墨朱·light）、midnight（夜航公会·dark）、lime（青柠·light）。每套 69 个令牌。
+
+.ui-theme--indigo {
+  --k-board:              #ebe8e2;  // $board
+  --k-paper:              #ffffff;  // $paper
+  --k-paper-2:            #f4f1ec;  // $paper2
+  --k-paper-3:            #e7e3db;  // $paper3
+  --k-paper-plain:        #ffffff;  // $paper-plain
+  --k-line:               #b4aea5;  // $line
+  --k-paper-blue:         #e4e9f2;  // $paper-blue
+  --k-paper-ok:           #e8efeb;  // $paper-ok
+  --k-paper-bad:          #f6ebea;  // $paper-bad
+  --k-paper-gold:         #f5efe2;  // $paper-gold
+  --k-paper-rare:         #f0edf6;  // $paper-rare
+  --k-opt-selected:       #dfe6ef;  // $opt-selected
+  --k-opt-correct:        #e1eae5;  // $opt-correct
+  --k-opt-wrong:          #f3e3e2;  // $opt-wrong
+  --k-ink:                #1b1815;  // $ink
+  --k-ink-2:              #57534e;  // $ink2
+  --k-ink-3:              #6d665e;  // $ink3
+  --k-magic-ink:          #1e4b8f;  // $magic-ink
+  --k-magic-d:            #16386d;  // $magic-d
+  --k-seal:               #a63a2e;  // $seal
+  --k-ok:                 #2c6a46;  // $ok
+  --k-bad:                #a63a2e;  // $bad
+  --k-gold-d:             #7a5a0e;  // $gold-d
+  --k-rare:               #6c4aa8;  // $rare
+  --k-on-gold:            #2e1e02;  // $on-gold
+  --k-magic:              #1e4b8f;  // $magic
+  --k-gold:               #b0821f;  // $gold
+  --k-on-magic:           #ffffff;  // $on-magic
+  --k-on-ok:              #ffffff;  // $on-ok
+  --k-on-bad:             #ffffff;  // $on-bad
+  --k-opt-sel-border:     #1e4b8f;  // $opt-sel-border
+  --k-opt-ok-border:      #2c6a46;  // $opt-ok-border
+  --k-opt-bad-border:     #a63a2e;  // $opt-bad-border
+  --k-chip-sel-border:    #6382b2;  // $chip-sel-border
+  --k-stroke-ghost:       #939291;  // $stroke-ghost
+  --k-btn-magic-edge:     #16386d;  // $btn-magic-edge
+  --k-btn-gold-edge:      #7a5a0e;  // $btn-gold-edge
+  --k-btn-ok-edge:        #2c6a46;  // $btn-ok-edge
+  --k-btn-dis-edge:       #bcb7af;  // $btn-dis-edge
+  --k-stroke-knob:        rgba(27, 24, 21, 0.09);  // $stroke-knob
+  --k-stroke-knob-strong: rgba(27, 24, 21, 0.102);  // $stroke-knob-strong
+  --k-stroke-edge:        rgba(27, 24, 21, 0.108);  // $stroke-edge
+  --k-stroke-line-dash:   rgba(27, 24, 21, 0.135);  // $stroke-line-dash
+  --k-stroke-32:          rgba(27, 24, 21, 0.096);  // $stroke-32
+  --k-stroke-dash-44:     rgba(27, 24, 21, 0.132);  // $stroke-dash-44
+  --k-stroke-dash-52:     rgba(27, 24, 21, 0.156);  // $stroke-dash-52
+  --k-shadow-slip:        rgba(27, 24, 21, 0.2);  // $shadow-slip
+  --k-shadow-sheet:       rgba(27, 24, 21, 0.18);  // $shadow-sheet
+  --k-edge-magic-32:      rgba(30, 75, 143, 0.32);  // $edge-magic-32
+  --k-edge-magic-34:      rgba(30, 75, 143, 0.34);  // $edge-magic-34
+  --k-edge-magic-42:      rgba(30, 75, 143, 0.42);  // $edge-magic-42
+  --k-edge-ok-34:         rgba(44, 106, 70, 0.34);  // $edge-ok-34
+  --k-edge-bad-34:        rgba(166, 58, 46, 0.34);  // $edge-bad-34
+  --k-edge-gold-36:       rgba(176, 130, 31, 0.36);  // $edge-gold-36
+  --k-edge-gold-42:       rgba(176, 130, 31, 0.42);  // $edge-gold-42
+  --k-edge-gold-50:       rgba(176, 130, 31, 0.5);  // $edge-gold-50
+  --k-edge-rare-32:       rgba(108, 74, 168, 0.32);  // $edge-rare-32
+  --k-edge-rare-36:       rgba(108, 74, 168, 0.36);  // $edge-rare-36
+  --k-edge-rare-44:       rgba(108, 74, 168, 0.44);  // $edge-rare-44
+  --k-grad-hi:            rgba(255, 255, 255, 0.55);  // $grad-hi
+  --k-grad-lo:            rgba(27, 24, 21, 0.1);  // $grad-lo
+  --k-hi-inset:           rgba(255, 255, 255, 0.7);  // $hi-inset
+  --k-grain:              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E");  // $grain
+  --k-mask:               rgba(27, 24, 21, 0.44);  // $mask
+  --k-rod:                #e1d0aa;  // $rod
+  --k-rod-edge:           #86641c;  // $rod-edge
+  --k-line-ring:          #d6d2c9;  // $line-ring
+  --k-bar-past:           #9aaecd;  // $bar-past
+  --k-glow-gold:          rgba(176, 130, 31, 0.12);  // $glow-gold
+}
+
+.ui-theme--vermilion {
+  --k-board:              #ededef;  // $board
+  --k-paper:              #ffffff;  // $paper
+  --k-paper-2:            #f6f6f7;  // $paper2
+  --k-paper-3:            #e8e8ea;  // $paper3
+  --k-paper-plain:        #ffffff;  // $paper-plain
+  --k-line:               #b5b5ba;  // $line
+  --k-paper-blue:         #e3e3e4;  // $paper-blue
+  --k-paper-ok:           #e8efeb;  // $paper-ok
+  --k-paper-bad:          #f8ebea;  // $paper-bad
+  --k-paper-gold:         #f4eee1;  // $paper-gold
+  --k-paper-rare:         #f1edf6;  // $paper-rare
+  --k-opt-selected:       #dfdfdf;  // $opt-selected
+  --k-opt-correct:        #e1eae5;  // $opt-correct
+  --k-opt-wrong:          #f5e2e1;  // $opt-wrong
+  --k-ink:                #18181b;  // $ink
+  --k-ink-2:              #52525b;  // $ink2
+  --k-ink-3:              #696971;  // $ink3
+  --k-magic-ink:          #18181b;  // $magic-ink
+  --k-magic-d:            #000000;  // $magic-d
+  --k-seal:               #b4322a;  // $seal
+  --k-ok:                 #2a6b45;  // $ok
+  --k-bad:                #b4322a;  // $bad
+  --k-gold-d:             #7a5a0e;  // $gold-d
+  --k-rare:               #6e4aa6;  // $rare
+  --k-on-gold:            #211602;  // $on-gold
+  --k-magic:              #18181b;  // $magic
+  --k-gold:               #a87a16;  // $gold
+  --k-on-magic:           #ffffff;  // $on-magic
+  --k-on-ok:              #ffffff;  // $on-ok
+  --k-on-bad:             #ffffff;  // $on-bad
+  --k-opt-sel-border:     #18181b;  // $opt-sel-border
+  --k-opt-ok-border:      #2a6b45;  // $opt-ok-border
+  --k-opt-bad-border:     #b4322a;  // $opt-bad-border
+  --k-chip-sel-border:    #69696b;  // $chip-sel-border
+  --k-stroke-ghost:       #929294;  // $stroke-ghost
+  --k-btn-magic-edge:     #000000;  // $btn-magic-edge
+  --k-btn-gold-edge:      #7a5a0e;  // $btn-gold-edge
+  --k-btn-ok-edge:        #2a6b45;  // $btn-ok-edge
+  --k-btn-dis-edge:       #bcbcc0;  // $btn-dis-edge
+  --k-stroke-knob:        rgba(24, 24, 27, 0.09);  // $stroke-knob
+  --k-stroke-knob-strong: rgba(24, 24, 27, 0.102);  // $stroke-knob-strong
+  --k-stroke-edge:        rgba(24, 24, 27, 0.108);  // $stroke-edge
+  --k-stroke-line-dash:   rgba(24, 24, 27, 0.135);  // $stroke-line-dash
+  --k-stroke-32:          rgba(24, 24, 27, 0.096);  // $stroke-32
+  --k-stroke-dash-44:     rgba(24, 24, 27, 0.132);  // $stroke-dash-44
+  --k-stroke-dash-52:     rgba(24, 24, 27, 0.156);  // $stroke-dash-52
+  --k-shadow-slip:        rgba(24, 24, 27, 0.2);  // $shadow-slip
+  --k-shadow-sheet:       rgba(24, 24, 27, 0.18);  // $shadow-sheet
+  --k-edge-magic-32:      rgba(24, 24, 27, 0.32);  // $edge-magic-32
+  --k-edge-magic-34:      rgba(24, 24, 27, 0.34);  // $edge-magic-34
+  --k-edge-magic-42:      rgba(24, 24, 27, 0.42);  // $edge-magic-42
+  --k-edge-ok-34:         rgba(42, 107, 69, 0.34);  // $edge-ok-34
+  --k-edge-bad-34:        rgba(180, 50, 42, 0.34);  // $edge-bad-34
+  --k-edge-gold-36:       rgba(168, 122, 22, 0.36);  // $edge-gold-36
+  --k-edge-gold-42:       rgba(168, 122, 22, 0.42);  // $edge-gold-42
+  --k-edge-gold-50:       rgba(168, 122, 22, 0.5);  // $edge-gold-50
+  --k-edge-rare-32:       rgba(110, 74, 166, 0.32);  // $edge-rare-32
+  --k-edge-rare-36:       rgba(110, 74, 166, 0.36);  // $edge-rare-36
+  --k-edge-rare-44:       rgba(110, 74, 166, 0.44);  // $edge-rare-44
+  --k-grad-hi:            rgba(255, 255, 255, 0.55);  // $grad-hi
+  --k-grad-lo:            rgba(24, 24, 27, 0.1);  // $grad-lo
+  --k-hi-inset:           rgba(255, 255, 255, 0.7);  // $hi-inset
+  --k-grain:              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E");  // $grain
+  --k-mask:               rgba(24, 24, 27, 0.44);  // $mask
+  --k-rod:                #decca6;  // $rod
+  --k-rod-edge:           #805f17;  // $rod-edge
+  --k-line-ring:          #d7d7da;  // $line-ring
+  --k-bar-past:           #979798;  // $bar-past
+  --k-glow-gold:          rgba(168, 122, 22, 0.12);  // $glow-gold
+}
+
+.ui-theme--midnight {
+  --k-board:              #0d0f14;  // $board
+  --k-paper:              #1d212b;  // $paper
+  --k-paper-2:            #272c38;  // $paper2
+  --k-paper-3:            #333947;  // $paper3
+  --k-paper-plain:        #2b2e38;  // $paper-plain
+  --k-line:               #535966;  // $line
+  --k-paper-blue:         #343130;  // $paper-blue
+  --k-paper-ok:           #233235;  // $paper-ok
+  --k-paper-bad:          #31272f;  // $paper-bad
+  --k-paper-gold:         #363230;  // $paper-gold
+  --k-paper-rare:         #2c2d3e;  // $paper-rare
+  --k-opt-selected:       #383331;  // $opt-selected
+  --k-opt-correct:        #253738;  // $opt-correct
+  --k-opt-wrong:          #392a30;  // $opt-wrong
+  --k-ink:                #ecedf1;  // $ink
+  --k-ink-2:              #a2a8b4;  // $ink2
+  --k-ink-3:              #8f959f;  // $ink3
+  --k-magic-ink:          #e0a455;  // $magic-ink
+  --k-magic-d:            #c89450;  // $magic-d
+  --k-seal:               #e2614f;  // $seal
+  --k-ok:                 #54c08a;  // $ok
+  --k-bad:                #e56f5e;  // $bad
+  --k-gold-d:             #efbe7c;  // $gold-d
+  --k-rare:               #b79ce8;  // $rare
+  --k-on-gold:            #241a08;  // $on-gold
+  --k-magic:              #e0a455;  // $magic
+  --k-gold:               #e0a455;  // $gold
+  --k-on-magic:           #241a08;  // $on-magic
+  --k-on-ok:              #241a08;  // $on-ok
+  --k-on-bad:             #241a08;  // $on-bad
+  --k-opt-sel-border:     #e0a455;  // $opt-sel-border
+  --k-opt-ok-border:      #54c08a;  // $opt-ok-border
+  --k-opt-bad-border:     #e56f5e;  // $opt-bad-border
+  --k-chip-sel-border:    #9e7847;  // $chip-sel-border
+  --k-stroke-ghost:       #70737a;  // $stroke-ghost
+  --k-btn-magic-edge:     #c89450;  // $btn-magic-edge
+  --k-btn-gold-edge:      #efbe7c;  // $btn-gold-edge
+  --k-btn-ok-edge:        #54c08a;  // $btn-ok-edge
+  --k-btn-dis-edge:       #535966;  // $btn-dis-edge
+  --k-stroke-knob:        rgba(255, 255, 255, 0.078);  // $stroke-knob
+  --k-stroke-knob-strong: rgba(255, 255, 255, 0.088);  // $stroke-knob-strong
+  --k-stroke-edge:        rgba(255, 255, 255, 0.094);  // $stroke-edge
+  --k-stroke-line-dash:   rgba(255, 255, 255, 0.117);  // $stroke-line-dash
+  --k-stroke-32:          rgba(255, 255, 255, 0.083);  // $stroke-32
+  --k-stroke-dash-44:     rgba(255, 255, 255, 0.114);  // $stroke-dash-44
+  --k-stroke-dash-52:     rgba(255, 255, 255, 0.135);  // $stroke-dash-52
+  --k-shadow-slip:        rgba(0, 0, 0, 0.44);  // $shadow-slip
+  --k-shadow-sheet:       rgba(0, 0, 0, 0.4);  // $shadow-sheet
+  --k-edge-magic-32:      rgba(224, 164, 85, 0.32);  // $edge-magic-32
+  --k-edge-magic-34:      rgba(224, 164, 85, 0.34);  // $edge-magic-34
+  --k-edge-magic-42:      rgba(224, 164, 85, 0.42);  // $edge-magic-42
+  --k-edge-ok-34:         rgba(84, 192, 138, 0.34);  // $edge-ok-34
+  --k-edge-bad-34:        rgba(226, 96, 78, 0.34);  // $edge-bad-34
+  --k-edge-gold-36:       rgba(224, 164, 85, 0.36);  // $edge-gold-36
+  --k-edge-gold-42:       rgba(224, 164, 85, 0.42);  // $edge-gold-42
+  --k-edge-gold-50:       rgba(224, 164, 85, 0.5);  // $edge-gold-50
+  --k-edge-rare-32:       rgba(183, 156, 232, 0.32);  // $edge-rare-32
+  --k-edge-rare-36:       rgba(183, 156, 232, 0.36);  // $edge-rare-36
+  --k-edge-rare-44:       rgba(183, 156, 232, 0.44);  // $edge-rare-44
+  --k-grad-hi:            rgba(255, 255, 255, 0.05);  // $grad-hi
+  --k-grad-lo:            rgba(0, 0, 0, 0.3);  // $grad-lo
+  --k-hi-inset:           rgba(255, 255, 255, 0.06);  // $hi-inset
+  --k-grain:              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.05'/%3E%3C/svg%3E");  // $grain
+  --k-mask:               rgba(0, 0, 0, 0.44);  // $mask
+  --k-rod:                #67533b;  // $rod
+  --k-rod-edge:           #e3b881;  // $rod-edge
+  --k-line-ring:          #3e4451;  // $line-ring
+  --k-bar-past:           #755c3e;  // $bar-past
+  --k-glow-gold:          rgba(224, 164, 85, 0.12);  // $glow-gold
+}
+
+.ui-theme--lime {
+  --k-board:              #f5f5f5;  // $board
+  --k-paper:              #ffffff;  // $paper
+  --k-paper-2:            #f7f7f7;  // $paper2
+  --k-paper-3:            #ebebeb;  // $paper3
+  --k-paper-plain:        #ffffff;  // $paper-plain
+  --k-line:               #a6a6a6;  // $line
+  --k-paper-blue:         #eef7e0;  // $paper-blue
+  --k-paper-ok:           #edf4e3;  // $paper-ok
+  --k-paper-bad:          #ffeaee;  // $paper-bad
+  --k-paper-gold:         #f7eedf;  // $paper-gold
+  --k-paper-rare:         #f2edf6;  // $paper-rare
+  --k-opt-selected:       #ebf6db;  // $opt-selected
+  --k-opt-correct:        #e8f1db;  // $opt-correct
+  --k-opt-wrong:          #ffe2e7;  // $opt-wrong
+  --k-ink:                #323232;  // $ink
+  --k-ink-2:              #595959;  // $ink2
+  --k-ink-3:              #6d6d6d;  // $ink3
+  --k-magic-ink:          #497c00;  // $magic-ink
+  --k-magic-d:            #477a00;  // $magic-d
+  --k-seal:               #4c8200;  // $seal
+  --k-ok:                 #477900;  // $ok
+  --k-bad:                #d80024;  // $bad
+  --k-gold-d:             #955f07;  // $gold-d
+  --k-rare:               #7a4fa8;  // $rare
+  --k-on-gold:            #311f0a;  // $on-gold
+  --k-magic:              #70c000;  // $magic
+  --k-gold:               #c27c09;  // $gold
+  --k-on-magic:           #323232;  // $on-magic
+  --k-on-ok:              #f1f1f1;  // $on-ok
+  --k-on-bad:             #efefef;  // $on-bad
+  --k-opt-sel-border:     #5a9900;  // $opt-sel-border
+  --k-opt-ok-border:      #477900;  // $opt-ok-border
+  --k-opt-bad-border:     #d80024;  // $opt-bad-border
+  --k-chip-sel-border:    #689725;  // $chip-sel-border
+  --k-stroke-ghost:       #929292;  // $stroke-ghost
+  --k-btn-magic-edge:     #477a00;  // $btn-magic-edge
+  --k-btn-gold-edge:      #955f07;  // $btn-gold-edge
+  --k-btn-ok-edge:        #599900;  // $btn-ok-edge
+  --k-btn-dis-edge:       #bfbfbf;  // $btn-dis-edge
+  --k-stroke-knob:        rgba(50, 50, 50, 0.09);  // $stroke-knob
+  --k-stroke-knob-strong: rgba(50, 50, 50, 0.102);  // $stroke-knob-strong
+  --k-stroke-edge:        rgba(50, 50, 50, 0.108);  // $stroke-edge
+  --k-stroke-line-dash:   rgba(50, 50, 50, 0.135);  // $stroke-line-dash
+  --k-stroke-32:          rgba(50, 50, 50, 0.096);  // $stroke-32
+  --k-stroke-dash-44:     rgba(50, 50, 50, 0.132);  // $stroke-dash-44
+  --k-stroke-dash-52:     rgba(50, 50, 50, 0.156);  // $stroke-dash-52
+  --k-shadow-slip:        rgba(50, 50, 50, 0.2);  // $shadow-slip
+  --k-shadow-sheet:       rgba(50, 50, 50, 0.18);  // $shadow-sheet
+  --k-edge-magic-32:      rgba(112, 192, 0, 0.32);  // $edge-magic-32
+  --k-edge-magic-34:      rgba(112, 192, 0, 0.34);  // $edge-magic-34
+  --k-edge-magic-42:      rgba(112, 192, 0, 0.42);  // $edge-magic-42
+  --k-edge-ok-34:         rgba(89, 153, 0, 0.34);  // $edge-ok-34
+  --k-edge-bad-34:        rgba(255, 48, 82, 0.34);  // $edge-bad-34
+  --k-edge-gold-36:       rgba(194, 124, 9, 0.36);  // $edge-gold-36
+  --k-edge-gold-42:       rgba(194, 124, 9, 0.42);  // $edge-gold-42
+  --k-edge-gold-50:       rgba(194, 124, 9, 0.5);  // $edge-gold-50
+  --k-edge-rare-32:       rgba(122, 79, 168, 0.32);  // $edge-rare-32
+  --k-edge-rare-36:       rgba(122, 79, 168, 0.36);  // $edge-rare-36
+  --k-edge-rare-44:       rgba(122, 79, 168, 0.44);  // $edge-rare-44
+  --k-grad-hi:            rgba(255, 255, 255, 0.55);  // $grad-hi
+  --k-grad-lo:            rgba(50, 50, 50, 0.1);  // $grad-lo
+  --k-hi-inset:           rgba(255, 255, 255, 0.7);  // $hi-inset
+  --k-grain:              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E");  // $grain
+  --k-mask:               rgba(50, 50, 50, 0.44);  // $mask
+  --k-rod:                #e8cda2;  // $rod
+  --k-rod-edge:           #9a6714;  // $rod-edge
+  --k-line-ring:          #d4d4d4;  // $line-ring
+  --k-bar-past:           #bfe38c;  // $bar-past
+  --k-glow-gold:          rgba(194, 124, 9, 0.12);  // $glow-gold
+}
