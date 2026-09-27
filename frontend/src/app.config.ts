@@ -43,6 +43,9 @@ export default defineAppConfig({
     // `tabbar(n)` 标注的是归属，不是布局。
     'pages/settings/index',
     'pages/settings/profile/index',
+    // 界面主题（UI 主题自选）：原型外新增的一屏，从设置页第 6 行下钻。
+    // 与上面几条同一个约束：这里加一行就必须有对应的 `pages/**/index.tsx`。
+    'pages/settings/theme/index',
     'pages/settings/reminder/index',
     'pages/settings/help/index',
     'pages/guild/index',

@@ -37,6 +37,8 @@ import { ScrollView, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { ReactNode } from 'react'
 
+import { withUiTheme } from '../../constants/ui-theme'
+import { useAppStore } from '../../store/useAppStore'
 import { styleOf } from '../../utils/style'
 
 import './index.scss'
@@ -123,6 +125,16 @@ export default function PhoneShell({
 }: PhoneShellProps) {
   const { statusBarHeight, contentHeight } = useShellMetrics(showNav)
 
+  /**
+   * 主题挂载点之一（另一个是 `custom-tab-bar`，它不在本组件内）。
+   *
+   * 类名挂在根 `.page` 上就够：`--k-*` 自定义属性会继承到整棵子树，而
+   * `.page` 自己的 `board-bg` 也在同一元素上解析（自定义属性对声明它的
+   * 元素自身同样生效）。**默认主题不挂类**（`withUiTheme` 会跳过空串），
+   * 于是直接落 `tokens.scss` 的兜底值 —— 零漂移是构造保证，不靠自觉。
+   */
+  const uiTheme = useAppStore((s) => s.uiTheme)
+
   const handleBack = () => {
     if (onBack) {
       onBack()
@@ -144,7 +156,7 @@ export default function PhoneShell({
     .join(' ')
 
   return (
-    <View className='page'>
+    <View className={withUiTheme('page', uiTheme)}>
       {/* 状态栏占位：真实高度，避免与系统状态栏重叠 */}
       <View className='page__statusbar' style={styleOf({ height: `${statusBarHeight}px` })} />
 

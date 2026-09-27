@@ -37,6 +37,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.constants import UI_THEME_DEFAULT
 from app.db.base import Base
 from app.utils.timeutil import utcnow
 
@@ -110,6 +111,18 @@ class UserSetting(Base):
     auto_load_images: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     eye_care: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     subscribe_quota: Mapped[int] = mapped_column(UINT, nullable=False, default=0)
+    #: 界面主题标识（`sql/09_user_settings_ui_theme.sql`）。
+    #:
+    #: 存的是**英文小写标识**（`paper` / `indigo` / ...），不是中文名 ——
+    #: 它会被前端拼成类名 `ui-theme--<id>` 去命中一套 CSS 变量。
+    #: 用 `String(16)` 而不是枚举类型：取值闭集由应用层白名单守，
+    #: 加一套主题不该变成一次 DDL 变更（理由见 constants.UI_THEME_IDS）。
+    #:
+    #: 列位置必须与 DDL 的 `AFTER subscribe_quota` 一致，
+    #: 否则 `test_column_order_matches_database` 会红。
+    ui_theme: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=UI_THEME_DEFAULT, server_default=UI_THEME_DEFAULT
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

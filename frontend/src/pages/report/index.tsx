@@ -90,6 +90,7 @@ import { fetchScrolls } from '../../services/archive'
 import { createReportTask } from '../../services/report'
 import { pollTask } from '../../services/quiz'
 import { ApiError } from '../../services/request'
+import { useAppStore } from '../../store/useAppStore'
 import { useReportStore } from '../../store/useReportStore'
 import { useQuizStore } from '../../store/useQuizStore'
 import type { ScrollItem, StepStatus, TaskRecord, TaskStep } from '../../types/api'
@@ -138,6 +139,12 @@ export default function ReportPage() {
   const status = useReportStore((s) => s.status)
   const message = useReportStore((s) => s.message)
   const begin = useReportStore((s) => s.begin)
+
+  /**
+   * 当前主题。下面那条进度条的取色靠它 —— 进度条与环形图共用 `colorOf`，
+   * 两边都必须拿到同一套主题，否则切到暗色主题后会出现「环换了色、条还是旧的」。
+   */
+  const uiTheme = useAppStore((s) => s.uiTheme)
 
   const [task, setTask] = useState<TaskRecord | null>(null)
   /** 递增即「再跑一轮」。重试与被中断后恢复都靠它 */
@@ -698,7 +705,7 @@ export default function ReportPage() {
                   // 而同串里的 width 照常生效，于是这条只留默认色、极难发现
                   // （2026-09-23 实测：写 camelCase 时条形一直是 base 的 $gold，
                   //  与环形图的色阶对不上）。`styleOf` 现在会归一，这里也写明以示意。
-                  'background-color': colorOf(report.accuracy)
+                  'background-color': colorOf(report.accuracy, uiTheme)
                 })}
               />
             </View>

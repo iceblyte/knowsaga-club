@@ -10,6 +10,8 @@
  * 高于手写。接口数量上去之后再换成 openapi-typescript 之类的方案更划算。
  */
 
+import type { UiThemeId } from '../constants/ui-theme'
+
 // -----------------------------------------------------------------------------
 // 统一响应体（backend/app/core/response.py）
 // -----------------------------------------------------------------------------
@@ -880,6 +882,12 @@ export interface UserSettingsPublic {
   sound_enabled: boolean
   auto_load_images: boolean
   eye_care: boolean
+  /**
+   * 界面主题标识。**服务端有白名单校验**（非法值直接报错、不静默兜底），
+   * 所以这里的联合类型与后端接受集合一致；前端拿到不认识的值时仍会
+   * `normalizeUiTheme()` 兜一道（防旧后端 / 脏数据）。
+   */
+  ui_theme: UiThemeId
 }
 
 /**

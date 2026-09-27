@@ -1,11 +1,16 @@
 /**
  * 设置（原型 07·5）。
  *
- * ## 原型 8 行 + 方案要求新增的 1 行
+ * ## 原型 8 行 + 原型外新增的 2 行
  *
  * 第 1 行「头像与昵称」是方案 §7.4 明确要求新增的（原型没有这一屏），
  * 放在**最上方** —— 原型图注写「设置项按使用频率排序，把账号相关放在最下方」，
  * 换头像昵称是这一屏里频率最高的动作，所以它排在最前，而「账号与安全」不动。
+ *
+ * 第 6 行「界面主题」同样是原型外新增的（原型只定义了「纸与印」一套外观，
+ * 也没有换主题这件事）。它排在三个开关之后：与「护眼模式」同属「让界面更好看 /
+ * 更好读」这一类，而清理缓存往下的那一段是账号与帮助。理由见
+ * `constants/copy.ts` 的 `UI_THEME_COPY`。
  *
  * ## 开关为什么是「先改界面、再提交、失败翻回去」
  *
@@ -46,10 +51,12 @@ import { useCallback, useState } from 'react'
 
 import ArchiveState from '../../components/ArchiveState'
 import PhoneShell from '../../components/PhoneShell'
-import { APP_COPY, ARCHIVE_COMMON, SETTINGS_COPY } from '../../constants/copy'
+import { APP_COPY, ARCHIVE_COMMON, SETTINGS_COPY, UI_THEME_COPY } from '../../constants/copy'
+import { uiThemeNameOf } from '../../constants/ui-theme'
 import { useAsyncData } from '../../hooks/useAsyncData'
 import { getUser } from '../../services/session'
 import { fetchSettings, updateSettings } from '../../services/settings'
+import { useAppStore } from '../../store/useAppStore'
 import type { UserSettingsPublic } from '../../types/api'
 import { cacheBytes, clearCache, formatBytes } from '../../utils/cache'
 import { goPage } from '../../utils/navigation'
@@ -89,6 +96,15 @@ const TOGGLE_ROWS: ReadonlyArray<{
 
 export default function SettingsPage() {
   const { status, data, reload } = useAsyncData(() => fetchSettings())
+
+  /**
+   * 当前界面主题。
+   *
+   * 读的是 store，**不是 `data`** —— 主题不在这一屏的 `draft` 里：它是下钻页
+   * 选的，回到本页时要看到最新的名字。store 是那份「立刻生效」的来源，
+   * 与 PhoneShell 挂的类名同源，所以这里显示的一定等于用户看到的配色。
+   */
+  const uiTheme = useAppStore((s) => s.uiTheme)
 
   /**
    * 本地改动（含**还没被服务端确认**的）。
@@ -235,7 +251,23 @@ export default function SettingsPage() {
         )
       })}
 
-      {/* ---- 6. 清理缓存：显示真实占用 ---- */}
+      {/* ---- 6. 界面主题 ----
+          放在三个开关之后：「换配色」与「护眼模式」同属「让界面更好看 / 更好读」
+          这一类。原型图注说设置项按使用频率排序、账号相关放最下，所以它不进
+          最下面那一段（清理缓存之后是账号 / 帮助 / 关于）。
+
+          与「头像与昵称」同样是 `navigate`：本页是下钻进来的，`redirect` 会把
+          它从栈里换掉，子页的返回键就找不到上一页了（「返回键坏了」的成因）。 */}
+      <View className='li' onClick={() => goPage('/pages/settings/theme/index', 'navigate')}>
+        <View className='ico'>{UI_THEME_COPY.iconTheme}</View>
+        <View className='tx'>
+          <View className='n'>{UI_THEME_COPY.rowTheme}</View>
+          <View className='d'>{UI_THEME_COPY.rowThemeDesc(uiThemeNameOf(uiTheme))}</View>
+        </View>
+        <Text className='pill'>{SETTINGS_COPY.rowView}</Text>
+      </View>
+
+      {/* ---- 7. 清理缓存：显示真实占用 ---- */}
       <View className='li' onClick={handleClearCache}>
         <View className='ico'>{SETTINGS_COPY.iconCache}</View>
         <View className='tx'>
@@ -245,7 +277,7 @@ export default function SettingsPage() {
         <Text className='pill'>{SETTINGS_COPY.cacheAction}</Text>
       </View>
 
-      {/* ---- 7. 账号与安全 ---- */}
+      {/* ---- 8. 账号与安全 ---- */}
       <View className='li' onClick={showAccount}>
         <View className='ico'>{SETTINGS_COPY.iconAccount}</View>
         <View className='tx'>
@@ -254,7 +286,7 @@ export default function SettingsPage() {
         </View>
       </View>
 
-      {/* ---- 8. 帮助与反馈 ---- */}
+      {/* ---- 9. 帮助与反馈 ---- */}
       <View className='li' onClick={() => goPage('/pages/settings/help/index', 'navigate')}>
         <View className='ico'>{SETTINGS_COPY.iconHelp}</View>
         <View className='tx'>
@@ -263,7 +295,7 @@ export default function SettingsPage() {
         </View>
       </View>
 
-      {/* ---- 9. 关于 ---- */}
+      {/* ---- 10. 关于 ---- */}
       <View className='li' onClick={showAbout}>
         <View className='ico'>{SETTINGS_COPY.iconAbout}</View>
         <View className='tx'>

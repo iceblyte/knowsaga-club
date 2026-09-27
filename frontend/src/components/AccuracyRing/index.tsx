@@ -25,6 +25,8 @@ import { Canvas, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useEffect, useRef } from 'react'
 
+import { DEFAULT_UI_THEME, uiThemeColorsOf, type UiThemeId } from '../../constants/ui-theme'
+import { useAppStore } from '../../store/useAppStore'
 import { squareStyle } from '../../utils/style'
 
 import './index.scss'
@@ -39,16 +41,31 @@ const STROKE = 8
 const INNER_RADIUS = 23
 
 /**
- * 环的颜色阈值。
+ * 环的四个颜色。
  *
- * 原型只固定了「80% 用绿」这一种情况，另外两档是按设计系统里既有的
- * 语义色补的 —— 正确率 0% 时环还是绿的会读成「一切正常」，那是错的。
- * 三档取色全部来自 `styles/tokens.scss`：$ok / $gold / $seal。
+ * 原型只固定了「80% 用绿」这一种情况，另外两档是按设计系统里既有的语义色补的
+ * —— 正确率 0% 时环还是绿的会读成「一切正常」，那是错的。
+ *
+ * ⚠️ 这四色**随主题变化**。canvas 2D 读不到 CSS 变量，所以只能从
+ * `constants/ui-theme.ts` 取具体色值（那里又来自生成物）。对应
+ * `--k-ok` / `--k-gold` / `--k-bad` / `--k-line-ring`。
+ *
+ * ⚠️ 第三档取 `bad` 而**不是** `seal`：默认主题里两者同值（`#a63a2e`），所以
+ * 这一改动对默认主题逐位无变化；但青柠主题的 `seal` 是**品牌绿**，拿它当
+ * 「正确率低」会画出一条读起来是「一切正常」的绿环。
  */
-const COLOR_OK = '#2F7D4F'
-const COLOR_MID = '#C8912A'
-const COLOR_LOW = '#A63A2E'
-const COLOR_TRACK = '#E6D6B4'
+export interface RingColors {
+  ok: string
+  mid: string
+  low: string
+  track: string
+}
+
+/** 某一套主题下这个环的四个颜色。 */
+export function ringColorsOf(theme: UiThemeId): RingColors {
+  const colors = uiThemeColorsOf(theme)
+  return { ok: colors.ok, mid: colors.gold, low: colors.bad, track: colors.lineRing }
+}
 
 /**
  * 正确率 → 色阶（≥80 绿 / ≥60 金 / 其余红）。
@@ -56,11 +73,15 @@ const COLOR_TRACK = '#E6D6B4'
  * **导出**是给冒险日志页那一格进度条用的：那条进度条画的就是本局正确率，
  * 与这个环是同一个数，颜色必须同源。各写一份阈值表迟早会出现
  * 「环是红的、条是绿的」这种自相矛盾 —— 而且改阈值的人不会想起第二处。
+ *
+ * 第二个参数是**主题**：不传则按默认主题。调用方一律显式传当前主题，
+ * 否则切到暗色主题后会出现「环换了色、条还是浅色主题那一档」。
  */
-export function colorOf(percent: number): string {
-  if (percent >= 80) return COLOR_OK
-  if (percent >= 60) return COLOR_MID
-  return COLOR_LOW
+export function colorOf(percent: number, theme: UiThemeId = DEFAULT_UI_THEME): string {
+  const colors = ringColorsOf(theme)
+  if (percent >= 80) return colors.ok
+  if (percent >= 60) return colors.mid
+  return colors.low
 }
 
 /** 9% 不透明度的同色内圈（原型 `opacity=.09`） */
@@ -96,6 +117,9 @@ export default function AccuracyRing({
 }: AccuracyRingProps) {
   const canvasId = useRef(`ring-${Math.random().toString(36).slice(2, 9)}`).current
   const clamped = Math.max(0, Math.min(100, percent))
+
+  // 主题变了要重画：canvas 是自己画上去的像素，不会跟着 CSS 变量走
+  const uiTheme = useAppStore((s) => s.uiTheme)
 
   useEffect(() => {
     let disposed = false
@@ -134,12 +158,13 @@ export default function AccuracyRing({
           const cy = (BASE / 2) * scale
           const radius = RADIUS * scale
           const lineWidth = STROKE * scale
-          const color = colorOf(clamped)
+          const colors = ringColorsOf(uiTheme)
+          const color = colorOf(clamped, uiTheme)
 
           // 轨道
           ctx.beginPath()
           ctx.arc(cx, cy, radius, 0, Math.PI * 2)
-          ctx.strokeStyle = COLOR_TRACK
+          ctx.strokeStyle = colors.track
           ctx.lineWidth = lineWidth
           ctx.stroke()
 
@@ -183,7 +208,7 @@ export default function AccuracyRing({
 
             ctx.beginPath()
             ctx.arc(cx, cy, radius, 0, Math.PI * 2)
-            ctx.strokeStyle = COLOR_TRACK
+            ctx.strokeStyle = colors.track
             ctx.lineWidth = lineWidth
             ctx.lineCap = 'butt'
             ctx.stroke()
@@ -221,7 +246,7 @@ export default function AccuracyRing({
       clearTimeout(delay)
       stopAnimation?.()
     }
-  }, [canvasId, clamped])
+  }, [canvasId, clamped, uiTheme])
 
   const rpxSize = Math.round(size * RATIO)
 

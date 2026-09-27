@@ -1,8 +1,10 @@
 import { PropsWithChildren } from 'react'
 import { useLaunch } from '@tarojs/taro'
 
+import { normalizeUiTheme } from './constants/ui-theme'
 import { ensureSession } from './services/auth'
 import { fetchHealth } from './services/quiz'
+import { fetchSettings } from './services/settings'
 import { useAppStore } from './store/useAppStore'
 
 import './app.scss'
@@ -39,6 +41,26 @@ function App({ children }: PropsWithChildren<any>) {
       .catch(() => {
         useAppStore.getState().setBackendReachable(false)
       })
+
+    // 界面主题对账。
+    //
+    // 界面主题的**首帧**已经由 store 的初值保证了（同步读本地镜像），这一步是
+    // 把「权威值」拉回来：主题是用户级偏好，换设备登录同一账号必须拿到同一套
+    // （规格要求），而本地镜像只在这台设备上存在。服务端赢，并回写镜像。
+    //
+    // 两点纪律：
+    //   · **失败静默** —— 保留镜像值即可，界面本来就是对的；后端没起来是开发期
+    //     常态，为一次对账弹提示只会打扰用户。
+    //   · **只发一次** —— 对账请求走这条链，不要在页面里再各拉一次；
+    //     设置页那次 `fetchSettings` 是它自己的页面数据，不是对账。
+    ensureSession()
+      .then(() => fetchSettings())
+      .then((settings) => {
+        // `normalizeUiTheme` 兜住三种情况：服务端还没上这个字段（旧后端）、
+        // 值不认识、值不是字符串。任一情况都回默认，不会把脏值写进 store。
+        useAppStore.getState().setUiTheme(normalizeUiTheme(settings.ui_theme))
+      })
+      .catch(() => undefined)
   })
 
   // children 是将要会渲染的页面

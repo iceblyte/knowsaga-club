@@ -37,8 +37,18 @@ $safe-bottom: env(safe-area-inset-bottom);
   position: relative;
 
   // 选中态：换色 + 加粗 + 顶部指示条（原生 tabBar 做不到的那条）
+  //
+  // ⚠️ 用 `$magic-ink`（主色的**文字档**）而不是 `$magic`（填充档）。
+  // 两个原因：
+  //   1. **对比度**：这里两处都是「压在标签栏底（`$paper2`）上」——文字要 4.5:1、
+  //      指示条要 3:1。浅色品牌（青柠）的 `$magic` = #70C000 只有 2.12:1，
+  //      两档都不达；而 `$magic-ink` = #497C00 是 4.70:1。配方为浅色品牌专门
+  //      拆出 `magic-ink` 就是为了这件事，漏在这里等于白拆。
+  //   2. **零漂移**：另外 4 套主题里 `magic-ink` 与 `magic` **同值**（纸与印都是
+  //      #2F6BD8），所以这一改对默认主题逐字节无影响（已用归一化比对复核）。
+  //      换 `$magic-d` 才是漂移 —— 它会把纸与印的指示条变成 #1F4694。
   &.on {
-    color: $magic;
+    color: $magic-ink;
     font-weight: 600;
 
     &::after {
@@ -48,7 +58,7 @@ $safe-bottom: env(safe-area-inset-bottom);
       width: rpx(26); // 26
       height: rpx(2); // 2
       border-radius: 0 0 rpx(2) rpx(2); // 只有下两角圆
-      background: $magic;
+      background: $magic-ink;
     }
   }
 }

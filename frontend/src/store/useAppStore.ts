@@ -12,7 +12,9 @@
 import { create } from 'zustand'
 
 import { QUIZ_DIFFICULTY, QUIZ_QUESTION_COUNT } from '../constants/api'
+import type { UiThemeId } from '../constants/ui-theme'
 import type { Difficulty } from '../types/api'
+import { applyWindowBackground, readUiThemeMirror, writeUiThemeMirror } from '../utils/ui-theme'
 
 /**
  * 本次召唤的出题参数。
@@ -119,6 +121,21 @@ interface AppState {
   /** 后端可达性；为 false 时前端展示网络异常态 */
   backendReachable: boolean
   setBackendReachable: (reachable: boolean) => void
+
+  /**
+   * 当前界面主题。
+   *
+   * 初值**同步**读本地镜像 —— 冷启动第一帧就得是对的配色（规格要求「不闪」），
+   * 所以不能等 `/users/me/settings` 回来再设。服务端是权威值，由 `app.ts`
+   * 在登录态就绪后对账一次并回写镜像。
+   *
+   * ⚠️ **唯一的写入点是 `setUiTheme`**，它同时做三件事（改状态 / 写镜像 /
+   * 改 app 级窗口背景）。别绕过它直接 `set({ uiTheme })`：漏掉写镜像的表现是
+   * 「这次换了、下次冷启动又回去了」，而漏掉窗口背景的表现是「切到暗色主题后
+   * 下拉露出一块浅米色」—— 两者都只在**重新启动**后才看得见，最难在开发时发现。
+   */
+  uiTheme: UiThemeId
+  setUiTheme: (id: UiThemeId) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -141,5 +158,12 @@ export const useAppStore = create<AppState>((set) => ({
   setQuizOptions: (options) => set({ quizOptions: options }),
 
   backendReachable: true,
-  setBackendReachable: (reachable) => set({ backendReachable: reachable })
+  setBackendReachable: (reachable) => set({ backendReachable: reachable }),
+
+  uiTheme: readUiThemeMirror(),
+  setUiTheme: (id) => {
+    set({ uiTheme: id })
+    writeUiThemeMirror(id)
+    applyWindowBackground(id)
+  }
 }))

@@ -26,19 +26,26 @@
 
 import Taro from '@tarojs/taro'
 
+import { UI_THEME_STORAGE_KEY } from './ui-theme'
+
 /** 本项目所有本地键的前缀 */
 const CACHE_PREFIX = 'knowsaga.'
 
 /**
- * **不属于缓存**的键：登录态与设备标识。
+ * **不属于缓存**的键：登录态、设备标识、以及用户偏好。
  *
- * 清掉它们不会「省出空间」，只会让用户下次进页面时重新登录
+ * 清掉登录态与设备标识不会「省出空间」，只会让用户下次进页面时重新登录
  * （小程序里要重新走一次 `wx.login`，H5 上设备标识丢失还会**换一个新账号**）。
+ *
+ * 主题镜像虽然只是一份「首帧不闪」的加速器（权威值在服务端），但它同样是
+ * **用户偏好**而不是可丢弃的缓存：清一次缓存就把主题打回默认，用户看到的是
+ * 「我的设置自己没了」。规格里明确要求「清理缓存不得重置主题」。
  */
 const PROTECTED_KEYS = [
   'knowsaga.session.token',
   'knowsaga.session.user',
-  'knowsaga.device.id'
+  'knowsaga.device.id',
+  UI_THEME_STORAGE_KEY
 ]
 
 /** UTF-8 字节数；不要用 `str.length` —— 一个汉字是 3 字节 */

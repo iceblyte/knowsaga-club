@@ -20,6 +20,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.constants import UI_THEME_IDS
+
 #: `HH:MM`（24 小时制）。原型 07·6 的 chips 是 08:00 / 12:30 / 20:00 / 22:00。
 _TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
@@ -162,6 +164,13 @@ class UserSettingsPublic(BaseModel):
 
     这里**没有** `subscribe_quota` —— 它是预留列，属于内部机制，
     不出现在面向用户的响应里。
+
+    `ui_theme` 是**读宽容**的：类型是 `str` 而不是 `Literal[...]`。
+    写入路径已由白名单严格把关（见 `UserSettingsUpdateRequest`），所以正常情况
+    下库里的值一定合法；这里不放宽是因为一旦有人绕过接口把列改成怪值，
+    `Literal` 会让**整个** `GET /settings` 变成响应校验失败（500），
+    用户的设置页直接打不开 —— 而前端本来就有 `normalizeUiTheme` 把未知值
+    归一到默认主题。让一个异常字段只影响它自己，比让它拖垮整页要好。
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -174,6 +183,8 @@ class UserSettingsPublic(BaseModel):
     sound_enabled: bool
     auto_load_images: bool
     eye_care: bool
+    #: 界面主题标识；取值见 `app.core.constants.UI_THEME_IDS`
+    ui_theme: str
 
 
 class UserSettingsUpdateRequest(BaseModel):
@@ -187,6 +198,7 @@ class UserSettingsUpdateRequest(BaseModel):
     sound_enabled: bool | None = None
     auto_load_images: bool | None = None
     eye_care: bool | None = None
+    ui_theme: str | None = None
 
     @field_validator("reminder_time")
     @classmethod
@@ -197,6 +209,33 @@ class UserSettingsUpdateRequest(BaseModel):
         if not _TIME_PATTERN.match(cleaned):
             raise ValueError("时间格式应为 HH:MM（24 小时制）")
         return cleaned
+
+    @field_validator("ui_theme")
+    @classmethod
+    def _check_ui_theme(cls, value: str | None) -> str | None:
+        """界面主题必须是白名单里的标识，**原样接受**（不 strip、不转小写）。
+
+        为什么这么严：这个值会被前端拼成 CSS 类名 `ui-theme--<id>`，
+        决定加载哪一套变量。三个后果各自都很贵：
+
+        - **静默兜底**（不认识就存 paper）：会把「前端哪里写错了」掩盖成
+          「看起来正常」，用户只会觉得「我选的主题没生效」—— 最难查的一类问题。
+          所以宁可 400。
+        - **归一化**（strip / lower）：等于给闭集引入「等价写法」。
+          白名单存在的意义正是让取值是闭集；多一个别名的唯一效果是
+          前端拼错类名时更难被发现（`'PAPER'` 归一成 `paper` 存进去，
+          用户端却因为类名是 `ui-theme--PAPER` 而完全没换皮肤）。
+        - **拼进 SQL**：它是字符串，理论上可能被当作查询条件拼接 ——
+          拦在白名单里等于顺手关掉这条路（虽然本该由参数化查询负责）。
+
+        失败走 `ValueError` → 4000（INVALID_PARAM，参数形状不对），
+        与 `avatar_key` 同一口径；昵称那种内容合规问题才用 4001。
+        """
+        if value is None:
+            return None
+        if value not in UI_THEME_IDS:
+            raise ValueError(f"未知的界面主题：{value}，可选 {', '.join(UI_THEME_IDS)}")
+        return value
 
     @field_validator("reminder_days")
     @classmethod

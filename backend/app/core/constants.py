@@ -75,3 +75,30 @@ KB_DEFAULT_NAME = "我的知识库"
 #: 知识库列表页每页条数。数量级与历史卷轴不同：一个用户手上的资料库是「个位数」，
 #: 分页在用户量上来之前只是防呆。
 KB_PAGE_SIZE = 20
+
+# -----------------------------------------------------------------------------
+# 界面主题（UI 主题自选）
+# -----------------------------------------------------------------------------
+#: 界面主题的**取值闭集**，顺序即展示顺序。
+#:
+#: ## `paper` 为什么在首位且不写进 `shared/ui-themes.json`
+#:
+#: 它是默认主题「纸与印」—— 色值就是 `frontend/src/styles/tokens.scss` 里
+#: `var(--k-x, <兜底字面量>)` 的兜底字面量本身，前端不需要额外生成一套主题块
+#: （design D5）。`ui-themes.json` 只描述「需要额外覆盖」的那四套，所以：
+#:
+#:   `UI_THEME_IDS == ("paper", *[t["id"] for t in ui-themes.json])`
+#:
+#: 这条等式由 `tests/test_users_api.py::test_ui_theme_whitelist_matches_shared_source`
+#: 守着 —— 它是**跨语言**的钉子（前端 JS 那份由 `gen_theme_scss.mjs` 生成，
+#: 后端这份是手写）。两边漂开的表现很隐蔽：前端能选中、提交被 4000 拒，
+#: 而两端各自的测试都绿。**改主题集合先改 `shared/ui-themes.json`，再同步这里。**
+#:
+#: 用元组而不是 `frozenset`：需要稳定的展示/文档顺序，且它会被参数化测试当
+#: 用例列表用。用元组也就顺带避免「有人往里 set.add」这种运行时改动。
+UI_THEME_IDS: tuple[str, ...] = ("paper", "indigo", "vermilion", "midnight", "lime")
+
+#: 默认主题。前端 `DEFAULT_UI_THEME`、DDL 的 `DEFAULT 'paper'` 必须与它相同。
+#: 单独抽出来是因为「默认值」要被三处引用（DDL 注释 / 服务层兜底 / 测试），
+#: 直接重复写 'paper' 迟早有一处漏改。
+UI_THEME_DEFAULT = "paper"

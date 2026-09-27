@@ -21,6 +21,7 @@ from app.core.constants import (
     BADGE_TOTAL,
     NICKNAME_UI_MAX_LEN,
     SECONDS_PER_REVIEW_QUESTION,
+    UI_THEME_DEFAULT,
     XP_PER_REVIEW_QUESTION,
 )
 from app.core.exceptions import invalid_input
@@ -196,6 +197,12 @@ def update_settings(
     if "reminder_days" in changed:
         row.reminder_days = list(changed["reminder_days"])
 
+    if "ui_theme" in changed:
+        # 白名单已在 `UserSettingsUpdateRequest._check_ui_theme` 里把关，这里直接落库。
+        # 不再做一次归一化：多一层「顺手 strip 一下」的宽容，等于把上面那道
+        # 白名单的意义削弱一半（见该 validator 的注释）。
+        row.ui_theme = str(changed["ui_theme"])
+
     for field in (
         "reminder_enabled",
         "remind_streak_break",
@@ -341,6 +348,9 @@ def _to_settings_public(row: UserSetting) -> UserSettingsPublic:
         sound_enabled=bool(row.sound_enabled),
         auto_load_images=bool(row.auto_load_images),
         eye_care=bool(row.eye_care),
+        # 列是 NOT NULL DEFAULT 'paper'，正常读不出空值；`or` 兜的是
+        # 「表建好之前就存在的用户」那类手工行 —— 一个缺字段不该让设置页 500。
+        ui_theme=str(row.ui_theme or UI_THEME_DEFAULT),
     )
 
 

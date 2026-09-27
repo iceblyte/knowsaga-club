@@ -524,10 +524,44 @@ export const TOKENS = [
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
 export const THEMES_JSON = path.join(REPO_ROOT, 'shared', 'ui-themes.json')
+export const TOKENS_SCSS = path.join(REPO_ROOT, 'frontend', 'src', 'styles', 'tokens.scss')
 
 export function loadThemes() {
   const raw = JSON.parse(fs.readFileSync(THEMES_JSON, 'utf8'))
   return raw.themes
+}
+
+/** `$name: 值;`（允许行尾 `//` 注释）。 */
+const SCSS_DECL = /^\s*\$([a-z0-9-]+)\s*:\s*(.+?);\s*(?:\/\/.*)?$/
+/** `var(--k-x, 兜底字面量)` —— 兜底值就是默认主题真正渲染的那个值。 */
+const SCSS_VAR_FALLBACK = /^var\(\s*--k-[a-z0-9-]+\s*,\s*([\s\S]+)\s*\)$/
+
+/**
+ * 读 `tokens.scss`，返回「**能确定取值**的令牌」表（`scss 名 → 字面量`）。
+ *
+ * 这是**默认主题（paper）的唯一真源**（design.md D5）：新主题的色值走
+ * `ui-themes.json`，默认主题的色值就是这份文件里 `var(--k-*, <字面量>)` 的
+ * 兜底位。要做「同一批颜色的第二种表示」（例如给 canvas 用的 TS 表）时，
+ * 必须从这里读，不能手抄。
+ *
+ * 跳过两类：**别名**（`$opt-default: $paper2`，值由被指向的令牌决定）与
+ * **非颜色函数值**（`rpx()` / `url()`）。返回的是**字面量**，不是令牌名。
+ */
+export function readDefaultTokens() {
+  const source = fs.readFileSync(TOKENS_SCSS, 'utf8')
+  const out = new Map()
+  for (const line of source.split(/\r?\n/)) {
+    const decl = line.match(SCSS_DECL)
+    if (!decl) continue
+    const name = decl[1]
+    let value = decl[2].trim()
+    const wrapped = value.match(SCSS_VAR_FALLBACK)
+    if (wrapped) value = wrapped[1].trim()
+    if (value.startsWith('$')) continue // 别名
+    if (/^[a-z-]+\s*\(/i.test(value)) continue // rpx() / url() / 其它函数值
+    out.set(name, value)
+  }
+  return out
 }
 
 /** 把一套主题的核心色展开成 `{ scss, css, value }` 的有序数组。 */

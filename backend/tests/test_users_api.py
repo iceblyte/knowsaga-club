@@ -5,13 +5,18 @@
 - PATCH 昵称与预置头像（含昵称合规校验）
 - 头像上传（类型 / 大小 / 魔数 / 服务端命名 / 静态可访问）
 - 设置读写（07·5 与 07·6 的数据面）
+- 界面主题（UI 主题自选）：白名单、跨用户隔离、与 `shared/ui-themes.json` 的一致性
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.constants import UI_THEME_IDS
 from app.core.exceptions import ErrorCode
 from app.db.tables import QuestionRecord
 from tests.helpers import (
@@ -300,6 +305,9 @@ def test_get_settings_defaults(db_client: TestClient, auth_headers: dict) -> Non
     assert data["sound_enabled"] is True
     assert data["auto_load_images"] is False
     assert data["eye_care"] is False
+    # 从未选择过主题的老用户 → 默认主题。这条同时是规格里
+    # 「老用户升级后主题为默认」那个场景的落点。
+    assert data["ui_theme"] == "paper"
 
 
 def test_patch_settings_roundtrip(db_client: TestClient, auth_headers: dict) -> None:
@@ -312,6 +320,7 @@ def test_patch_settings_roundtrip(db_client: TestClient, auth_headers: dict) -> 
         "eye_care": True,
         "remind_streak_break": False,
         "remind_review_due": False,
+        "ui_theme": "midnight",
     }
 
     resp = db_client.patch(SETTINGS, headers=auth_headers, json=payload)
@@ -378,6 +387,113 @@ def test_settings_never_expose_subscribe_quota_mechanism(
     data = db_client.get(SETTINGS, headers=auth_headers).json()["data"]
 
     assert "subscribe_quota" not in data
+
+
+# -----------------------------------------------------------------------------
+# 界面主题（UI 主题自选）
+# -----------------------------------------------------------------------------
+#: 仓库根：tests/ -> backend/ -> 仓库根
+THEMES_JSON = Path(__file__).resolve().parents[2] / "shared" / "ui-themes.json"
+
+
+def test_ui_theme_whitelist_matches_shared_source() -> None:
+    """服务端白名单必须等于「`shared/ui-themes.json` 的四套 + 默认的 paper」。
+
+    这是**跨语言**的一致性钉子：前端那 5 个标识由 `ui-themes.json` 生成
+    （`frontend/scripts/gen_theme_scss.mjs`），后端这份是手写的白名单元组。
+    两边漂开的表现很隐蔽 —— 前端能选中一套主题、提交时被后端 4000 拒掉，
+    而**两端各自的测试都是绿的**（各自只验自己那份）。
+
+    所以：改主题集合先改 `shared/ui-themes.json`，再同步 `UI_THEME_IDS`
+    （顺序反了这条会红）。`paper` 是默认主题，按 design D5 刻意不写进 JSON。
+    """
+    if not THEMES_JSON.is_file():  # pragma: no cover - 文件缺失属于配置错误
+        pytest.fail(f"共享真源不存在：{THEMES_JSON}")
+
+    payload = json.loads(THEMES_JSON.read_text(encoding="utf-8"))
+    themes = payload["themes"]
+
+    assert list(UI_THEME_IDS) == ["paper", *[t["id"] for t in themes]], (
+        "后端白名单与 shared/ui-themes.json 不一致"
+    )
+    # 每套都要有名字：JSON 漏字段时上面那条仍会通过，这里才拦得住
+    assert all(t.get("name") for t in themes)
+
+
+@pytest.mark.parametrize("theme_id", list(UI_THEME_IDS))
+def test_ui_theme_accepts_every_whitelisted_id(
+    db_client: TestClient, auth_headers: dict, theme_id: str
+) -> None:
+    """五套预置主题都必须被接受，并且**原样**回传（不改写、不归一）。"""
+    resp = db_client.patch(SETTINGS, headers=auth_headers, json={"ui_theme": theme_id})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["ui_theme"] == theme_id
+
+    again = db_client.get(SETTINGS, headers=auth_headers).json()["data"]
+    assert again["ui_theme"] == theme_id
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "neon",  # 不在集合里
+        "",  # 空串（前端 store 初值出错时会发出这个）
+        "PAPER",  # 大小写不同
+        " paper",  # 带空白
+        "paper ",
+        "midnight2",
+        "纸与印",  # 名字不是标识
+        "'; DROP TABLE user_settings; --",  # 顺带确认它不是拼进 SQL 的
+    ],
+)
+def test_ui_theme_rejects_values_outside_whitelist(
+    db_client: TestClient, auth_headers: dict, value: str
+) -> None:
+    """白名单之外一律 4000，**不静默兜底、也不静默改写**（规格硬要求）。
+
+    这个值决定客户端加载哪套皮肤。静默兜底会把「前端哪里写错了」掩盖成
+    「看起来正常」，而用户只会觉得「我选的主题没生效」—— 最难查的一类问题。
+
+    为什么不 strip 空白：它是**机器标识**（会被拼成 `ui-theme--<id>` 的类名），
+    不是用户手输的内容。归一化等于引入第二种「等价写法」，而这个白名单存在的
+    意义正是让取值是**闭集**；多一个别名的唯一效果是前端写错时更难被发现。
+    """
+    before = db_client.get(SETTINGS, headers=auth_headers).json()["data"]["ui_theme"]
+
+    resp = db_client.patch(SETTINGS, headers=auth_headers, json={"ui_theme": value})
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["code"] == ErrorCode.INVALID_PARAM
+
+    # 被拒之后原来的值必须**一点没动**
+    after = db_client.get(SETTINGS, headers=auth_headers).json()["data"]["ui_theme"]
+    assert after == before
+
+
+def test_ui_theme_is_per_user(
+    db_client: TestClient, auth_headers: dict, other_auth_headers: dict
+) -> None:
+    """主题是用户级偏好：一个人换了，不影响另一个人。"""
+    db_client.patch(SETTINGS, headers=auth_headers, json={"ui_theme": "lime"})
+
+    other = db_client.get(SETTINGS, headers=other_auth_headers).json()["data"]
+    assert other["ui_theme"] == "paper"
+
+
+def test_ui_theme_survives_unrelated_patch(db_client: TestClient, auth_headers: dict) -> None:
+    """改别的开关不能把主题带回默认。
+
+    挡的是「`PATCH` 只提交改动字段」这套语义被破坏：若哪次实现退化成
+    「整份覆盖」，用户会在调音量的时候被莫名其妙换回纸与印。
+    """
+    db_client.patch(SETTINGS, headers=auth_headers, json={"ui_theme": "midnight"})
+
+    db_client.patch(SETTINGS, headers=auth_headers, json={"sound_enabled": False})
+
+    data = db_client.get(SETTINGS, headers=auth_headers).json()["data"]
+    assert data["ui_theme"] == "midnight"
+    assert data["sound_enabled"] is False
 
 
 # -----------------------------------------------------------------------------

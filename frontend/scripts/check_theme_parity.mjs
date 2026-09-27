@@ -4,14 +4,16 @@
  *
  * ## 为什么要有它
  *
- * 主题这套东西有四份表示：
- *   1. `shared/ui-themes.json`          —— 手写的核心色（真源）
+ * 主题这套东西有五份表示：
+ *   1. `shared/ui-themes.json`          —— 手写的核心色（新主题的真源）
  *   2. `lib/ui-theme-recipe.mjs` 的派生 —— 算出来的其余令牌
  *   3. `src/styles/_themes.scss`        —— 生成物（入库，跑起来真加载的就是它）
- *   4. `src/styles/tokens.scss`         —— 默认主题的 var() 兜底字面量
+ *   4. `src/constants/ui-theme-tokens.ts` —— 生成物（入库，canvas / 原生 API 取色用）
+ *   5. `src/styles/tokens.scss`         —— 默认主题的 var() 兜底字面量
  *
  * 本项目在「同一口径两处实现」上吃过亏（算分那回）。所以这里把它们两两钉住：
- *   · 生成物 vs 真源 —— `gen_theme_scss.mjs --check`（改了 JSON 忘了重生成会红）
+ *   · 生成物 vs 真源 —— `gen_theme_scss.mjs --check`（3 与 4 都查；改了 JSON 或
+ *     tokens.scss 忘了重生成会红）
  *   · 派生值 vs WCAG —— `audit_theme_contrast.mjs`（含「兜底字面量 vs 手抄表」核对）
  *
  * ## 用法

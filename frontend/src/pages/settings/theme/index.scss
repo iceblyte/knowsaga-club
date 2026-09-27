@@ -1,0 +1,78 @@
+// 界面主题（**原型外**的一屏 —— 原型只定义了「纸与印」一套外观）。
+//
+// 版面沿用设置类子页的语法：一条说明 + 若干张 `.card.plain` + 一条边界说明。
+// 每行左侧是该主题的**真实色值**三条色带 —— 色值来自
+// `constants/ui-theme-tokens.ts`（生成物），本文件里**不写任何色值**。
+//
+// 小样为 52×34：够看出「底色 / 主色 / 强调」的关系，又不会把行撑高
+// （`.card` 的内容高由文字决定，小样比它矮，行高仍然由文字说了算）。
+
+@use "../../../styles/tokens" as *;
+
+.theme-page {
+  // 说明文字：整段灰一点、小一点，与下面的卡片形成层次
+  &__intro {
+    font-size: $fs-sub;
+    color: $ink2;
+    line-height: $lh-snug;
+  }
+
+  // 覆盖边界的如实说明。放在最后、用更淡的墨 —— 它是注脚，不是选项。
+  &__boundary {
+    font-size: $fs-tiny;
+    color: $ink3;
+    line-height: $lh-snug;
+  }
+}
+
+.theme-opt {
+  display: flex;
+  align-items: center;
+  gap: $sp-6;
+
+  // 选中态：一圈主色描边。**不只靠颜色** —— 右侧还会有「使用中」的胶囊
+  // （与设置页那三个开关同一条纪律）。
+  &--on {
+    box-shadow:
+      inset 0 0 0 1PX $opt-sel-border,
+      inset 0 1px 0 var(--k-hi-inset, rgba(255, 255, 255, 0.7));
+  }
+
+  &__swatch {
+    flex: none;
+    width: rpx(52);
+    height: rpx(34);
+    border-radius: $r-knob;
+    // 内圈留一道纸色 —— 底色（`paper`）作为**框**露出来，里面三条是
+    // 主色 / 黄铜 / 错误色。不留这道内边距的话，三条色带会把纸色整个盖住，
+    // 小样就读不出「这个主题的纸是什么颜色」。
+    padding: rpx(2);
+    display: flex;
+    flex-direction: column;
+    gap: 1PX;
+    // 小样自己也要有外圈边：浅色主题的纸面接近白，压在 `$paper-plain` 上会糊在一起
+    box-shadow: 0 0 0 1PX $stroke-edge;
+  }
+
+  &__band {
+    flex: 1;
+  }
+
+  &__tx {
+    flex: 1;
+    min-width: 0; // 允许文字在窄屏上换行，而不是把行撑宽
+    display: flex;
+    flex-direction: column;
+    gap: $sp-1;
+  }
+
+  &__name {
+    font-size: $fs-h2;
+    font-weight: 700;
+  }
+
+  &__mode {
+    font-size: $fs-tiny;
+    color: $ink3;
+  }
+}

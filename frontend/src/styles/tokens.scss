@@ -1,8 +1,15 @@
 // =============================================================================
 // 知拾冒险社 · 设计令牌「纸与印」
 // -----------------------------------------------------------------------------
-// 唯一视觉来源：prototype/00-设计规范.html 的实际渲染 CSS。
-// 设计规范正文若有与 CSS 不符处，一律以原型 CSS 为准。
+// 【视觉来源 · 分层】
+//   · 默认主题「纸与印」（paper）—— 唯一以原型为准的那一套：它的色值就是本文件里
+//     `var(--k-*, <字面量>)` 的**兜底字面量**，出处是 prototype/00-设计规范.html
+//     的实际渲染 CSS。设计规范正文若有与 CSS 不符处，一律以原型 CSS 为准。
+//   · 另外四套主题（indigo / vermilion / midnight / lime）—— **原型里没有它们**：
+//     原型只定义了「纸与印」一套外观。它们的色值真源是 shared/ui-themes.json，
+//     依据是既有设计实验室产物（理由与出处见
+//     openspec/changes/add-ui-theme-switch/design.md 的 D11 与冲突点 2）。
+//     所以「以原型为准」这句话只约束默认主题那一层，不是对全部主题生效。
 //
 // 【尺寸换算说明】
 // 原型机身宽 332px，真机设计宽 750rpx，故  rpx = 原型px × 2.2590  (750 ÷ 332)。
@@ -60,9 +67,21 @@ $opt-default: $paper2; // #F5EDD8
 $opt-selected: var(--k-opt-selected, #dce9fb); // 已选
 $opt-correct: var(--k-opt-correct, #dff0e4); // 答对
 $opt-wrong: var(--k-opt-wrong, #f7e3df); // 答错
-$opt-sel-border: $magic;
-$opt-ok-border: $ok;
-$opt-bad-border: $bad;
+
+// ⚠️ 下面三个**必须是独立令牌**，不能写成 `$magic` / `$ok` / `$bad` 的别名。
+//
+// 曾经它们就是别名（`$opt-sel-border: $magic;`），后果是一条**静默**的接线断裂：
+// 配方（scripts/lib/ui-theme-recipe.mjs）为「已选描边」单独求解了一档更深的颜色 ——
+// 青柠的主色 `#70C000` 压在已选底 `#EBF6DB` 上只有 **2.03:1**，求解给出 `#5A9900`
+// （3.13:1，达标）。但别名让消费方直接取 `--k-magic`，**求解值从未被引用**：
+//   · `check:theme` 体检的是生成物里的 `#5A9900` ⇒ 达标，**假绿**；
+//   · 运行时用的是 `#70C000` ⇒ 2.03:1，不达标。
+// 与 `$grain` 是同一失效家族：**生成器在产出、消费方没接上**，编译/构建/零漂移
+// 比对全都发现不了，只有切到那一套主题量对比度才暴露。
+// 兜底字面量 = 纸与印的对应值（`$magic` / `$ok` / `$bad` 的兜底位），故默认主题零漂移。
+$opt-sel-border: var(--k-opt-sel-border, #2f6bd8); // = $magic（纸与印）；青柠会被压深到 #5A9900
+$opt-ok-border: var(--k-opt-ok-border, #2f7d4f); // = $ok（纸与印）
+$opt-bad-border: var(--k-opt-bad-border, #a63a2e); // = $bad（纸与印）
 
 // chip 的选中态描边。
 //
@@ -73,8 +92,11 @@ $opt-bad-border: $bad;
 $chip-sel-border: var(--k-chip-sel-border, #7fa9d8);
 
 // 按钮底边（物理按键的暗面）
-$btn-magic-edge: $magic-d; // #1F4694
-$btn-gold-edge: $gold-d; // #9C6E15
+// 同样从别名改为独立令牌：配方为它们各自产出 `--k-btn-*-edge`，别名会让这份产出
+// 变成无人消费的死值（今天四套主题恰好同值，但那是巧合，下一套配色未必）。
+// 兜底字面量 = 纸与印的 `$magic-d` / `$gold-d`，默认主题零漂移。
+$btn-magic-edge: var(--k-btn-magic-edge, #1f4694); // = $magic-d
+$btn-gold-edge: var(--k-btn-gold-edge, #9c6e15); // = $gold-d
 $btn-ok-edge: var(--k-btn-ok-edge, #1f5a38);
 $btn-dis-edge: var(--k-btn-dis-edge, #d3c29f);
 
@@ -130,7 +152,12 @@ $glow-gold: var(--k-glow-gold, rgba(200, 145, 42, 0.12)); // 知识树冠的金�
 // -----------------------------------------------------------------------------
 // 纸浆颗粒：让底色读作「纸」而不是「奶油色」
 // -----------------------------------------------------------------------------
-$grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E");
+// ⚠️ 这个令牌**必须**走 `var()`：暗色主题（midnight）的颗粒不透明度是 `.05`
+// 而不是 `.13` —— 同密度的灰噪点压在暗底上会整体提亮，读起来像脏点。
+// 曾经这里写成裸 `url(…)`，而生成器已经在产出 `--k-grain`：两边看着都在、
+// 实际从未接上（暗色主题只能拿到浅色那一档颗粒）。属于本项目最典型的静默失效 ——
+// 编译、构建、零漂移比对**全都发现不了它**，只有切到暗色主题肉眼看才暴露。
+$grain: var(--k-grain, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='.13'/%3E%3C/svg%3E"));
 
 /// 整页纸板背景（三层叠加：左上高光 + 右下暖暗 + 颗粒）
 @mixin board-bg {
