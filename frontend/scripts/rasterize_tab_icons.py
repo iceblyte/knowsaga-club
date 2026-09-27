@@ -1,8 +1,37 @@
 #!/usr/bin/env python
-"""把 `src/assets/icons/svg/*.svg` 光栅化成 81×81 PNG，供微信 `custom-tab-bar` 使用。
+"""把 `src/assets/icons/svg/*.svg` 光栅化成 81×81 PNG，**按主题各出一套**，
+供 `custom-tab-bar` 使用。
 
 用法：
     python frontend/scripts/rasterize_tab_icons.py
+
+产物：
+    frontend/src/assets/icons/png/<theme>/<key>-<normal|active>.png
+    5 套主题 × 5 个图标 × 2 个状态 = 50 张（每张约 0.7 KB）
+
+## 颜色从哪里来（不手抄，两处都读真源）
+
+| 主题 | `normal` 用 | `active` 用 | 读自 |
+| --- | --- | --- | --- |
+| `paper`（默认） | `$ink3` 的兜底字面量 | `$magic-ink` 的兜底字面量 | `src/styles/tokens.scss` |
+| 其余 4 套 | `--k-ink-3` | `--k-magic-ink` | `src/styles/_themes.scss`（生成物） |
+
+为什么是这两个令牌：标签栏里**文字与图标必须同色**（原型就是这样），而
+`custom-tab-bar/index.scss` 的未选中色是 `$ink3`、选中色是 `$magic-ink`。
+注意选中用的是 `magic-ink`（主色的**文字档**）而**不是** `magic`（填充档）——
+浅色品牌（青柠）的 `$magic` = #70C000 压在自己的标签栏底上只有 2.12:1，
+而配方为浅色品牌专门求解了 `magic-ink`。图标若取 `magic` 就会把那个坑
+在资源层重新挖一遍。
+
+读不到令牌时**直接报错**，不退回硬编码色 —— 静默兜底正是这张表要防的事。
+
+## 各主题的图标色与标签栏底（非文本图形，门槛 3:1）
+
+    paper      #9A8870 2.93:1（既有 sub-AA，同原型） / #2F6BD8 4.27:1
+    indigo     #6D665E 5.02:1                        / #1E4B8F 7.58:1
+    vermilion  #696971 5.04:1                        / #18181B 16.40:1
+    midnight   #8F959F 4.63:1                        / #E0A455 6.39:1
+    lime       #6D6D6D 4.83:1                        / #497C00 4.70:1
 
 ## 为什么必须转 PNG
 
@@ -36,15 +65,22 @@ node 侧的 @resvg/resvg-js。原因是标签栏图标是**一次性产出、随
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import struct
+import sys
 import zlib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SVG_DIR = REPO_ROOT / "frontend" / "src" / "assets" / "icons" / "svg"
 PNG_DIR = REPO_ROOT / "frontend" / "src" / "assets" / "icons" / "png"
+
+# 图标色的两个真源
+TOKENS_SCSS = REPO_ROOT / "frontend" / "src" / "styles" / "tokens.scss"
+THEMES_SCSS = REPO_ROOT / "frontend" / "src" / "styles" / "_themes.scss"
+THEMES_JSON = REPO_ROOT / "shared" / "ui-themes.json"
 
 # 微信标签栏图标的推荐尺寸
 OUT_SIZE = 81
@@ -405,6 +441,89 @@ def _parse_color(spec: str) -> tuple[int, int, int]:
 
 
 # -----------------------------------------------------------------------------
+# 主题图标色（读真源，不手抄）
+# -----------------------------------------------------------------------------
+# `$ink3: var(--k-ink-3, #9a8870); // 更淡墨` —— 只取有兜底字面量的那种写法，
+# 别名（`$x: $y;`）与函数值（`$grain: url(…)`）都拿不到，正好不该拿。
+VAR_FALLBACK_RE = re.compile(
+    r"^\$([a-z0-9-]+)\s*:\s*var\(\s*--k-[a-z0-9-]+\s*,\s*(#[0-9a-fA-F]{6})\s*\)",
+    re.M,
+)
+THEME_BLOCK_RE = re.compile(r"\.ui-theme--([a-z0-9-]+)\s*\{(.*?)\}", re.S)
+VAR_DECL_RE = re.compile(r"--k-([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})")
+
+
+def read_default_tokens(path: Path = TOKENS_SCSS) -> dict[str, str]:
+    """tokens.scss 里 `$name: var(--k-x, #hex);` 的兜底字面量 = 默认主题的真值。"""
+    if not path.is_file():
+        raise UnsupportedSvg(f"找不到 {path}")
+    return {m.group(1): m.group(2) for m in VAR_FALLBACK_RE.finditer(path.read_text(encoding="utf-8"))}
+
+
+def read_theme_blocks(path: Path = THEMES_SCSS) -> dict[str, dict[str, str]]:
+    """`_themes.scss` 里每个 `.ui-theme--<id>` 块的 `--k-*: #hex`。"""
+    if not path.is_file():
+        raise UnsupportedSvg(f"找不到 {path}（先生成：npm run gen:theme）")
+    return {
+        m.group(1): {k: v for k, v in VAR_DECL_RE.findall(m.group(2))}
+        for m in THEME_BLOCK_RE.finditer(path.read_text(encoding="utf-8"))
+    }
+
+
+def read_theme_ids(path: Path = THEMES_JSON) -> list[str]:
+    """`shared/ui-themes.json` 里的主题 id（顺序即设置页展示顺序，paper 之外的那 4 套）。"""
+    if not path.is_file():
+        raise UnsupportedSvg(f"找不到主题真源 {path}")
+    ids = [t["id"] for t in json.loads(path.read_text(encoding="utf-8"))["themes"]]
+    if not ids:
+        raise UnsupportedSvg(f"{path} 里 themes 为空")
+    return ids
+
+
+def icon_colors() -> list[tuple[str, str, str]]:
+    """`[(theme_id, normal_hex, active_hex), …]`，`paper` 在最前（与 UI_THEME_IDS 同序）。
+
+    顺序不是随便定的：`assets/icons/tab.ts` 按这个顺序生成，而设置页也按
+    `UI_THEME_IDS` 的顺序展示 —— 两边都从「paper + JSON」推出来才不会错位。
+    """
+    tokens = read_default_tokens()
+    for name in ("ink3", "magic-ink"):
+        if name not in tokens:
+            raise UnsupportedSvg(
+                f"{TOKENS_SCSS} 里没找到 ${name} 的 var() 兜底字面量 —— "
+                "默认主题的图标色必须从 tokens.scss 读出来，不能在这里写死。"
+            )
+
+    out: list[tuple[str, str, str]] = [("paper", tokens["ink3"], tokens["magic-ink"])]
+    blocks = read_theme_blocks()
+    for theme_id in read_theme_ids():
+        block = blocks.get(theme_id)
+        if block is None:
+            raise UnsupportedSvg(f"{THEMES_SCSS} 里没有 .ui-theme--{theme_id} 块（先跑 npm run gen:theme）")
+        missing = [name for name in ("ink-3", "magic-ink") if name not in block]
+        if missing:
+            raise UnsupportedSvg(f"主题 {theme_id} 缺少令牌 {missing}，图标取不到颜色")
+        out.append((theme_id, block["ink-3"], block["magic-ink"]))
+    return out
+
+
+def recolor_svg(svg_text: str, color: str) -> str:
+    """把图标里烘焙的描边色换成目标色。
+
+    `svg/*.svg` 是**默认主题**的矢量副本（整个人工核对也看它），所以每生成
+    一套主题就要换一次色。只替换十六进制字面量 —— `fill="none"` /
+    `stroke="none"` 这类关键字动不到，`render_svg` 的单色断言仍然成立。
+    """
+    changed = 0
+    for attr in ("stroke", "fill"):
+        svg_text, n = re.subn(rf'{attr}="#[0-9a-fA-F]{{6}}"', f'{attr}="{color}"', svg_text)
+        changed += n
+    if changed == 0:
+        raise UnsupportedSvg("SVG 里没有任何十六进制颜色可替换 —— 颜色约定变了？")
+    return svg_text
+
+
+# -----------------------------------------------------------------------------
 # PNG 编码（真彩 + Alpha，8 位）
 # -----------------------------------------------------------------------------
 def encode_png(width: int, height: int, rows: list[bytes]) -> bytes:
@@ -437,17 +556,60 @@ def main() -> int:
         print(f"[x] 没找到源 SVG：{SVG_DIR}")
         return 1
 
+    # 先做完全部校验再动盘 —— 半途失败会留下「一半主题是新色、一半是旧色」的
+    # 产物，那比直接失败难查得多。
+    plan: list[tuple[Path, str]] = []
+    for svg_path in svgs:
+        if svg_path.stem.endswith("-active"):
+            state = "active"
+        elif svg_path.stem.endswith("-normal"):
+            state = "normal"
+        else:
+            print(f"[x] 无法判定状态（文件名既不以 -normal 也不以 -active 结尾）：{svg_path.name}", file=sys.stderr)
+            return 1
+        plan.append((svg_path, state))
+
+    try:
+        colors = icon_colors()
+    except UnsupportedSvg as exc:
+        print(f"[x] {exc}", file=sys.stderr)
+        return 1
+
     PNG_DIR.mkdir(parents=True, exist_ok=True)
 
-    for svg_path in svgs:
-        svg_text = svg_path.read_text(encoding="utf-8")
-        rows = render_svg(svg_text, OUT_SIZE, SUPERSAMPLE)
-        png = encode_png(OUT_SIZE, OUT_SIZE, rows)
-        out = PNG_DIR / f"{svg_path.stem}.png"
-        out.write_bytes(png)
-        print(f"[ok] {svg_path.name} -> {out.relative_to(REPO_ROOT)} ({len(png)} B)")
+    written = 0
+    total_bytes = 0
+    for theme_id, normal_hex, active_hex in colors:
+        out_dir = PNG_DIR / theme_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        theme_bytes = 0
+        for svg_path, state in plan:
+            color = active_hex if state == "active" else normal_hex
+            svg_text = recolor_svg(svg_path.read_text(encoding="utf-8"), color)
+            rows = render_svg(svg_text, OUT_SIZE, SUPERSAMPLE)
+            png = encode_png(OUT_SIZE, OUT_SIZE, rows)
+            (out_dir / f"{svg_path.stem}.png").write_bytes(png)
+            theme_bytes += len(png)
+            written += 1
+        total_bytes += theme_bytes
+        print(
+            f"[ok] {theme_id:<10} normal={normal_hex} active={active_hex}"
+            f"  {len(plan)} 个 PNG / {theme_bytes} B -> {out_dir.relative_to(REPO_ROOT)}"
+        )
 
-    print(f"\n共生成 {len(svgs)} 个 PNG（{OUT_SIZE}×{OUT_SIZE}）到 {PNG_DIR.relative_to(REPO_ROOT)}")
+    # 清掉旧的「平铺」布局（png/*.png）——主题化之前只有这一层，
+    # 留着会让人以为还有一份没主题的图标在用。
+    stale = sorted(p for p in PNG_DIR.glob("*.png") if p.is_file())
+    for path in stale:
+        path.unlink()
+        print(f"[--] 删除旧布局残留 {path.relative_to(REPO_ROOT)}")
+
+    print(
+        f"\n共生成 {written} 个 PNG（{OUT_SIZE}×{OUT_SIZE}，{total_bytes} B）"
+        f"：{len(colors)} 套主题 × {len(plan)} 个状态文件"
+    )
+    print(f"目录：{PNG_DIR.relative_to(REPO_ROOT)}/<theme>/")
+    print("接着跑 `node frontend/scripts/check_icon_parity.mjs` 核对产物色值。")
     return 0
 
 

@@ -943,6 +943,13 @@ percentile = clamp(round(accuracy × 0.9), 5, 95)
 「微信对只有 viewBox 的 SVG 做尺寸推导没保证」，换成 PNG 就已消除该不确定性；
 而「base64 在标签栏不显示」针对的是**原生 tabBar 的 `iconPath` 配置项**，
 我们用的是 `custom: true` 自定义组件（`<image src=...>` 支持 data URI），不受此限。
+
+> **2026-09-27 更新（原文保留，数字已变）**：UI 主题自选落地后，图标改成**按主题各一套**
+> （`assets/icons/png/<theme>/`，5 套 × 10 张）。上面那句「`assets/icons/png/*.png`」
+> 的平铺布局与「10 处 `data:image/png;base64`」都已过期 ——
+> 实测现在是 **50 处**（`dist/custom-tab-bar/index.js`，50 张源图标 50/50 命中）。
+> 内联机制、以及「不受原生 `iconPath` 限制」这两条结论不变。
+> 来源：`openspec/changes/add-ui-theme-switch/design.md` 的 D13② / D14。
 结果 = PNG 的确定性 + 零额外文件请求。
 
 **依赖树治理（本轮踩坑与结论）**

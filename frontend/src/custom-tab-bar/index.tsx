@@ -13,7 +13,7 @@
 import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
-import { TAB_ICONS, TAB_PATHS, TAB_TEXTS, type TabKey } from '../assets/icons/tab'
+import { TAB_PATHS, TAB_TEXTS, tabIconsOf, type TabKey } from '../assets/icons/tab'
 import { withUiTheme } from '../constants/ui-theme'
 import { useAppStore } from '../store/useAppStore'
 import { TAB_ORDER, useTabStore } from '../store/useTabStore'
@@ -30,11 +30,13 @@ export default function CustomTabBar() {
    * 必须自己挂一次类 —— 否则切到暗色主题后，底部那条依旧是浅色的，而且
    * 因为 `.tabbar` 是 `position: fixed` 浮在页面之上，会在暗底上显得格外刺眼。
    *
-   * ⚠️ 图标本身**不跟随主题**：`assets/icons/tab` 里的 PNG 烘焙了固定的
-   * 未选中 / 选中两色。这是已登记的能力边界（design.md D8、规格里的
-   * 「换肤覆盖不到的部分不得被宣称已覆盖」），文字与背景跟随、图标不跟随。
+   * 图标也跟随主题：`assets/icons/tab` 提供的是「主题 → 图标集」，
+   * 5 套主题各 10 张预光栅化 PNG（颜色烘焙在像素里，CSS 变量够不到 `<Image src>`）。
+   * 取色用的是各主题的 `--k-ink-3` / `--k-magic-ink` —— 与下面文字的 `$ink3` /
+   * `$magic-ink` **同源同值**，所以图标与文字永远是一个颜色。
    */
   const uiTheme = useAppStore((s) => s.uiTheme)
+  const icons = tabIconsOf(uiTheme)
 
   const handleTap = (key: TabKey, index: number) => {
     if (index === current) return
@@ -55,7 +57,7 @@ export default function CustomTabBar() {
           >
             <Image
               className='tabbar__icon'
-              src={active ? TAB_ICONS[key].active : TAB_ICONS[key].normal}
+              src={active ? icons[key].active : icons[key].normal}
               mode='aspectFit'
             />
             <Text className='tabbar__text'>{TAB_TEXTS[key]}</Text>

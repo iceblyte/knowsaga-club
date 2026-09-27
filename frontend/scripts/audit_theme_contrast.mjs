@@ -140,6 +140,11 @@ const PAPER_TOKENS = {
  * `target` 为 `TEXT`（4.5，正文/小字）或 `UI`（3.0，大字、非文本边界与状态色）。
  * `since` 标出这个组合在默认主题里本来就低于门槛 —— 新增主题不允许出现这
  * 一类；默认主题上的这些项只登记、不判红。
+ *
+ * ⚠️ **这张表只覆盖它列出的组合。** 「某个消费点的底色不在表里」= 该处无论多差
+ * 都永远绿 —— 2026-09-27 就栽在这上面（D13：整块标签栏没进表，165 项全绿却
+ * 漏掉青柠 2.12:1 与夜航公会图标 2.80:1）。**加体检项和改色一样是改动**：
+ * 新写一处「有底色的文字」就该回来看看要不要补一行。
  */
 const CHECKS = [
   // ---- 正文与标题 ----
@@ -187,7 +192,17 @@ const CHECKS = [
   { label: '错误色描边 on 错误底', fg: 'opt-bad-border', bg: 'opt-wrong', target: 'UI' },
   { label: '已选 chip 描边 on 已选底', fg: 'chip-sel-border', bg: 'opt-selected', target: 'UI' },
   { label: '次级按钮/表单边界 on 纸面', fg: 'stroke-ghost', bg: 'paper', target: 'UI' },
-  { label: '禁用按钮文字 on 禁用底（豁免项）', fg: 'ink3', bg: 'paper3', target: 'UI', exempt: 'WCAG 1.4.3 豁免「无效控件」' }
+  { label: '禁用按钮文字 on 禁用底（豁免项）', fg: 'ink3', bg: 'paper3', target: 'UI', exempt: 'WCAG 1.4.3 豁免「无效控件」' },
+
+  // ---- 标签栏（D13 补：整块此前不在体检表里，于是「全绿却不达标」）----
+  // 底色用标签栏真实底色 `paper2`；未选中色 `ink3`、选中色 `magic-ink`
+  // （`custom-tab-bar/index.scss`）。判定取 TEXT（4.5）而不是 UI —— 同一处既是
+  // 10.5px 文字、也是图标，文字是更严的一侧，达标即两者都达标。
+  // 图标是 PNG 位图，色值取的就是这两个令牌（见 `assets/icons/tab.ts` 头注释），
+  // 因此这两条同时约束「文字」与「图标」两条消费链。
+  // `paper` 两项均低于门槛（既有，同原型，改了就破坏零漂移）⇒ 登记不判红。
+  { label: '标签栏未选中文字/图标 on 标签栏底', fg: 'ink3', bg: 'paper2', target: 'TEXT' },
+  { label: '标签栏选中文字/图标 on 标签栏底', fg: 'magic-ink', bg: 'paper2', target: 'TEXT' }
 ]
 
 /** `$name: 值;`（允许行尾 `//` 注释）。 */

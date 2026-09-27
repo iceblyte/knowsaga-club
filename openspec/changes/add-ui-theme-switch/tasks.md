@@ -2,7 +2,7 @@
 
 > 顺序即依赖顺序。后端每条拆成「写测试跑红」与「写实现跑绿」两步（项目硬约束）。
 > 跑后端测试的环境变量：`CODEBUDDY_SAFE_DELETE_ENABLED=0` + `--basetemp=../.tmp_pt_base`。
-> 设计决策编号（D1–D13）见 `design.md`。
+> 设计决策编号（D1–D14）见 `design.md`。
 > 勾选状态以**实测读数**为准，不以「看起来做完了」为准。
 
 ## 1. 色值真源与色值体检
@@ -38,30 +38,50 @@
 - [x] 3.4 新增 `frontend/scripts/gen_theme_scss.mjs`：读 `shared/ui-themes.json` 生成 `frontend/src/styles/_themes.scss`（`.ui-theme--<id> { --k-*: … }` 块）
 - [x] 3.5 新增 `frontend/scripts/check_theme_parity.mjs`：生成物与真源不一致即失败；`frontend/package.json` 增 `check:theme` 脚本
 - [x] 3.6 `frontend/src/app.scss`：`@use "./styles/themes"`；跑生成 + parity 校核
-- [ ] 3.7 **零漂移验证**：默认主题下，浏览器逐令牌比对本变更前后的计算样式，读数一致（承接 6.2）
-      —— 编译级归一化比对**已绿**（45 个 scss 逐字节相同），浏览器读数见 6.2
+- [x] 3.7 **零漂移验证**：默认主题下，浏览器逐令牌比对本变更前后的计算样式，读数一致（承接 6.2）
+      —— 编译级归一化比对**已绿**（45 个 scss 逐字节相同）+ `paper` 组 10 张图标 PNG 与
+      被删掉的旧扁平文件 **sha256 逐字节相同**；浏览器侧读数见 6.2，**由用户实跑确认**
 - [x] 3.8 **（D12，实施中新发现的真 bug）** 5 个被「别名」掐断的令牌改为 `var(--k-*, …)`：
       `$opt-sel-border` / `$opt-ok-border` / `$opt-bad-border` / `$btn-magic-edge` / `$btn-gold-edge`。
       青柠的已选描边实测 **2.03:1 → 3.13:1**（求解值终于被消费）。
       复核：零漂移仍逐字节相同 + 死令牌 0（69 定义 / 69 引用）
-- [ ] 3.9 **（D13，实施后由用户实测追问「底部图标为什么不随主题变」才发现）** 标签栏的三件事：
+- [x] 3.9 **（D13，实施后由用户实测追问「底部图标为什么不随主题变」才发现）** 标签栏的三件事：
       - [x] ① `custom-tab-bar/index.scss` 的选中文字 + 顶部指示条 `$magic` → `$magic-ink`
             （青柠选中文字 **2.12:1 → 4.70:1**；`magic-ink` 在另外 4 套主题与 `magic` **同值**
             ⇒ 逐字节零漂移。**不用 `$magic-d`**：它会把纸与印的指示条改成 `#1F4694`，那是真漂移）
-            复核：零漂移仍逐字节相同 ✅ / `check:theme` 165 项 exit 0 ✅ /
+            复核：零漂移仍逐字节相同 ✅ / `check:theme` exit 0 ✅ /
             产物 `custom-tab-bar/index.wxss` = `color:var(--k-magic-ink,#2f6bd8)`、
-            全文 `var(--k-magic,` **0 处**；`build:weapp` 21.81s exit 0 ✅
-      - [ ] ② 按主题生成标签栏图标集，修 `midnight` 选中图标 **2.80:1**（低于非文本 3:1）。
-            两条路线待定：**(a)** 复用已有 `assets/icons/svg/*.svg`（10 个 / 4.7 KB）+ CSS `mask`
-            ⇒ 零新增资源，但 `-webkit-mask` 在微信 WebView 的可用性**未验证**；
-            **(b)** 按主题预生成 PNG（10 → 50 张 / ~34 KB）⇒ 沿用已验证路径，零支持风险
-      - [ ] ③ `frontend/scripts/audit_theme_contrast.mjs` 的 `CHECKS` 补
-            `ink3 on paper2` 与 `magic-ink on paper2` 两条 —— **当前是覆盖盲区**，
-            标签栏底从未被任何一项覆盖，所以 165 项全绿却漏掉了这两条。
-            ⚠️ 补的时候要给 `paper` 的 `ink3 on paper2`（2.93:1，既有 sub-AA）**留登记位**，
-            否则会误伤零漂移
-      - 状态：**① 已修并取证；② ③ 未做**。①②③ 的关系是「先补断言（红）→ 再修消费点 / 换资源（绿）」，
-            本次只做了消费点那一半 ⇒ **体检盲区仍在**（D13 判据段已如实登记）
+            全文 `var(--k-magic,` **0 处**；`build:weapp` exit 0 ✅
+      - [x] ② 按主题生成标签栏图标集，修 `midnight` 选中图标 **2.80:1**（低于非文本 3:1）。
+            **走的是 (b) 预生成 PNG**：复用已验证的位图路径，不重新引入
+            `image` + SVG 的三条未兜底限制，也不赌 `-webkit-mask` 在微信 WebView 的可用性。
+            - `rasterize_tab_icons.py` 改为按主题出 5 套（10 → **50 张 / 33.8 KB**），
+              色取自各主题 `--k-ink-3` / `--k-magic-ink`（**读 scss，不手抄**）；
+              产物 `assets/icons/png/<theme>/`，旧的平铺布局由脚本自清
+            - `extract_tab_icons.py` 生成的 `tab.ts` 改为「主题 → 图标集」
+              （`Record<UiThemeId, TabIconSet>` + `tabIconsOf`）
+            - 修后读数：`midnight` 选中 **2.80 → 6.39:1**；四套新主题全部 ≥ 4.63:1
+            - **默认主题零漂移的证据是哈希不是推理**：`png/paper/` 10 张与改造前
+              **逐字节相同**（sha256，10/10）
+            - 产物取证：`dist/custom-tab-bar/index.js` 内联 `data:image/png;base64`
+              **恰好 50 处**（原 10 处）、50 张源图标 **50/50 命中**、
+              5 套主题的同一图标 base64 互不相同；bundle 里
+              `IA(A){return CA[A]??CA.paper}` 与 `g=IA(E)` 接线完整
+            - ⚠️ **H5 端不受本次修复影响**：Taro H5 在 `tabBar.custom: true` 时
+              `initTabbar()` 直接 early-return（`@tarojs/router/dist/tabbar.js` 里那句
+              `// TODO: custom-tab-bar` 就是上游未实现），所以 **H5 根本没有标签栏**
+              （既有事实，记录于 `.workbuddy/memory/2026-09-20.md`）⇒ 图标只在 weapp 侧生效
+      - [x] ③ `frontend/scripts/audit_theme_contrast.mjs` 的 `CHECKS` 补
+            `ink3 on paper2` 与 `magic-ink on paper2` 两条 —— 原先**整块标签栏是覆盖盲区**，
+            所以 165 项全绿却漏掉这两条。
+            断言 **165 → 175**；`paper` 两条按既有 sub-AA 登记（2.93:1 / 4.27:1，**不改**），
+            既有项 7 → 9；四套新主题 4.63–16.40:1 全达标。
+            同时把「体检表只覆盖它列出的组合」这条教训写进 `CHECKS` 的文档块
+      - [x] ④ **（D14）把图标像素色钉进闸门**：新增 `scripts/check_icon_parity.mjs`，
+            断言「PNG 里 alpha>0 的像素 RGB == 该主题 `--k-ink-3` / `--k-magic-ink`」，
+            并接进 `check_theme_parity.mjs`（闸门 2 步 → **3 步**）。
+            已做**反向验证**：往 `midnight/hall-active.png` 塞 `paper` 的图标 ⇒
+            **exit 1** 且精确报出「像素色 `#2f6bd8`，预期 `#e0a455`」，随后还原并复核哈希一致
       - ⚠️ 系统弹窗（原生 + Taro 内联样式）**刻意不做**，理由见 D13 末段：
             原生弹窗底永远是白，`midnight` 的 `--k-bad`（#E56F5E）对白只有 3.10:1，
             照搬过去会把一个 6.43:1 的达标按钮变成不达标
@@ -92,10 +112,16 @@
 
 ## 6. 验证（一律以读数为准，不靠肉眼）
 
-- [ ] 6.1 浏览器实跑：5 套 × 4 屏（大厅 / 答题 / 冒险日志 / 我的），量 `--k-*` 生效、零裁切、无横向溢出、console error = 0
-- [ ] 6.2 浏览器实跑：默认主题逐令牌读数与改造前一致（与 3.7 合并出结论）
-- [ ] 6.3 微信开发者工具实跑：同上，标签栏单独看一眼（图标色是已登记边界）
-- [ ] 6.4 数后端请求：启动对账只发一次，无重复探测
+- [x] 6.1 浏览器实跑：5 套 × 4 屏（大厅 / 答题 / 冒险日志 / 我的），量 `--k-*` 生效、零裁切、无横向溢出、console error = 0
+- [x] 6.2 浏览器实跑：默认主题逐令牌读数与改造前一致（与 3.7 合并出结论）
+- [x] 6.3 微信开发者工具实跑：同上，标签栏单独看一眼（图标色已不再是边界 —— 3.9② 已修）
+- [x] 6.4 数后端请求：启动对账只发一次，无重复探测
+
+> **6.1–6.4 的证据归属（如实标注）**：这四条由**用户实跑确认**（2026-09-27，原话「我跑过了」）。
+> **不是本 agent 量出来的读数** —— agent 手上只有产物级与静态级证据：50 张 base64 进包、
+> bundle 接线完整、`check:theme` 175 断言、`tsc` / 双端构建 / `openspec validate` / `scan_secrets` 全绿。
+> 按项目红线「别把没验证的说成验证过的」，此处不写成 agent 复现过。若日后要机器可复现，
+> 需补一次 agent 侧的开发者工具实跑（现状：**未做**）。
 
 ## 7. 闸门
 
@@ -105,13 +131,31 @@
 - [x] 7.2 `tsc --noEmit`（src 0 错；`node_modules` 100 条为基线，不因本次变化）
 - [x] 7.3 `python tools/scan_secrets.py` —— **干净**（读 484 文件 / 0 命中 / exit 0）
 - [x] 7.4 `openspec validate --all` —— **6 passed / 0 failed**（1 变更 + 5 规格基线）
-- [x] 7.5 `build:weapp` + `build:h5` —— 均 **exit 0**（weapp 21.06s / h5 25.96s）
+- [x] 7.5 `build:weapp` + `build:h5` —— 均 **exit 0**
+      （3.9 ② 修完后重建：weapp **20.82s** / h5 **25.70s**）
       产物读数（**主题块真进包**）：`app-origin.wxss` 24 157 B 内 4 个 `.ui-theme--*` 各 1 次、
       `--k-opt-sel-border` 5 次（4 定义 + 1 消费）、`--k-grain` 6 次；
       `app.wxss` 仅 52 B（`@import`），`pages/settings/theme/index` 已在包内；
       h5 `css/app.*.css` 内同样 4 块齐全 + `var(--k-opt-sel-border,#2f6bd8)` 消费点存在。
-      ⚠️ 3.9① 改完后**又重跑了一次 weapp**（21.81s exit 0）—— 产物须与源码同步，
-      否则 `dist/` 里还是旧的 `var(--k-magic,…)`。复核：`custom-tab-bar/index.wxss` 已是
-      `color:var(--k-magic-ink,#2f6bd8)`。**h5 侧尚未重跑**（改的是共用的 scss，需在 6.1 前补一次）
+      ⚠️ 3.9① 改完后重跑过 weapp（21.81s）、② 改完又重跑一次（20.82s）—— 产物须与源码同步。
+      复核：`custom-tab-bar/index.wxss` = `color:var(--k-magic-ink,#2f6bd8)`，
+      全文 `var(--k-magic,` **0 处**。
+      **3.9② 的产物取证**：`dist/custom-tab-bar/index.js` 内联 `data:image/png;base64`
+      **恰好 50 处**（改造前 10 处），50 张源图标 **50/50 命中**，5 套主题的同一图标
+      base64 互不相同；bundle 内 `IA(A){return CA[A]??CA.paper}` + `g=IA(E)` 接线完整。
       ⚠️ 双端共用 `frontend/dist/` ⇒ **必须串行**；最后一次构建是 weapp（`dist/` 现为小程序产物）
-- [ ] 7.6 `git status --porcelain -- frontend/src/ backend/` 复核改动面与计划一致
+      ⚠️ **H5 侧看不到这些图标不是 bug**：`tabBar.custom: true` 时 Taro H5 的
+      `initTabbar()` 直接 return（上游 `// TODO: custom-tab-bar` 未实现）⇒ **H5 根本没有标签栏**，
+      既有事实见 `.workbuddy/memory/2026-09-20.md`
+- [x] 7.6 `git status --porcelain -- frontend/src/ backend/` 复核改动面与计划一致
+      —— 3.9 修复后 `-uall` **70 项**（20 改/删 + 50 张新图标），全部落在
+      `frontend/scripts/`、`frontend/src/assets/icons/`、`openspec/changes/` 内；
+      **无 `.env`、无 `dist/`、无截图落仓**
+- [x] 7.7 `npm run check:theme`（闸门 2 步 → **3 步**）—— exit 0：
+      ① 生成物与真源一致（2 份）② WCAG 体检 **175 断言 / 5 主题**（既有项 9 条登记）
+      ③ 图标像素色与主题一致 **50/50**
+- [x] 7.8 **零漂移**（3.9 改完 scss 注释与图标后重跑）——
+      「45 个 scss 归一化后的编译产物与基线**逐字节相同**」；
+      另加 `png/paper/` 10 张 **sha256 逐字节相同**
+- [x] 7.9 `tsc --noEmit`（3.9 ② 改完重跑）—— src 内 **0 错**（`node_modules` 100 条为基线）
+      注：后端本次未改动 ⇒ 未重跑 `pytest`（7.1 的 1387 passed 仍是最近一次全量读数）

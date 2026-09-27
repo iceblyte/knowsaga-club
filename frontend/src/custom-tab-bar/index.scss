@@ -7,6 +7,12 @@
 //   .tabbar>div.on{color:var(--magic);font-weight:600}
 //   .tabbar>div.on::after{top:0;width:26px;height:2px;border-radius:0 0 2px 2px;background:var(--magic)}
 //   .tabbar svg{width:21px;height:21px}
+//
+// ⚠️ 与原型的两处有意偏离（都记在 constants/copy.ts 的文件头原则下）：
+//   1. 选中色用 `$magic-ink`（主色的**文字档**）而不是原型写的 `$magic` ——
+//      原因见下面 `.on` 块的注释。
+//   2. 图标是**按主题各一套的 PNG**，不是原型里的内联 SVG。颜色在像素里，
+//      取色同样来自 `--k-ink-3` / `--k-magic-ink`，与文字同源同值。
 
 @use "../styles/tokens" as *;
 
@@ -63,6 +69,9 @@ $safe-bottom: env(safe-area-inset-bottom);
   }
 }
 
+// 图标尺寸照原型（`.tabbar svg{width:21px;height:21px}`）。
+// 颜色不在这里 —— 它在 PNG 像素里，由 `assets/icons/tab` 按主题选那一套；
+// 色值与 `.tabbar__item` 的 `$ink3` / `.on` 的 `$magic-ink` 同源（见 tab.ts 头注释）。
 .tabbar__icon {
   display: block;
   width: rpx(21); // 21
